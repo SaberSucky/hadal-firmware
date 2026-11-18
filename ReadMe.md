@@ -34,13 +34,6 @@ The Full radio stack needs 36 KB more of the Flipper's internal flash. To make i
 
 Storage settings intentionally stays built in, so you can still format or repair an SD card from the Flipper.
 
-### Planned
-- **Tracker detector**: warns when an unknown tracker keeps following you
-- **Find my stuff**: hot/cold signal meter to locate your own lost earbuds, watch or phone
-- **Crowd meter**: how busy is it around you?
-- **Faster universal remote**: shorter gaps between codes and common brands first
-- **Remote finder**: once a universal code works, save your device's whole remote automatically
-
 Everything else (Sub-GHz protocols, NFC, RFID, Infrared, BadUSB and the rest) comes from Unleashed. See the [Unleashed README](https://github.com/DarkFlippers/unleashed-firmware#readme) for the full feature list.
 
 

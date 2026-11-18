@@ -30,7 +30,7 @@ body:
     attributes:
       label: Found in version
       description: Which Hadal build are you running? Give the branch and commit you built from, or the version shown in Settings → About.
-      placeholder: e.g. ble-scanner @ 58347e3
+      placeholder: e.g. master @ 22ac47b
     validations:
       required: true
   - type: textarea
