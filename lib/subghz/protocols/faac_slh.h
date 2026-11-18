@@ -3,6 +3,10 @@
 #include "base.h"
 #include "public_api.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define SUBGHZ_PROTOCOL_FAAC_SLH_NAME "Faac SLH"
 
 /**
@@ -94,3 +98,7 @@ void subghz_protocol_decoder_faac_slh_get_string(void* context, FuriString* outp
 
 // Reset prog mode vars - faac_slh_reset_prog_mode() is declared in public_api.h
 // TODO: Remake in proper way
+
+#ifdef __cplusplus
+}
+#endif

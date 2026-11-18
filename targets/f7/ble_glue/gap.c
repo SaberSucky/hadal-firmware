@@ -1,4 +1,5 @@
 #include "gap.h"
+#include "scanner.h"
 
 #include "app_common.h"
 #include <core/mutex.h>
@@ -176,6 +177,13 @@ BleEventFlowStatus ble_event_app_notification(void* pckt) {
                 FURI_LOG_E(TAG, "Read PHY failed, status: %d", ret);
             } else {
                 FURI_LOG_I(TAG, "PHY Params TX = %d, RX = %d ", tx_phy, rx_phy);
+            }
+            break;
+
+        case HCI_LE_ADVERTISING_REPORT_SUBEVT_CODE:
+            // plen includes the subevent code byte
+            if(event_pckt->plen > 1) {
+                gap_scanner_process_reports(meta_evt->data, event_pckt->plen - 1);
             }
             break;
 
@@ -358,8 +366,11 @@ static void gap_init_svc(Gap* gap, const GapRootSecurityKeys* root_keys) {
     // Initialize GAP interface
     // Skip first symbol AD_TYPE_COMPLETE_LOCAL_NAME
     char* name = gap->service.adv_name + 1;
+    // With the BLE Full stack we can also observe (scan); the Light stack is peripheral-only
+    uint8_t gap_role = GAP_PERIPHERAL_ROLE;
+    if(gap_scanner_is_supported()) gap_role |= GAP_OBSERVER_ROLE;
     aci_gap_init(
-        GAP_PERIPHERAL_ROLE,
+        gap_role,
         0,
         strlen(name),
         &gap->service.gap_svc_handle,
@@ -591,6 +602,9 @@ bool gap_init(
     // Set callback
     gap->on_event_cb = on_event_cb;
     gap->context = context;
+
+    // Resume scanning if it was running before a profile switch reset the radio
+    gap_scanner_on_gap_init();
 
     return true;
 }

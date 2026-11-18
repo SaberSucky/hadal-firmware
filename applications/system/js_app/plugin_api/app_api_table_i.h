@@ -1,4 +1,5 @@
 #include "../js_modules.h"
+#include "mjs_api_table_i.h"
 
 /* 
  * A list of app's private functions and objects to expose for plugins.
@@ -6,6 +7,7 @@
  * TBD: automatically generate this table from app's header files
  */
 static constexpr auto app_api_table = sort(create_array_t<sym_entry>(
+    MJS_API_METHODS,
     API_METHOD(js_delay_with_flags, bool, (struct mjs*, uint32_t)),
     API_METHOD(js_flags_set, void, (struct mjs*, uint32_t)),
     API_METHOD(js_flags_wait, uint32_t, (struct mjs*, uint32_t, uint32_t)),

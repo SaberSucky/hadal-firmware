@@ -1,7 +1,9 @@
 App(
     appid="subghz",
     name="Sub-GHz",
-    apptype=FlipperAppType.APP,
+    # External (SD card) app: keeps ~37KB out of internal flash so the BLE "Full"
+    # radio stack (needed for scanning) fits next to the firmware.
+    apptype=FlipperAppType.MENUEXTERNAL,
     targets=["f7"],
     cdefines=["APP_SUBGHZ"],
     entry_point="subghz_app",
@@ -18,7 +20,7 @@ App(
     order=1,
     resources="resources",
     # plugins/ ships as .fal - keep it out of the image. Exclusions are leaf names, not paths.
-    sources=["*.c*", "!plugins"],
+    sources=["*.c*", "!plugins", "!subghz_dangerous_freq.c"],
     fap_libs=["assets", "hwdrivers"],
     fap_icon="icon.png",
     fap_category="Sub-GHz",
@@ -37,7 +39,9 @@ App(
     appid="subghz_load_dangerous_settings",
     apptype=FlipperAppType.STARTUP,
     entry_point="subghz_dangerous_freq",
-    requires=["storage", "subghz"],
+    # Stays in firmware: applies region/amp settings at boot without the app being loaded
+    sources=["subghz_dangerous_freq.c", "subghz_last_settings.c"],
+    requires=["storage"],
     order=650,
 )
 

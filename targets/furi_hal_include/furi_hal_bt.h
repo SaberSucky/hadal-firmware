@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include <gap.h>
 #include <extra_beacon.h>
+#include <scanner.h>
 #include <furi_ble/profile_interface.h>
 #include <ble_glue.h>
 #include <ble_app.h>
@@ -295,6 +296,41 @@ bool furi_hal_bt_extra_beacon_is_active(void);
  * @return     extra beacon config. NULL if beacon had never been configured.
  */
 const GapExtraBeaconConfig* furi_hal_bt_extra_beacon_get_config(void);
+
+/** Check if the radio stack can scan for other BLE devices (needs the BLE Full stack)
+ *
+ * @return     true if scanning is supported
+ */
+bool furi_hal_bt_scanner_is_supported(void);
+
+/** Start scanning for BLE advertisements
+ *
+ * The callback runs on the BLE event thread for every received advertisement:
+ * copy the report and hand it to your own thread, do not block or call BLE APIs.
+ * Scanning continues across BLE profile switches until stopped.
+ *
+ * @param      config    scan timing and mode
+ * @param      callback  report callback
+ * @param      context   callback context
+ *
+ * @return     true on success; false if unsupported or already scanning
+ */
+bool furi_hal_bt_scanner_start(
+    const GapScannerConfig* config,
+    GapScannerCallback callback,
+    void* context);
+
+/** Stop scanning
+ *
+ * @return     true if scanning was active
+ */
+bool furi_hal_bt_scanner_stop(void);
+
+/** Check if scanning is active
+ *
+ * @return     true if scanning
+ */
+bool furi_hal_bt_scanner_is_active(void);
 
 #ifdef __cplusplus
 }

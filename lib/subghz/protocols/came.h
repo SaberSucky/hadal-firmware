@@ -2,6 +2,10 @@
 
 #include "base.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define SUBGHZ_PROTOCOL_CAME_NAME "CAME"
 
 /**
@@ -65,3 +69,7 @@ SubGhzProtocolStatus
  * @param output Resulting text
  */
 void subghz_protocol_decoder_came_get_string(void* context, FuriString* output);
+
+#ifdef __cplusplus
+}
+#endif

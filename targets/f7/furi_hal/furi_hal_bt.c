@@ -129,6 +129,7 @@ bool furi_hal_bt_start_radio_stack(void) {
     furi_hal_bt_unlock_core2();
 
     gap_extra_beacon_init();
+    gap_scanner_init();
     return res;
 }
 
@@ -411,6 +412,25 @@ bool furi_hal_bt_ensure_c2_mode(BleGlueC2Mode mode) {
 
     FURI_LOG_E(TAG, "Failed to switch C2 mode: %d", fw_start_res);
     return false;
+}
+
+bool furi_hal_bt_scanner_is_supported(void) {
+    return gap_scanner_is_supported();
+}
+
+bool furi_hal_bt_scanner_start(
+    const GapScannerConfig* config,
+    GapScannerCallback callback,
+    void* context) {
+    return gap_scanner_start(config, callback, context);
+}
+
+bool furi_hal_bt_scanner_stop(void) {
+    return gap_scanner_stop();
+}
+
+bool furi_hal_bt_scanner_is_active(void) {
+    return gap_scanner_is_active();
 }
 
 bool furi_hal_bt_extra_beacon_set_data(const uint8_t* data, uint8_t len) {
