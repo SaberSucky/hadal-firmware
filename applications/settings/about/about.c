@@ -72,14 +72,15 @@ static DialogMessageButton compliance_screen(DialogsApp* dialogs, DialogMessage*
     return result;
 }
 
-static DialogMessageButton unleashed_info_screen(DialogsApp* dialogs, DialogMessage* message) {
+static DialogMessageButton hadal_info_screen(DialogsApp* dialogs, DialogMessage* message) {
     DialogMessageButton result;
 
-    const char* screen_header = "Unleashed Firmware\n";
+    const char* screen_header = "Hadal Firmware\n";
 
-    const char* screen_text = "Is for experimental purposes\nonly "
-                              "and is not meant for any\nillegal use! "
-                              "We do not condone\nany illegal activity.";
+    const char* screen_text = "For experimental use only.\n"
+                              "Not meant for illegal use.\n"
+                              "We do not condone any\n"
+                              "illegal activity.";
 
     dialog_message_set_header(message, screen_header, 0, 0, AlignLeft, AlignTop);
     dialog_message_set_text(message, screen_text, 0, 11, AlignLeft, AlignTop);
@@ -90,12 +91,13 @@ static DialogMessageButton unleashed_info_screen(DialogsApp* dialogs, DialogMess
     return result;
 }
 
-static DialogMessageButton unleashed_info_screen2(DialogsApp* dialogs, DialogMessage* message) {
+static DialogMessageButton hadal_license_screen(DialogsApp* dialogs, DialogMessage* message) {
     DialogMessageButton result;
 
-    const char* screen_text =
-        "This firmware is free and\ndistributed under\nthe OpenSource license.\n"
-        "If you paid any money for it\n- you got scammed.";
+    const char* screen_text = "Free and open source,\n"
+                              "licensed under GPLv3.\n"
+                              "If you paid any money\n"
+                              "for it, you got scammed.";
 
     dialog_message_set_text(message, screen_text, 0, 0, AlignLeft, AlignTop);
     result = dialog_message_show(dialogs, message);
@@ -104,12 +106,13 @@ static DialogMessageButton unleashed_info_screen2(DialogsApp* dialogs, DialogMes
     return result;
 }
 
-static DialogMessageButton unleashed_info_screen3(DialogsApp* dialogs, DialogMessage* message) {
+static DialogMessageButton hadal_credits_screen(DialogsApp* dialogs, DialogMessage* message) {
     DialogMessageButton result;
 
-    const char* screen_text = "Community apps included in\nall builds except `c` build\n"
-                              "For updates and more visit:\n"
-                              "github.com/DarkFlippers";
+    const char* screen_text = "Built on Unleashed and\n"
+                              "official Flipper firmware.\n"
+                              "Source and updates:\n"
+                              "github.com/SaberSucky";
 
     dialog_message_set_text(message, screen_text, 0, 0, AlignLeft, AlignTop);
     result = dialog_message_show(dialogs, message);
@@ -190,9 +193,9 @@ static DialogMessageButton fw_version_screen(DialogsApp* dialogs, DialogMessage*
 }
 
 const AboutDialogScreen about_screens[] = {
-    unleashed_info_screen,
-    unleashed_info_screen2,
-    unleashed_info_screen3,
+    hadal_info_screen,
+    hadal_license_screen,
+    hadal_credits_screen,
     product_screen,
     compliance_screen,
     address_screen,

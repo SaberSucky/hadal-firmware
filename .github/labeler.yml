@@ -103,7 +103,6 @@
   - changed-files:
       - any-glob-to-any-file:
           - ".github/**"
-          - ".ci_files/**"
           - "scripts/**"
           - "site_scons/**"
           - "SConstruct"

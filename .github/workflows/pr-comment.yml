@@ -72,7 +72,7 @@ jobs:
               core.warning('Report artifact incomplete; nothing to post.');
               return;
             }
-            const marker = '<!-- unleashed-pr-report -->';
+            const marker = '<!-- hadal-pr-report -->';
             const body = fs.readFileSync('pr_report.md', 'utf8');
             const issue_number = parseInt(fs.readFileSync('pr_number.txt', 'utf8').trim(), 10);
             if (!Number.isInteger(issue_number) || issue_number < 1) {
