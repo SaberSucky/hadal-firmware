@@ -104,6 +104,17 @@ void infrared_brute_force_stop(InfraredBruteForce* brute_force);
 bool infrared_brute_force_send(InfraredBruteForce* brute_force, uint32_t signal_index);
 
 /**
+ * @brief Choose how signals are sent by infrared_brute_force_send().
+ *
+ * Fast mode uses short gaps between codes and trims repeated raw frames
+ * (see infrared_signal_transmit_fast()). Normal mode keeps the exact original timings.
+ *
+ * @param[in] brute_force pointer to the instance
+ * @param[in] fast true for fast mode, false for normal mode
+ */
+void infrared_brute_force_set_fast(InfraredBruteForce* brute_force, bool fast);
+
+/**
  * @brief Load a signal from the chosen category without transmitting it.
  *
  * @param[in] brute_force pointer to the instance

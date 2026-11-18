@@ -223,6 +223,16 @@ InfraredErrorCode
  */
 void infrared_signal_transmit(const InfraredSignal* signal);
 
+/**
+ * @brief Transmit a signal as fast as safely possible, for sending many codes in a row.
+ *
+ * Uses the gap a real remote leaves between repeated frames instead of the full
+ * protocol silence, and trims raw signals to at most two identical frames in a row.
+ *
+ * @param[in] signal pointer to the instance holding the signal to be transmitted.
+ */
+void infrared_signal_transmit_fast(const InfraredSignal* signal);
+
 #ifdef __cplusplus
 }
 #endif

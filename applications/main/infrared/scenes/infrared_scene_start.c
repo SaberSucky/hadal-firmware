@@ -39,7 +39,7 @@ void infrared_scene_start_on_enter(void* context) {
         infrared);
     submenu_add_item(
         submenu,
-        "GPIO Settings",
+        "Settings",
         SubmenuIndexGpioSettings,
         infrared_scene_start_submenu_callback,
         infrared);

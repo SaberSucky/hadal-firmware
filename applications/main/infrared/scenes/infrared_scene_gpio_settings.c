@@ -11,6 +11,21 @@ static const char* infrared_scene_gpio_settings_otg_text[] = {
     "ON",
 };
 
+static const char* infrared_scene_gpio_settings_speed_text[] = {
+    "Normal",
+    "Fast",
+};
+
+static void infrared_scene_gpio_settings_speed_change_callback(VariableItem* item) {
+    InfraredApp* infrared = variable_item_get_context(item);
+    const uint8_t index = variable_item_get_current_value_index(item);
+
+    variable_item_set_current_value_text(item, infrared_scene_gpio_settings_speed_text[index]);
+    view_dispatcher_send_custom_event(
+        infrared->view_dispatcher,
+        infrared_custom_event_pack(InfraredCustomEventTypeUniversalSpeedChanged, index));
+}
+
 static void infrared_scene_gpio_settings_pin_change_callback(VariableItem* item) {
     InfraredApp* infrared = variable_item_get_context(item);
     const uint8_t index = variable_item_get_current_value_index(item);
@@ -35,6 +50,18 @@ static void infrared_scene_gpio_settings_init(InfraredApp* infrared) {
     VariableItemList* var_item_list = infrared->var_item_list;
     VariableItem* item;
     uint8_t value_index;
+
+    item = variable_item_list_add(
+        var_item_list,
+        "Universal Speed",
+        COUNT_OF(infrared_scene_gpio_settings_speed_text),
+        infrared_scene_gpio_settings_speed_change_callback,
+        infrared);
+
+    value_index = infrared->app_state.is_fast_universal ? 1 : 0;
+    variable_item_set_current_value_index(item, value_index);
+    variable_item_set_current_value_text(
+        item, infrared_scene_gpio_settings_speed_text[value_index]);
 
     item = variable_item_list_add(
         var_item_list,
@@ -87,6 +114,8 @@ bool infrared_scene_gpio_settings_on_event(void* context, SceneManagerEvent even
             infrared_scene_gpio_settings_init(infrared);
         } else if(custom_event_type == InfraredCustomEventTypeGpioOtgChanged) {
             infrared_enable_otg(infrared, custom_event_value);
+        } else if(custom_event_type == InfraredCustomEventTypeUniversalSpeedChanged) {
+            infrared_set_fast_universal(infrared, custom_event_value);
         }
 
         consumed = true;

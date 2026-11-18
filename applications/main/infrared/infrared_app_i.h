@@ -91,6 +91,7 @@ typedef struct {
     int32_t prev_button_index; /**< Previous button index (move source). */
     uint32_t last_transmit_time; /**< Lat time a signal was transmitted. */
     FuriHalInfraredTxPin tx_pin;
+    bool is_fast_universal; /**< Universal remotes send codes with short gaps. */
 } InfraredAppState;
 
 /**
@@ -347,6 +348,14 @@ void infrared_enable_otg(InfraredApp* infrared, bool enable);
  * @param[in] infrared pointer to the application instance.
  */
 void infrared_save_settings(InfraredApp* infrared);
+
+/**
+ * @brief Choose fast (short gaps) or normal (original timings) universal remotes.
+ *
+ * @param[in,out] infrared pointer to the application instance.
+ * @param[in] fast true for fast mode.
+ */
+void infrared_set_fast_universal(InfraredApp* infrared, bool fast);
 
 /**
  * @brief Common received signal callback.

@@ -27,6 +27,7 @@ typedef enum {
 
     InfraredCustomEventTypeGpioTxPinChanged,
     InfraredCustomEventTypeGpioOtgChanged,
+    InfraredCustomEventTypeUniversalSpeedChanged,
 } InfraredCustomEventType;
 
 #pragma pack(push, 1)

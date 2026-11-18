@@ -60,6 +60,7 @@ struct InfraredBruteForce {
     InfraredSignal* current_signal;
     InfraredBruteForceRecordDict_t records;
     bool is_started;
+    bool is_fast;
 };
 
 InfraredBruteForce* infrared_brute_force_alloc(void) {
@@ -70,6 +71,7 @@ InfraredBruteForce* infrared_brute_force_alloc(void) {
     brute_force->is_started = false;
     brute_force->current_record_name = furi_string_alloc();
     InfraredBruteForceRecordDict_init(brute_force->records);
+    brute_force->is_fast = true;
     return brute_force;
 }
 
@@ -217,7 +219,11 @@ bool infrared_brute_force_send(InfraredBruteForce* brute_force, uint32_t signal_
     if(!infrared_brute_force_load_signal(brute_force, signal_index, brute_force->current_signal))
         return false;
 
-    infrared_signal_transmit(brute_force->current_signal);
+    if(brute_force->is_fast) {
+        infrared_signal_transmit_fast(brute_force->current_signal);
+    } else {
+        infrared_signal_transmit(brute_force->current_signal);
+    }
     return true;
 }
 
@@ -240,4 +246,9 @@ void infrared_brute_force_reset(InfraredBruteForce* brute_force) {
     // Otherwise a caller that forgets to set it next time silently re-reads this database
     brute_force->db_filename = NULL;
     InfraredBruteForceRecordDict_reset(brute_force->records);
+}
+
+void infrared_brute_force_set_fast(InfraredBruteForce* brute_force, bool fast) {
+    furi_check(brute_force);
+    brute_force->is_fast = fast;
 }

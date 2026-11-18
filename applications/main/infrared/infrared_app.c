@@ -509,8 +509,14 @@ void infrared_enable_otg(InfraredApp* infrared, bool enable) {
     furi_record_close(RECORD_POWER);
 }
 
+void infrared_set_fast_universal(InfraredApp* infrared, bool fast) {
+    infrared->app_state.is_fast_universal = fast;
+    infrared_brute_force_set_fast(infrared->brute_force, fast);
+}
+
 static void infrared_load_settings(InfraredApp* infrared) {
     InfraredSettings settings = {0};
+    bool needs_save = false;
 
     if(!saved_struct_load(
            INFRARED_SETTINGS_PATH,
@@ -518,20 +524,37 @@ static void infrared_load_settings(InfraredApp* infrared) {
            sizeof(InfraredSettings),
            INFRARED_SETTINGS_MAGIC,
            INFRARED_SETTINGS_VERSION)) {
-        FURI_LOG_D(TAG, "Failed to load settings, using defaults");
-        infrared_save_settings(infrared);
+        // Keep GPIO settings from the previous file layout, if any
+        InfraredSettingsV1 settings_v1 = {0};
+        if(saved_struct_load(
+               INFRARED_SETTINGS_PATH,
+               &settings_v1,
+               sizeof(InfraredSettingsV1),
+               INFRARED_SETTINGS_MAGIC,
+               INFRARED_SETTINGS_VERSION_V1)) {
+            FURI_LOG_I(TAG, "Migrating settings");
+        } else {
+            FURI_LOG_D(TAG, "Failed to load settings, using defaults");
+        }
+        settings.tx_pin = settings_v1.tx_pin;
+        settings.otg_enabled = settings_v1.otg_enabled;
+        settings.fast_universal = true;
+        needs_save = true;
     }
 
+    infrared_set_fast_universal(infrared, settings.fast_universal);
     infrared_set_tx_pin(infrared, settings.tx_pin);
     if(settings.tx_pin < FuriHalInfraredTxPinMax) {
         infrared_enable_otg(infrared, settings.otg_enabled);
     }
+    if(needs_save) infrared_save_settings(infrared);
 }
 
 void infrared_save_settings(InfraredApp* infrared) {
     InfraredSettings settings = {
         .tx_pin = infrared->app_state.tx_pin,
         .otg_enabled = infrared->app_state.is_otg_enabled,
+        .fast_universal = infrared->app_state.is_fast_universal,
     };
 
     if(!saved_struct_save(

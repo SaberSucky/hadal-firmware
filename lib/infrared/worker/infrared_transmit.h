@@ -43,6 +43,36 @@ void infrared_send_raw_ext(
     uint32_t frequency,
     float duty_cycle);
 
+/** Keep the protocol's own leading silence (same behaviour as infrared_send()) */
+#define INFRARED_TX_LEADING_SILENCE_DEFAULT (UINT32_MAX)
+
+/**
+ * Send message like infrared_send(), with a custom leading silence.
+ *
+ * Every transmission starts with a silence (the protocol's repeat period, up to
+ * ~150 ms). When sending many different codes in a row, a shorter gap is enough.
+ *
+ * \param[in]   message - message to send
+ * \param[in]   times - number of times to send (at least the protocol's minimum)
+ * \param[in]   leading_silence_us - max silence before the first frame, in us, or
+ *              INFRARED_TX_LEADING_SILENCE_DEFAULT
+ */
+void infrared_send_ex(const InfraredMessage* message, int times, uint32_t leading_silence_us);
+
+/**
+ * Send raw data like infrared_send_raw_ext(), with a custom leading silence.
+ *
+ * \param[in]   leading_silence_us - silence before the first mark (if start_from_mark),
+ *              in us, or INFRARED_TX_LEADING_SILENCE_DEFAULT
+ */
+void infrared_send_raw_ex(
+    const uint32_t timings[],
+    uint32_t timings_cnt,
+    bool start_from_mark,
+    uint32_t frequency,
+    float duty_cycle,
+    uint32_t leading_silence_us);
+
 #ifdef __cplusplus
 }
 #endif
