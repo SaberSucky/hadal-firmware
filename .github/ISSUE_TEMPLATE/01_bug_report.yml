@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thank you for taking the time to fill out an issue, this template is meant for any issues related to the Flipper Zero unleashed firmware.
+        Thank you for taking the time to fill out an issue, this template is meant for any issues related to Hadal Firmware.
   - type: textarea
     id: description
     attributes:
@@ -25,22 +25,14 @@ body:
         4. It burns
     validations:
       required: true
-  - type: dropdown
+  - type: input
     id: fw-version
     attributes:
       label: Found in version
-      description: Which firmware version are you running? Check Settings → About or the boot screen.
-      options:
-        - unlshd-095
-        - dev
+      description: Which Hadal build are you running? Give the branch and commit you built from, or the version shown in Settings → About.
+      placeholder: e.g. ble-scanner @ 58347e3
     validations:
       required: true
-  - type: input
-    id: dev-version
-    attributes:
-      label: Dev version
-      description: "If you selected `dev` above, paste the exact dev build number. Required for dev builds."
-      placeholder: e.g. 1315
   - type: textarea
     id: logs
     attributes:
