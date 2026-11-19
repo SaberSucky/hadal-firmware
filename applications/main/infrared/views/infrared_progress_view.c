@@ -24,14 +24,33 @@ typedef struct {
     bool is_paused;
 } InfraredProgressViewModel;
 
+/* The remote's screen is upright: 64 wide, 128 tall. */
+#define PANEL_X              0
+#define PANEL_WIDTH          63
+/* Sending: title, bar, percentage, two hints */
+#define PANEL_Y_SENDING      25
+#define PANEL_HEIGHT_SENDING 81
+/* Paused: title, bar, count, then five hints, so the panel starts higher and is taller */
+#define PANEL_Y_PAUSED       14
+#define PANEL_HEIGHT_PAUSED  103
+#define HINT_PITCH           10
+
+static void draw_hint(Canvas* canvas, uint8_t x, uint8_t top, const char* text) {
+    canvas_draw_str(canvas, x + 14, top + 8, text);
+}
+
 static void infrared_progress_view_draw_callback(Canvas* canvas, void* _model) {
     InfraredProgressViewModel* model = (InfraredProgressViewModel*)_model;
 
-    uint8_t x = 0;
-    uint8_t y = 25;
-    uint8_t width = 63;
-    uint8_t height = 81;
+    const uint8_t x = PANEL_X;
+    const uint8_t y = model->is_paused ? PANEL_Y_PAUSED : PANEL_Y_SENDING;
+    const uint8_t width = PANEL_WIDTH;
+    const uint8_t height = model->is_paused ? PANEL_HEIGHT_PAUSED : PANEL_HEIGHT_SENDING;
 
+    // Clear what is under the panel, so the remote's buttons cannot show through its edges
+    canvas_set_color(canvas, ColorWhite);
+    canvas_draw_box(canvas, x, y, width, height);
+    canvas_set_color(canvas, ColorBlack);
     elements_bold_rounded_frame(canvas, x, y, width, height);
 
     canvas_set_font(canvas, FontSecondary);
@@ -58,29 +77,29 @@ static void infrared_progress_view_draw_callback(Canvas* canvas, void* _model) {
         uint8_t percent_value = 100 * model->progress / model->progress_total;
         snprintf(progress_string, sizeof(progress_string), "%d%%", percent_value);
     }
-    // When paused the panel shows five button hints, so lift the counter to make room
     elements_multiline_text_aligned(
-        canvas, x + 33, y + (model->is_paused ? 30 : 37), AlignCenter, AlignCenter, progress_string);
+        canvas, x + 33, y + (model->is_paused ? 36 : 37), AlignCenter, AlignCenter, progress_string);
 
     if(model->is_paused) {
+        // Five hints at an even pitch, the last one well inside the bottom border
         const uint8_t bx = x + 10;
-        const uint8_t by = y + 36; // five rows, 9px pitch, last hint ends at y+80 (frame is 81 tall)
+        const uint8_t top = y + 44;
 
-        canvas_draw_icon(canvas, bx + 0, by + 0, &I_Pin_back_arrow_10x8);
-        canvas_draw_str(canvas, bx + 14, by + 8, "resume");
+        canvas_draw_icon(canvas, bx + 0, top + 0 * HINT_PITCH, &I_Pin_back_arrow_10x8);
+        draw_hint(canvas, bx, top + 0 * HINT_PITCH, "resume");
 
-        canvas_draw_icon(canvas, bx + 1, by + 9, &I_Ok_btn_9x9);
-        canvas_draw_str(canvas, bx + 14, by + 17, "send 1");
+        canvas_draw_icon(canvas, bx + 1, top + 1 * HINT_PITCH - 1, &I_Ok_btn_9x9);
+        draw_hint(canvas, bx, top + 1 * HINT_PITCH, "send 1");
 
-        canvas_draw_icon(canvas, bx + 2, by + 20, &I_ButtonLeftSmall_3x5);
-        canvas_draw_icon(canvas, bx + 7, by + 20, &I_ButtonRightSmall_3x5);
-        canvas_draw_str(canvas, bx + 14, by + 26, "select");
+        canvas_draw_icon(canvas, bx + 2, top + 2 * HINT_PITCH + 2, &I_ButtonLeftSmall_3x5);
+        canvas_draw_icon(canvas, bx + 7, top + 2 * HINT_PITCH + 2, &I_ButtonRightSmall_3x5);
+        draw_hint(canvas, bx, top + 2 * HINT_PITCH, "select");
 
-        canvas_draw_icon(canvas, bx + 2, by + 29, &I_SmallArrowUp_3x5);
-        canvas_draw_str(canvas, bx + 14, by + 35, "save all");
+        canvas_draw_icon(canvas, bx + 4, top + 3 * HINT_PITCH + 2, &I_SmallArrowUp_3x5);
+        draw_hint(canvas, bx, top + 3 * HINT_PITCH, "save all");
 
-        canvas_draw_icon(canvas, bx + 2, by + 38, &I_SmallArrowDown_3x5);
-        canvas_draw_str(canvas, bx + 14, by + 44, "save 1");
+        canvas_draw_icon(canvas, bx + 4, top + 4 * HINT_PITCH + 2, &I_SmallArrowDown_3x5);
+        draw_hint(canvas, bx, top + 4 * HINT_PITCH, "save 1");
     } else {
         const uint8_t bx = x + 14;
         const uint8_t by = y + 50;
