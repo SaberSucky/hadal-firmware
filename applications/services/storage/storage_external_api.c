@@ -10,7 +10,10 @@
 
 #define MAX_NAME_LENGTH  256
 #define MAX_EXT_LEN      16
-#define FILE_BUFFER_SIZE 512
+// Only storage_file_copy_to_file() uses this. A larger buffer lets FatFS write
+// whole multi-sector runs instead of one 512-byte block (CMD24) at a time, which
+// cuts first-run asset-extraction time noticeably.
+#define FILE_BUFFER_SIZE 4096
 
 #define TAG "StorageApi"
 

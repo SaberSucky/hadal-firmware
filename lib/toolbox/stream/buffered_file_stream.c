@@ -102,9 +102,15 @@ static void buffered_file_stream_free(BufferedFileStream* stream) {
 }
 
 static bool buffered_file_stream_eof(BufferedFileStream* stream) {
+    const bool cache_at_end = stream_cache_at_end(stream->cache);
+    // Read-only fast path: if the cache still holds unread data we are not at EOF,
+    // so skip stream_eof()'s storage call (the result would be false either way).
+    if(!stream->sync_pending && !cache_at_end) {
+        return false;
+    }
+
     bool ret;
     const bool file_stream_eof = stream_eof(stream->file_stream);
-    const bool cache_at_end = stream_cache_at_end(stream->cache);
     if(!stream->sync_pending) {
         ret = file_stream_eof && cache_at_end;
     } else {

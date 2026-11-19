@@ -684,11 +684,16 @@ void elements_scrollable_text_line_str(
             furi_string_right(line, scroll);
         }
 
-        len_px = canvas_string_width(canvas, furi_string_get_cstr(line));
-        while(len_px > width) {
-            furi_string_left(line, furi_string_size(line) - 1);
-            len_px = canvas_string_width(canvas, furi_string_get_cstr(line));
+        // Trim to width in one pass instead of re-measuring the whole line each step
+        size_t fit_len = 0;
+        size_t acc_px = 0;
+        const size_t line_len = furi_string_size(line);
+        for(size_t i = 0; i < line_len; i++) {
+            acc_px += canvas_glyph_width(canvas, furi_string_get_char(line, i));
+            if(acc_px > width) break;
+            fit_len = i + 1;
         }
+        furi_string_left(line, fit_len);
 
         if(ellipsis) {
             furi_string_cat(line, "...");
@@ -739,11 +744,16 @@ void elements_scrollable_text_line(
             furi_string_right(line, scroll);
         }
 
-        len_px = canvas_string_width(canvas, furi_string_get_cstr(line));
-        while(len_px > width) {
-            furi_string_left(line, furi_string_size(line) - 1);
-            len_px = canvas_string_width(canvas, furi_string_get_cstr(line));
+        // Trim to width in one pass instead of re-measuring the whole line each step
+        size_t fit_len = 0;
+        size_t acc_px = 0;
+        const size_t line_len = furi_string_size(line);
+        for(size_t i = 0; i < line_len; i++) {
+            acc_px += canvas_glyph_width(canvas, furi_string_get_char(line, i));
+            if(acc_px > width) break;
+            fit_len = i + 1;
         }
+        furi_string_left(line, fit_len);
 
         if(ellipsis) {
             furi_string_cat(line, "...");
