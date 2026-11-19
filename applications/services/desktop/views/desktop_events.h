@@ -69,4 +69,6 @@ typedef enum {
     DesktopGlobalApiUnlock,
     DesktopGlobalSaveSettings,
     DesktopGlobalReloadSettings,
+    DesktopGlobalAssetPacksChanged,
+    DesktopGlobalAssetPackStable,
 } DesktopEvent;

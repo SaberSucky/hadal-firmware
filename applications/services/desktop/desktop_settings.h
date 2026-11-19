@@ -50,6 +50,8 @@ typedef struct {
     FavoriteApp favorite_apps[FavoriteAppNumber];
     FavoriteApp dummy_apps[DummyAppNumber];
     char menu_style[32];
+    /** Folder name under /ext/asset_packs, empty for the built-in assets. */
+    char active_asset_pack[32];
 } DesktopSettings;
 
 void desktop_settings_load(DesktopSettings* settings);

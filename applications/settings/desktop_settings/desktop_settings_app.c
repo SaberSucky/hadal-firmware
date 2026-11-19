@@ -25,6 +25,65 @@
 #define MENU_STYLES_MAX (UINT8_MAX - 1)
 
 static void desktop_settings_menu_styles_free(DesktopSettingsApp* app);
+static void desktop_settings_asset_packs_free(DesktopSettingsApp* app);
+
+// variable_item_list_add() takes a uint8_t values count, and the list is "None" plus the packs
+#define ASSET_PACKS_MAX (UINT8_MAX - 1)
+
+/** A pack folder name the firmware will accept: plain, short, not hidden. */
+static bool desktop_settings_asset_pack_name_ok(const char* name) {
+    size_t length = strlen(name);
+    return length > 0 && length < DESKTOP_SETTINGS_ASSET_PACK_NAME_SIZE && name[0] != '.';
+}
+
+void desktop_settings_asset_packs_load(DesktopSettingsApp* app) {
+    desktop_settings_asset_packs_free(app);
+
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    File* dir = storage_file_alloc(storage);
+    FileInfo info;
+    char name[DESKTOP_SETTINGS_ASSET_PACK_NAME_SIZE + 1];
+
+    if(storage_dir_open(dir, "/ext/asset_packs")) {
+        while(storage_dir_read(dir, &info, name, sizeof(name))) {
+            if(!file_info_is_dir(&info) || !desktop_settings_asset_pack_name_ok(name)) continue;
+            if(app->asset_packs_count >= ASSET_PACKS_MAX) {
+                FURI_LOG_W(TAG, "More than %u asset packs, ignoring the rest", ASSET_PACKS_MAX);
+                break;
+            }
+            // Insertion sort: the list is short, and sorted is what a picker should show
+            size_t pos = app->asset_packs_count;
+            app->asset_packs =
+                realloc(app->asset_packs, (pos + 1) * DESKTOP_SETTINGS_ASSET_PACK_NAME_SIZE);
+            while(pos && strcasecmp(app->asset_packs[pos - 1], name) > 0) {
+                memcpy(
+                    app->asset_packs[pos],
+                    app->asset_packs[pos - 1],
+                    DESKTOP_SETTINGS_ASSET_PACK_NAME_SIZE);
+                pos--;
+            }
+            strlcpy(app->asset_packs[pos], name, DESKTOP_SETTINGS_ASSET_PACK_NAME_SIZE);
+            app->asset_packs_count++;
+        }
+        // As for the menu styles: a failed read looks like the end of the directory
+        FS_Error error = storage_file_get_error(dir);
+        app->asset_packs_loaded = error == FSE_OK || error == FSE_NOT_EXIST;
+    } else {
+        // No folder is a normal state (no packs installed); a missing card is not, so ask
+        app->asset_packs_loaded = storage_sd_status(storage) == FSE_OK;
+    }
+
+    storage_dir_close(dir);
+    storage_file_free(dir);
+    furi_record_close(RECORD_STORAGE);
+}
+
+static void desktop_settings_asset_packs_free(DesktopSettingsApp* app) {
+    free(app->asset_packs);
+    app->asset_packs = NULL;
+    app->asset_packs_count = 0;
+    app->asset_packs_loaded = false;
+}
 
 void desktop_settings_menu_styles_load(DesktopSettingsApp* app) {
     desktop_settings_menu_styles_free(app);
@@ -229,6 +288,7 @@ void desktop_settings_app_free(DesktopSettingsApp* app) {
     desktop_settings_view_pin_setup_howto2_free(app->pin_setup_howto2_view);
     dialog_ex_free(app->dialog_ex);
     desktop_settings_menu_styles_free(app);
+    desktop_settings_asset_packs_free(app);
     // View dispatcher
     view_dispatcher_free(app->view_dispatcher);
     scene_manager_free(app->scene_manager);

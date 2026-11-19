@@ -11,6 +11,7 @@
  *   switch ROOT A B               select A and at once B: only B may end up loaded
  *   stress ROOT NAME SECONDS      a drawing thread against unload/reload/switch
  *   crash  ROOT                   the crash marker is reported once
+ *   marker ROOT NAME              when the crash marker exists: through load, stable, reload, drop
  *   fonts  ROOT NAME              which font slots a pack replaces; then drop it and watch the
  *                                 replaced fonts leave the graveyard after the grace period
  *
@@ -88,6 +89,12 @@ static size_t count_replaced(void) {
 }
 
 /* ---- fonts ---- */
+
+static bool marker_exists(void) {
+    char path[512];
+    snprintf(path, sizeof(path), "%s/int/.asset_pack_loading", host_storage_root);
+    return access(path, F_OK) == 0;
+}
 
 static size_t graveyard_count(void) {
     furi_mutex_acquire(asset_packs.mutex, FuriWaitForever);
@@ -265,6 +272,19 @@ int main(int argc, char** argv) {
         printf("after drop %zu buried %zu\n", report_fonts(argv[3]), graveyard_count());
         usleep((ASSET_PACKS_FONT_GRACE_MS + 400) * 1000);
         printf("later buried %zu\n", graveyard_count());
+    } else if(!strcmp(command, "marker") && argc == 4) {
+        asset_packs_set_active(argv[3]);
+        wait_for_loader();
+        printf("loaded %zu\n", asset_packs.icon_count);
+        printf("after load %d\n", marker_exists());
+        asset_packs_mark_stable();
+        printf("after stable %d\n", marker_exists());
+        asset_packs_unload_icons();
+        asset_packs_reload_icons();
+        wait_for_loader();
+        printf("after reload %d\n", marker_exists());
+        asset_packs_set_active(NULL);
+        printf("after deselect %d\n", marker_exists());
     } else if(!strcmp(command, "crash")) {
         char path[512];
         snprintf(path, sizeof(path), "%s/int/.asset_pack_loading", host_storage_root);

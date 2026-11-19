@@ -768,9 +768,36 @@ class HostLoaderTests(TempDirCase):
         self.assertEqual(result.returncode, 0)
         self.assertIn("crash 1 0", result.stdout)
 
-    def test_no_marker_left_after_a_normal_load(self):
-        self.run_host("verify", "Small")
-        self.assertFalse(os.path.exists(os.path.join(self.root, "int", ".asset_pack_loading")))
+    def marker_report(self, name):
+        result = self.run_host("marker", name)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr[-800:])
+        return {k: int(v) for k, v in (line.rsplit(" ", 1) for line in result.stdout.splitlines())
+                if k.startswith("after")}
+
+    def test_marker_watches_an_installed_pack_until_it_is_marked_stable(self):
+        report = self.marker_report("Small")
+        # present once the pack is installed (a reset now counts against it) ...
+        self.assertEqual(report["after load"], 1)
+        # ... gone once the firmware has run with it for a while ...
+        self.assertEqual(report["after stable"], 0)
+        # ... back for the reload after an app, and gone when the pack is dropped
+        self.assertEqual(report["after reload"], 1)
+        self.assertEqual(report["after deselect"], 0)
+
+    def test_no_marker_for_a_load_that_installs_nothing(self):
+        os.makedirs(os.path.join(self.root, "ext", "asset_packs", "Empty"))
+        for name in ("Empty", "Missing"):
+            report = self.marker_report(name)
+            self.assertEqual(report["after load"], 0, name)
+            self.assertEqual(report["after reload"], 0, name)
+
+    def test_crashed_load_marker_is_still_reported(self):
+        # What a load that was killed halfway leaves behind
+        marker = os.path.join(self.root, "int", ".asset_pack_loading")
+        with open(marker, "wb"):
+            pass
+        self.assertIn("crash 1 0", self.run_host("crash").stdout)
+        self.assertFalse(os.path.exists(marker))
 
     def test_drawing_against_unload_reload_switch_asan(self):
         result = self.run_host("stress", "Real", 2)
@@ -1123,6 +1150,100 @@ class FontHostTests(TempDirCase):
                 caught = True
                 break
         self.assertTrue(caught, "the fuzz did not notice a check that ignores the glyph chain")
+
+
+class SettingsMigrationTests(TempDirCase):
+    """applications/services/desktop/desktop_settings.c: every older settings file must still
+    load, with the asset pack setting empty, and a damaged one must fall back to defaults."""
+
+    @classmethod
+    def setUpClass(cls):
+        import subprocess
+
+        if not _have_sanitizer("address,undefined"):
+            raise unittest.SkipTest("gcc with AddressSanitizer is not available")
+        cls.build_dir = tempfile.mkdtemp(prefix="aps_")
+        cls.exe = os.path.join(cls.build_dir, "settings_host")
+        host = os.path.join(REPO_ROOT, "scripts", "host_tests")
+        subprocess.check_call(
+            [
+                "gcc", "-std=gnu11", "-g", "-O1", "-fsanitize=address,undefined", "-Wall", "-Wextra",
+                "-I", os.path.join(host, "stubs"),
+                "-I", os.path.join(REPO_ROOT, "applications", "services"),
+                "-I", os.path.join(REPO_ROOT, "applications", "services", "storage"),
+                "-I", os.path.join(REPO_ROOT, "lib", "toolbox"),
+                "-I", os.path.join(REPO_ROOT, "furi"),
+                "-I", os.path.join(REPO_ROOT, "lib"),
+                "-I", REPO_ROOT,
+                "-o", cls.exe,
+                os.path.join(host, "settings_host.c"),
+                os.path.join(REPO_ROOT, "applications", "services", "desktop", "desktop_settings.c"),
+                os.path.join(REPO_ROOT, "lib", "toolbox", "saved_struct.c"),
+                os.path.join(host, "stubs", "storage_host.c"),
+                "-lpthread",
+            ],
+            stderr=subprocess.DEVNULL,
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.build_dir, True)
+
+    def migrate(self, version, variant=""):
+        import subprocess
+
+        root = self.p("root")
+        os.makedirs(os.path.join(root, "int"), exist_ok=True)
+        r = subprocess.run(
+            [self.exe, "migrate", root, str(version), variant],
+            capture_output=True, text=True, errors="replace",
+        )
+        self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+        out = {}
+        for line in r.stdout.splitlines():
+            key, _, value = line.partition(" ")
+            out[key] = value
+        with open(os.path.join(root, "int", ".desktop.settings"), "rb") as f:
+            out["file_version"] = f.read(2)[1]
+        return out
+
+    def assertKept(self, out):
+        self.assertEqual(out["auto_lock"], "90000")
+        self.assertEqual(out["battery"], "3")
+        self.assertEqual(out["clock"], "1")
+        self.assertEqual(out["favorite0"], "/ext/apps/Tools/example.fap")
+        self.assertEqual(out["dummy_last"], "Snake Game")
+
+    def test_v14_file_loads_with_no_pack(self):
+        out = self.migrate(14)
+        self.assertKept(out)
+        self.assertEqual((out["usb"], out["menu_style_len"], out["pack_len"]), ("0", "0", "0"))
+
+    def test_v17_file_loads_with_no_pack(self):
+        out = self.migrate(17)
+        self.assertKept(out)
+        self.assertEqual((out["usb"], out["menu_style_len"], out["pack_len"]), ("1", "0", "0"))
+
+    def test_v18_file_keeps_everything_and_gains_an_empty_pack(self):
+        out = self.migrate(18)
+        self.assertKept(out)
+        self.assertEqual(out["menu_style"], "Test.fal")
+        self.assertEqual(out["pack_len"], "0")
+
+    def test_v19_file_round_trips_the_pack(self):
+        out = self.migrate(19)
+        self.assertKept(out)
+        self.assertEqual((out["menu_style"], out["pack"]), ("Test.fal", "Hadal"))
+        self.assertEqual(out["file_version"], 19)
+
+    def test_strings_without_a_terminator_are_cut_to_fit(self):
+        out = self.migrate(19, "unterminated")
+        self.assertEqual((out["menu_style_len"], out["pack_len"]), ("31", "31"))
+
+    def test_a_damaged_file_gives_defaults_and_is_rewritten_as_v19(self):
+        out = self.migrate(19, "badsum")
+        self.assertEqual((out["auto_lock"], out["pack_len"], out["menu_style_len"]), ("0", "0", "0"))
+        self.assertEqual(out["file_version"], 19)
 
 
 class IconIndexTests(TempDirCase):

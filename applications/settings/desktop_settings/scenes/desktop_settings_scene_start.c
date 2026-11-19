@@ -13,6 +13,7 @@ typedef enum {
     DesktopSettingsBatteryDisplay,
     DesktopSettingsClockDisplay,
     DesktopSettingsMenuStyle,
+    DesktopSettingsAssetPack,
     DesktopSettingsChangeName,
     DesktopSettingsHappyMode,
     DesktopSettingsFavoriteLeftShort,
@@ -94,6 +95,20 @@ static void desktop_settings_scene_start_menu_style_changed(VariableItem* item) 
     }
 }
 
+static void desktop_settings_scene_start_asset_pack_changed(VariableItem* item) {
+    DesktopSettingsApp* app = variable_item_get_context(item);
+    uint8_t index = variable_item_get_current_value_index(item);
+
+    if(index == 0) {
+        variable_item_set_current_value_text(item, "None");
+        app->settings.active_asset_pack[0] = '\0';
+    } else {
+        const char* name = app->asset_packs[index - 1];
+        variable_item_set_current_value_text(item, name);
+        strlcpy(app->settings.active_asset_pack, name, sizeof(app->settings.active_asset_pack));
+    }
+}
+
 static void desktop_settings_scene_start_var_list_enter_callback(void* context, uint32_t index) {
     DesktopSettingsApp* app = context;
     view_dispatcher_send_custom_event(app->view_dispatcher, index);
@@ -146,6 +161,8 @@ void desktop_settings_scene_start_on_enter(void* context) {
         view_dispatcher_show_loading(app->view_dispatcher);
         desktop_settings_menu_styles_load(app);
     }
+    // Names only, a single directory read; a pack added since the last visit is picked up
+    desktop_settings_asset_packs_load(app);
 
     variable_item_list_add(variable_item_list, "PIN Setup", 1, NULL, NULL);
 
@@ -226,6 +243,30 @@ void desktop_settings_scene_start_on_enter(void* context) {
         menu_style_text = app->menu_styles_loaded ? "Missing" : "Unknown";
     }
     variable_item_set_current_value_text(item, menu_style_text);
+
+    item = variable_item_list_add(
+        variable_item_list,
+        "Asset Pack",
+        app->asset_packs_count + 1, // Plus "None"; ASSET_PACKS_MAX keeps this in a uint8_t
+        desktop_settings_scene_start_asset_pack_changed,
+        app);
+
+    value_index = 0;
+    for(size_t i = 0; i < app->asset_packs_count; i++) {
+        if(strcmp(app->asset_packs[i], app->settings.active_asset_pack) == 0) {
+            value_index = i + 1;
+            break;
+        }
+    }
+    variable_item_set_current_value_index(item, value_index);
+    const char* asset_pack_text = "None";
+    if(value_index) {
+        asset_pack_text = app->asset_packs[value_index - 1];
+    } else if(app->settings.active_asset_pack[0]) {
+        // Selected, but its folder is gone (or the card could not be read)
+        asset_pack_text = app->asset_packs_loaded ? "Missing" : "Unknown";
+    }
+    variable_item_set_current_value_text(item, asset_pack_text);
 
     variable_item_list_add(variable_item_list, "Change Flipper Name", 0, NULL, app);
 

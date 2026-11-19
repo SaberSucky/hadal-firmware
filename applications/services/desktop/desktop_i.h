@@ -78,6 +78,8 @@ struct Desktop {
 
     FuriTimer* auto_lock_timer;
     FuriTimer* update_clock_timer;
+    /** Ends the asset pack crash watch once the pack has been in use for a while. */
+    FuriTimer* asset_pack_stable_timer;
 
     AnimationManager* animation_manager;
     FuriSemaphore* animation_semaphore;
@@ -86,6 +88,7 @@ struct Desktop {
     DesktopSettings settings;
 
     bool in_transition;
+    bool asset_pack_guard_done;
     bool app_running;
     bool locked;
 };

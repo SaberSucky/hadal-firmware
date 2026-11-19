@@ -49,6 +49,15 @@ uint16_t storage_file_read(File* file, void* buff, uint16_t bytes_to_read) {
     return (uint16_t)fread(buff, 1, bytes_to_read, file->file);
 }
 
+uint16_t storage_file_write(File* file, const void* buff, uint16_t bytes_to_write) {
+    return (uint16_t)fwrite(buff, 1, bytes_to_write, file->file);
+}
+
+const char* storage_file_get_error_desc(File* file) {
+    (void)file;
+    return "host storage error";
+}
+
 uint64_t storage_file_size(File* file) {
     long pos = ftell(file->file);
     fseek(file->file, 0, SEEK_END);

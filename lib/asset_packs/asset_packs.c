@@ -11,7 +11,10 @@
 
 #define TAG "AssetPacks"
 
-/** Marker file present while a pack is loading; still there at boot means the load crashed. */
+/**
+ * Marker file present from the start of a load until the pack has been drawn with for a while
+ * (asset_packs_mark_stable()). Still there at boot means the firmware died in that time.
+ */
 #define ASSET_PACKS_LOADING_MARKER "/int/.asset_pack_loading"
 
 /* Directory recursion plus snprintf: kept generous, the stack is only held while loading */
@@ -57,6 +60,8 @@ typedef struct {
     char name[ASSET_PACK_NAME_SIZE]; /**< active pack, empty for none */
     bool icons_unloaded;
     FuriThread* loader;
+    /** A loader thread is running. Set when it is started, cleared by it just before it ends. */
+    atomic_bool loading;
     AssetPacksChangedCallback changed_callback;
     void* changed_context;
 } AssetPacks;
@@ -551,6 +556,12 @@ typedef struct {
     char name[ASSET_PACK_NAME_SIZE];
 } LoaderContext;
 
+static void clear_marker(void) {
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    storage_simply_remove(storage, ASSET_PACKS_LOADING_MARKER);
+    furi_record_close(RECORD_STORAGE);
+}
+
 static void write_marker(Storage* storage) {
     File* file = storage_file_alloc(storage);
     if(storage_file_open(file, ASSET_PACKS_LOADING_MARKER, FSAM_WRITE, FSOM_CREATE_ALWAYS)) {
@@ -626,7 +637,9 @@ static int32_t loader_thread(void* context) {
         free(state.fonts[slot]); // only those that were not installed are still here
     }
 
-    storage_simply_remove(state.storage, ASSET_PACKS_LOADING_MARKER);
+    // A pack that was installed keeps the marker until it has proved stable in use. One that
+    // was not (nothing to load, or cancelled) has nothing that could crash, so no marker.
+    if(!installed) storage_simply_remove(state.storage, ASSET_PACKS_LOADING_MARKER);
     furi_record_close(RECORD_STORAGE);
 
     FURI_LOG_I(
@@ -640,6 +653,7 @@ static int32_t loader_thread(void* context) {
         (unsigned long)(furi_get_tick() - started),
         installed ? "" : " (not installed)");
 
+    atomic_store(&asset_packs.loading, false);
     if(installed) notify_changed();
     free(loader);
     return 0;
@@ -652,13 +666,17 @@ static void start_loader(bool load_fonts) {
         furi_thread_free(asset_packs.loader);
         asset_packs.loader = NULL;
     }
-    if(!asset_packs.name[0]) return;
+    if(!asset_packs.name[0]) {
+        clear_marker(); // no pack, nothing that could have crashed
+        return;
+    }
 
     LoaderContext* loader = malloc(sizeof(LoaderContext));
     loader->generation = atomic_load_explicit(&asset_packs.generation, memory_order_relaxed);
     loader->load_fonts = load_fonts;
     strlcpy(loader->name, asset_packs.name, sizeof(loader->name));
 
+    atomic_store(&asset_packs.loading, true);
     asset_packs.loader =
         furi_thread_alloc_ex("AssetPackLoader", LOADER_STACK_SIZE, loader_thread, loader);
     furi_thread_set_priority(asset_packs.loader, FuriThreadPriorityLow);
@@ -707,6 +725,13 @@ void asset_packs_reload_icons(void) {
     furi_mutex_release(asset_packs.mutex);
 
     if(reload) start_loader(fonts_missing);
+}
+
+void asset_packs_mark_stable(void) {
+    ensure_init();
+    // A load still running will notify when it is done, which is the next chance to ask
+    if(atomic_load(&asset_packs.loading)) return;
+    clear_marker();
 }
 
 bool asset_packs_previous_load_crashed(void) {

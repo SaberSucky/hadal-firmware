@@ -8,7 +8,9 @@
 #include <storage/storage.h>
 
 #include <assets_icons.h>
+#include <asset_packs.h>
 
+#include "animations/animation_storage.h"
 #include "scenes/desktop_scene.h"
 #include "scenes/desktop_scene_locked.h"
 
@@ -16,10 +18,18 @@
 
 #define TAG "Desktop"
 
+/** How long a loaded asset pack must run before a reset stops counting against it. */
+#define ASSET_PACK_STABLE_MS 10000
+
+_Static_assert(
+    sizeof(((DesktopSettings*)0)->active_asset_pack) == ASSET_PACK_NAME_SIZE,
+    "the settings field and the asset pack name buffer must be the same size");
+
 static void desktop_auto_lock_arm(Desktop*);
 static void desktop_auto_lock_inhibit(Desktop*);
 static void desktop_start_auto_lock_timer(Desktop*);
 static void desktop_apply_settings(Desktop*);
+static void desktop_apply_asset_pack(Desktop*);
 
 static void desktop_loader_callback(const void* message, void* context) {
     furi_assert(context);
@@ -32,6 +42,17 @@ static void desktop_loader_callback(const void* message, void* context) {
     } else if(event->type == LoaderEventTypeNoMoreAppsInQueue) {
         view_dispatcher_send_custom_event(desktop->view_dispatcher, DesktopGlobalAfterAppFinished);
     }
+}
+
+/** Called by the asset pack manager from whichever thread changed something. */
+static void desktop_asset_packs_changed_callback(void* context) {
+    Desktop* desktop = context;
+    view_dispatcher_send_custom_event(desktop->view_dispatcher, DesktopGlobalAssetPacksChanged);
+}
+
+static void desktop_asset_pack_stable_timer_callback(void* context) {
+    Desktop* desktop = context;
+    view_dispatcher_send_custom_event(desktop->view_dispatcher, DesktopGlobalAssetPackStable);
 }
 
 static void desktop_storage_callback(const void* message, void* context) {
@@ -133,6 +154,9 @@ static bool desktop_custom_event_callback(void* context, uint32_t event) {
             animation_manager_unload_and_stall_animation(desktop->animation_manager);
         }
 
+        // Give the app the RAM the pack's icons hold. They come back when it is done.
+        asset_packs_unload_icons();
+
         desktop_auto_lock_inhibit(desktop);
 
         desktop->app_running = true;
@@ -141,6 +165,7 @@ static bool desktop_custom_event_callback(void* context, uint32_t event) {
 
     } else if(event == DesktopGlobalAfterAppFinished) {
         animation_manager_load_and_continue_animation(desktop->animation_manager);
+        asset_packs_reload_icons();
         desktop_auto_lock_arm(desktop);
         desktop->app_running = false;
 
@@ -160,6 +185,17 @@ static bool desktop_custom_event_callback(void* context, uint32_t event) {
     } else if(event == DesktopGlobalReloadSettings) {
         desktop_settings_load(&desktop->settings);
         desktop_apply_settings(desktop);
+
+    } else if(event == DesktopGlobalAssetPacksChanged) {
+        // Redraw everything with the new icons and fonts, and start the crash watch's clock
+        gui_update(desktop->gui);
+        if(desktop->settings.active_asset_pack[0]) {
+            furi_timer_restart(
+                desktop->asset_pack_stable_timer, furi_ms_to_ticks(ASSET_PACK_STABLE_MS));
+        }
+
+    } else if(event == DesktopGlobalAssetPackStable) {
+        asset_packs_mark_stable();
 
     } else {
         return scene_manager_handle_custom_event(desktop->scene_manager, event);
@@ -236,6 +272,52 @@ static void desktop_clock_timer_callback(void* context) {
     view_port_enabled_set(desktop->clock_viewport, clock_enabled);
 }
 
+/** Where the active pack keeps its idle animations; false if it has none (no manifest). */
+static bool desktop_asset_pack_animation_dir(Desktop* desktop, char* directory, size_t size) {
+    const char* name = desktop->settings.active_asset_pack;
+    if(!name[0]) return false;
+
+    char manifest[128];
+    int dir_length = snprintf(directory, size, ASSET_PACKS_PATH "/%s/Anims", name);
+    if(dir_length < 0 || (size_t)dir_length >= size) return false;
+    int manifest_length = snprintf(manifest, sizeof(manifest), "%s/manifest.txt", directory);
+    if(manifest_length < 0 || (size_t)manifest_length >= sizeof(manifest)) return false;
+    return storage_file_exists(desktop->storage, manifest);
+}
+
+/** Make the asset pack in the settings the active one. Does nothing if it already is. */
+static void desktop_apply_asset_pack(Desktop* desktop) {
+    if(!desktop->asset_pack_guard_done) {
+        desktop->asset_pack_guard_done = true;
+        // The marker is left by a load that never finished, or by a pack that was reset within
+        // seconds of being installed. Either way the pack is the first suspect: turn it off.
+        if(asset_packs_previous_load_crashed() && desktop->settings.active_asset_pack[0]) {
+            FURI_LOG_E(
+                TAG,
+                "The last start ended with asset pack '%s' loading, turning it off",
+                desktop->settings.active_asset_pack);
+            desktop->settings.active_asset_pack[0] = '\0';
+            desktop_settings_save(&desktop->settings);
+        }
+    }
+
+    char active[ASSET_PACK_NAME_SIZE];
+    asset_packs_get_active(active, sizeof(active));
+    if(strcmp(active, desktop->settings.active_asset_pack) == 0) return;
+
+    asset_packs_set_active(desktop->settings.active_asset_pack);
+
+    // The pack's idle animations, or /ext/dolphin when it has none
+    char directory[96];
+    if(desktop_asset_pack_animation_dir(desktop, directory, sizeof(directory))) {
+        animation_storage_set_directory(directory);
+    } else {
+        animation_storage_set_directory(NULL);
+    }
+    // Start the new set now if one is playing; while an app runs, it starts when it returns
+    animation_manager_new_idle_process(desktop->animation_manager);
+}
+
 static void desktop_apply_settings(Desktop* desktop) {
     desktop->in_transition = true;
 
@@ -247,6 +329,8 @@ static void desktop_apply_settings(Desktop* desktop) {
         desktop->animation_manager, desktop->settings.dummy_mode);
 
     loader_set_menu_style(desktop->loader, desktop->settings.menu_style);
+
+    desktop_apply_asset_pack(desktop);
 
     if(!desktop->app_running && !desktop->locked) {
         desktop_auto_lock_arm(desktop);
@@ -392,6 +476,11 @@ static Desktop* desktop_alloc(void) {
         furi_timer_alloc(desktop_auto_lock_timer_callback, FuriTimerTypeOnce, desktop);
 
     desktop->status_pubsub = furi_pubsub_alloc();
+
+    desktop->asset_pack_guard_done = false;
+    desktop->asset_pack_stable_timer =
+        furi_timer_alloc(desktop_asset_pack_stable_timer_callback, FuriTimerTypeOnce, desktop);
+    asset_packs_set_changed_callback(desktop_asset_packs_changed_callback, desktop);
 
     desktop->update_clock_timer =
         furi_timer_alloc(desktop_clock_timer_callback, FuriTimerTypePeriodic, desktop);

@@ -34,11 +34,19 @@ typedef struct {
     FuriString* name;
 } DesktopSettingsMenuStyleEntry;
 
+/** Asset pack folder names are the size of the setting that stores them. */
+#define DESKTOP_SETTINGS_ASSET_PACK_NAME_SIZE \
+    sizeof(((DesktopSettings*)0)->active_asset_pack)
+
 typedef struct {
     DesktopSettings settings;
     DesktopSettingsMenuStyleEntry* menu_styles;
     size_t menu_styles_count;
     bool menu_styles_loaded;
+
+    char (*asset_packs)[DESKTOP_SETTINGS_ASSET_PACK_NAME_SIZE]; /**< sorted folder names */
+    size_t asset_packs_count;
+    bool asset_packs_loaded;
 
     Gui* gui;
     DialogsApp* dialogs;
@@ -72,3 +80,7 @@ typedef struct {
  * rather than remembered.
  */
 void desktop_settings_menu_styles_load(DesktopSettingsApp* app);
+
+/** Scan /ext/asset_packs for pack folders into app->asset_packs. Cheap: names only. Sets
+ * asset_packs_loaded only when the directory was read to the end, or is simply not there. */
+void desktop_settings_asset_packs_load(DesktopSettingsApp* app);

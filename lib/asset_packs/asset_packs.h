@@ -47,10 +47,18 @@ void asset_packs_unload_icons(void);
 void asset_packs_reload_icons(void);
 
 /**
- * True if the last pack load did not finish, i.e. it crashed the firmware. Clears that state, so
- * it answers true only once. Call before asset_packs_set_active() at boot.
+ * True if the firmware died while a pack was loading or soon after (see asset_packs_mark_stable()),
+ * i.e. the pack is the likely cause. Clears that state, so it answers true only once. Call
+ * before asset_packs_set_active() at boot, and if it says yes, do not select the pack again.
  */
 bool asset_packs_previous_load_crashed(void);
+
+/**
+ * The firmware has run with the loaded pack long enough: end the crash watch. Until then a
+ * pack that was installed is on probation, and a reset counts against it. Does nothing while a
+ * load is still running, which will announce itself through the changed callback.
+ */
+void asset_packs_mark_stable(void);
 
 void asset_packs_set_changed_callback(AssetPacksChangedCallback callback, void* context);
 

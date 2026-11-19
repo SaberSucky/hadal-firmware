@@ -8,7 +8,8 @@
 
 #define DESKTOP_SETTINGS_VER_14 (14)
 #define DESKTOP_SETTINGS_VER_17 (17)
-#define DESKTOP_SETTINGS_VER    (18)
+#define DESKTOP_SETTINGS_VER_18 (18)
+#define DESKTOP_SETTINGS_VER    (19)
 
 #define DESKTOP_SETTINGS_PATH  INT_PATH(DESKTOP_SETTINGS_FILE_NAME)
 #define DESKTOP_SETTINGS_MAGIC (0x17)
@@ -21,6 +22,13 @@ typedef struct {
     FavoriteApp favorite_apps[FavoriteAppNumber];
     FavoriteApp dummy_apps[DummyAppNumber];
 } DesktopSettingsV14;
+
+// v18 files hold everything up to the asset pack name: 8 bytes of numbers, the favorite and
+// dummy app paths and the menu style
+_Static_assert(
+    offsetof(DesktopSettings, active_asset_pack) ==
+        8 + sizeof(FavoriteApp) * (FavoriteAppNumber + DummyAppNumber) + 32,
+    "DesktopSettings before active_asset_pack must still be the v18 layout");
 
 // Actual size of DesktopSettings v13
 //static_assert(sizeof(DesktopSettingsV13) == 1234);
@@ -38,6 +46,7 @@ static void desktop_settings_terminate_strings(DesktopSettings* settings) {
     desktop_settings_terminate_apps(settings->favorite_apps, FavoriteAppNumber);
     desktop_settings_terminate_apps(settings->dummy_apps, DummyAppNumber);
     settings->menu_style[sizeof(settings->menu_style) - 1] = '\0';
+    settings->active_asset_pack[sizeof(settings->active_asset_pack) - 1] = '\0';
 }
 
 void desktop_settings_load(DesktopSettings* settings) {
@@ -57,6 +66,19 @@ void desktop_settings_load(DesktopSettings* settings) {
                 DESKTOP_SETTINGS_MAGIC,
                 DESKTOP_SETTINGS_VER);
 
+        } else if(version == DESKTOP_SETTINGS_VER_18) {
+            // v19 appended the asset pack name; everything before it is unchanged
+            success = saved_struct_load(
+                DESKTOP_SETTINGS_PATH,
+                settings,
+                offsetof(DesktopSettings, active_asset_pack),
+                DESKTOP_SETTINGS_MAGIC,
+                DESKTOP_SETTINGS_VER_18);
+
+            if(success) {
+                memset(settings->active_asset_pack, 0, sizeof(settings->active_asset_pack));
+            }
+
         } else if(version == DESKTOP_SETTINGS_VER_17) {
             success = saved_struct_load(
                 DESKTOP_SETTINGS_PATH,
@@ -67,6 +89,7 @@ void desktop_settings_load(DesktopSettings* settings) {
 
             if(success) {
                 memset(settings->menu_style, 0, sizeof(settings->menu_style));
+                memset(settings->active_asset_pack, 0, sizeof(settings->active_asset_pack));
             }
 
         } else if(version == DESKTOP_SETTINGS_VER_14) {
@@ -92,6 +115,7 @@ void desktop_settings_load(DesktopSettings* settings) {
                 memcpy(
                     settings->dummy_apps, settings_v14->dummy_apps, sizeof(settings->dummy_apps));
                 memset(settings->menu_style, 0, sizeof(settings->menu_style));
+                memset(settings->active_asset_pack, 0, sizeof(settings->active_asset_pack));
             }
 
             free(settings_v14);
