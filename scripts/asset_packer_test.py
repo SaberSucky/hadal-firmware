@@ -2256,5 +2256,265 @@ class RealAssetsTests(TempDirCase):
         self.assertEqual(len(hashes), len(index), "path hashes must be unique")
 
 
+# ---- universal remotes: trimming, on-air keys, sending order ----
+
+IR_ASSETS = os.path.join(REPO_ROOT, "applications", "main", "infrared", "resources", "infrared", "assets")
+IR_SCENES = os.path.join(REPO_ROOT, "applications", "main", "infrared", "scenes")
+IR_LIBRARY_SCENES = {"tv.ir": "tv", "audio.ir": "audio", "projectors.ir": "projector", "fans.ir": "fan", "ac.ir": "ac", "leds.ir": "leds"}
+
+
+def ir_registered_names(library):
+    with open(os.path.join(IR_SCENES, f"infrared_scene_universal_{IR_LIBRARY_SCENES[library]}.c")) as f:
+        return re.findall(r'add_record\(\s*brute_force,\s*i\+\+,\s*"([^"]+)"', f.read())
+
+
+def ir_library_signals(library):
+    import rank_ir_library
+
+    with open(os.path.join(IR_ASSETS, library)) as f:
+        return rank_ir_library.parse_ir_signals(f.read())
+
+
+class IrRawTrimTests(TempDirCase):
+    """lib/infrared/signal/infrared_raw_trim.c, which decides how much of a raw code the universal
+    remote sends and the silence before it: the real file under ASan/UBSan, fuzzed, and against
+    the timing model of scripts/rank_ir_library.py on every raw code of the six libraries."""
+
+    @classmethod
+    def setUpClass(cls):
+        import subprocess
+
+        if not _have_sanitizer("address,undefined"):
+            raise unittest.SkipTest("gcc with AddressSanitizer is not available")
+        cls.build_dir = tempfile.mkdtemp(prefix="irt_")
+        cls.exe = os.path.join(cls.build_dir, "ir_trim_host")
+        subprocess.check_call(
+            [
+                "gcc", "-std=gnu11", "-g", "-O1", "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
+                "-Wall", "-Wextra", "-Werror",
+                "-I", os.path.join(REPO_ROOT, "lib", "infrared", "signal"),
+                "-o", cls.exe,
+                os.path.join(REPO_ROOT, "scripts", "host_tests", "ir_trim_host.c"),
+                os.path.join(REPO_ROOT, "lib", "infrared", "signal", "infrared_raw_trim.c"),
+            ]
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.build_dir, True)
+
+    def run_host(self, *args, stdin=None):
+        import subprocess
+
+        r = subprocess.run([self.exe, *args], input=stdin, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+        return r.stdout
+
+    def test_fuzz(self):
+        # a cut is always at a frame gap and ends on a mark, Turbo never sends more than Fast,
+        # the turbo silence stays within 20..50 ms, whatever the timings
+        self.assertIn("ok 100000", self.run_host("fuzz", "100000", "7"))
+        self.assertIn("ok 100000", self.run_host("fuzz", "100000", "99"))
+
+    def test_firmware_and_model_agree_on_every_library_raw_code(self):
+        import rank_ir_library as r
+
+        signals = []
+        for library in IR_LIBRARY_SCENES:
+            signals += [r.raw_timings(s) for s in ir_library_signals(library) if s.get("type") == "raw"]
+        self.assertGreater(len(signals), 1000)
+        out = self.run_host(stdin="\n".join(" ".join(map(str, t)) for t in signals) + "\n").split("\n")
+        for t, line in zip(signals, out):
+            fast, turbo, gap = map(int, line.split())
+            cut = r.raw_cut(t, "turbo")
+            self.assertEqual((fast, turbo, gap), (r.raw_cut(t, "fast"), cut, r.raw_turbo_gap_us(t, cut)), t[:10])
+
+    def test_shapes(self):
+        nec = [9000, 4500] + [560, 560] * 32 + [560]
+        repeat = [9000, 2250, 560]
+        sony = [2400, 600] + [1200, 600] * 11 + [600]
+        rows = [
+            nec,  # one frame: sent whole
+            nec + [40000] + repeat + [96000] + repeat,  # NEC + repeats: Fast keeps them, Turbo drops them
+            nec + [40000] + nec + [40000] + nec,  # three identical frames: Fast two, Turbo one
+            sony + [20000] + sony + [20000] + sony + [20000] + sony,  # Sony: three in both modes
+            [500, 500, 500],  # tiny
+        ]
+        out = [tuple(map(int, l.split())) for l in self.run_host(stdin="\n".join(" ".join(map(str, t)) for t in rows) + "\n").split("\n") if l]
+        n = len(nec)
+        s = len(sony)
+        self.assertEqual(out[0], (n, n, 45000))
+        self.assertEqual(out[1][:2], (n + 8, n))
+        self.assertEqual(out[2][:2], (2 * n + 1, n))
+        self.assertEqual(out[3][:2], (3 * s + 2, 3 * s + 2))
+        self.assertEqual(out[4], (3, 3, 20000))
+
+
+class IrSignalKeyTests(TempDirCase):
+    """lib/infrared/signal/infrared_signal_key.c, which tells the universal remote that two
+    library entries send the same code: built with the real encoders and decoders."""
+
+    @classmethod
+    def setUpClass(cls):
+        import subprocess
+
+        if not _have_sanitizer("address,undefined"):
+            raise unittest.SkipTest("gcc with AddressSanitizer is not available")
+        cls.build_dir = tempfile.mkdtemp(prefix="irk_")
+        cls.exe = os.path.join(cls.build_dir, "ir_key_host")
+        stubs = os.path.join(REPO_ROOT, "scripts", "host_tests", "stubs_ir")
+        codec_dir = os.path.join(REPO_ROOT, "lib", "infrared", "encoder_decoder")
+        objects = []
+        for root, _, files in os.walk(codec_dir):
+            for name in sorted(files):
+                if name.endswith(".c"):
+                    obj = os.path.join(cls.build_dir, name[:-2] + ".o")
+                    # upstream code: a shift into the sign bit (NEC/Samsung encoders) and a
+                    # misaligned load (Pioneer decoder) are fine on the Cortex-M4, not checked here
+                    subprocess.check_call(
+                        [
+                            "gcc", "-std=gnu11", "-c", "-g", "-O1", "-fsanitize=address,undefined",
+                            "-fno-sanitize=shift,alignment", "-fno-sanitize-recover=all",
+                            "-I", stubs, "-I", codec_dir, "-o", obj, os.path.join(root, name),
+                        ]
+                    )
+                    objects.append(obj)
+        subprocess.check_call(
+            [
+                "gcc", "-std=gnu11", "-g", "-O1", "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
+                "-Wall", "-Wextra", "-Werror",
+                "-I", stubs, "-I", codec_dir, "-I", os.path.join(REPO_ROOT, "lib", "infrared", "signal"),
+                "-o", cls.exe,
+                os.path.join(REPO_ROOT, "scripts", "host_tests", "ir_key_host.c"),
+                os.path.join(REPO_ROOT, "lib", "infrared", "signal", "infrared_signal_key.c"),
+                *objects,
+            ]
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.build_dir, True)
+
+    def keys(self, lines):
+        import subprocess
+
+        r = subprocess.run([self.exe], input="\n".join(lines) + "\n", capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+        return r.stdout.split()
+
+    def test_selftest(self):
+        # aliases (NEC / NECext, NEC42 / NEC42ext), every protocol's own encoding read back as a
+        # capture, held buttons, captures with an unknown frame or with two different codes
+        import subprocess
+
+        r = subprocess.run([self.exe, "selftest", "2000", "11"], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+        self.assertTrue(r.stdout.strip().endswith("ok"), r.stdout[-500:])
+        for line in r.stdout.splitlines():
+            if line.startswith("roundtrip"):
+                done, tried = map(int, line.split()[-1].split("/"))
+                self.assertEqual(done, tried, line)
+
+    def test_skewed_capture_is_its_clean_code(self):
+        # a capture with a long leader and fat marks, as other receivers record them
+        bits = 0xF708_FB04  # NEC address 0x04, command 0x08 (LG power): addr, ~addr, cmd, ~cmd, LSB first
+        t = [9250, 4400]
+        for i in range(32):
+            t += [680, 1640 if bits >> i & 1 else 470]
+        t += [680]
+        lines = ["P NEC 4 8", "P NECext 64260 63240", "R 38000 " + " ".join(map(str, t)),
+                 "R 38000 " + " ".join(map(str, t + [40000, 9200, 2200, 650])), "P NEC 4 9"]
+        k = self.keys(lines)
+        self.assertEqual(len(set(k[:4])), 1, k)
+        self.assertNotEqual(k[0], k[4])
+
+    def test_libraries_parsed_codes_agree_with_the_model(self):
+        # for parsed codes the firmware and scripts/rank_ir_library.py must merge exactly the same
+        # pairs; raw captures may differ (the firmware knows more protocols), and are counted
+        import rank_ir_library as r
+
+        for library in IR_LIBRARY_SCENES:
+            names = set(ir_registered_names(library))
+            signals = [s for s in ir_library_signals(library) if s["name"] in names]
+            lines = [
+                f"R {s.get('frequency', 38000)} {s['data']}" if s.get("type") == "raw"
+                else f"P {s['protocol']} {r.le_hex(s['address'])} {r.le_hex(s['command'])}"
+                for s in signals
+            ]
+            keys = self.keys(lines)
+            self.assertEqual(len(keys), len(signals))
+            parsed = [(k, r.signal_key(s)) for k, s in zip(keys, signals) if s.get("type") != "raw"]
+            by_c, by_py = {}, {}
+            for ck, pk in parsed:
+                by_c.setdefault(ck, set()).add(pk)
+                by_py.setdefault(pk, set()).add(ck)
+            self.assertTrue(all(len(v) == 1 for v in by_c.values()), library)
+            self.assertTrue(all(len(v) == 1 for v in by_py.values()), library)
+
+
+class IrLibraryOrderTests(TempDirCase):
+    """scripts/rank_ir_library.py and the .order files it made: the firmware only uses an order
+    file made for the exact library next to it, so they must stay in step."""
+
+    def test_order_files_match_their_libraries(self):
+        import rank_ir_library as r
+
+        for library in IR_LIBRARY_SCENES:
+            path = os.path.join(IR_ASSETS, library)
+            order = r.read_order(path)
+            self.assertIsNotNone(order, f"{library}: no usable order file (run scripts/rank_ir_library.py order)")
+            counts = {}
+            for s in ir_library_signals(library):
+                counts[s["name"]] = counts.get(s["name"], 0) + 1
+            for name in ir_registered_names(library):
+                self.assertIn(name, order, f"{library}: {name} has no order")
+                self.assertEqual(sorted(order[name]), list(range(counts[name])), f"{library} {name}")
+
+    def test_most_used_first_ties_keep_library_order(self):
+        import rank_ir_library as r
+
+        signals = [
+            {"name": "Power", "type": "parsed", "protocol": "NEC", "address": "01 00 00 00", "command": "01 00 00 00"},
+            {"name": "Power", "type": "parsed", "protocol": "NEC", "address": "02 00 00 00", "command": "01 00 00 00"},
+            {"name": "Mute", "type": "parsed", "protocol": "NEC", "address": "02 00 00 00", "command": "05 00 00 00"},
+            {"name": "Power", "type": "parsed", "protocol": "NEC", "address": "03 00 00 00", "command": "01 00 00 00"},
+            {"name": "Power", "type": "parsed", "protocol": "NECext", "address": "02 FD 00 00", "command": "01 FE 00 00"},
+        ]
+        counts = {r.signal_key(signals[3]): 5, r.signal_key(signals[1]): 2}
+        order = r.button_order(signals, counts)
+        self.assertEqual(order["Power"], [2, 1, 3, 0])  # 03 (5 models), 02 and its NECext twin, then 01
+        self.assertEqual(order["Mute"], [0])
+        sent = r.sending_order(signals, "Power", order)
+        self.assertEqual([s["address"] for s in sent], ["03 00 00 00", "02 00 00 00", "01 00 00 00"])
+
+    def test_parsed_replaces_a_raw_capture_of_the_same_code(self):
+        import rank_ir_library as r
+
+        t = [9000, 4500]
+        bits = 0xF708_FB04  # NEC 0x04 / 0x08
+        for i in range(32):
+            t += [560, 1690 if bits >> i & 1 else 560]
+        t += [560]
+        signals = [
+            {"name": "Power", "type": "raw", "frequency": "38000", "duty_cycle": "0.33", "data": " ".join(map(str, t))},
+            {"name": "Power", "type": "parsed", "protocol": "Samsung32", "address": "07 00 00 00", "command": "02 00 00 00"},
+            {"name": "Power", "type": "parsed", "protocol": "NEC", "address": "04 00 00 00", "command": "08 00 00 00"},
+        ]
+        sent = r.sending_order(signals, "Power")
+        self.assertEqual([s.get("protocol", "raw") for s in sent], ["NEC", "Samsung32"])
+
+    def test_stale_order_file_is_ignored(self):
+        import rank_ir_library as r
+
+        lib = self.p("x.ir")
+        with open(lib, "w") as f:
+            f.write("Filetype: IR library file\nVersion: 1\n#\nname: Power\ntype: parsed\nprotocol: NEC\naddress: 01 00 00 00\ncommand: 01 00 00 00\n")
+        r.write_order(lib, {"Power": [0]})
+        self.assertEqual(r.read_order(lib), {"Power": [0]})
+        with open(lib, "a") as f:
+            f.write("#\n")
+        self.assertIsNone(r.read_order(lib))
+
+
 if __name__ == "__main__":
     unittest.main()
