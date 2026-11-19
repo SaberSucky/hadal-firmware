@@ -262,21 +262,45 @@ typedef struct {
     FuriString* name;
 } InfraredBruteForceDeviceItem;
 
-static void ir_bf_device_item_init(InfraredBruteForceDeviceItem* item) {
+static inline void ir_bf_device_item_init(InfraredBruteForceDeviceItem* item) {
     item->signal = infrared_signal_alloc();
     item->name = furi_string_alloc();
 }
+#define IR_BF_DEVICE_ITEM_INIT(i) (ir_bf_device_item_init(&(i)))
 
-static void ir_bf_device_item_clear(InfraredBruteForceDeviceItem* item) {
+static inline void ir_bf_device_item_init_set(
+    InfraredBruteForceDeviceItem* dest,
+    const InfraredBruteForceDeviceItem* src) {
+    dest->signal = infrared_signal_alloc();
+    infrared_signal_set_signal(dest->signal, src->signal);
+    dest->name = furi_string_alloc_set(src->name);
+}
+#define IR_BF_DEVICE_ITEM_INIT_SET(d, s) (ir_bf_device_item_init_set(&(d), &(s)))
+
+static inline void ir_bf_device_item_set(
+    InfraredBruteForceDeviceItem* dest,
+    const InfraredBruteForceDeviceItem* src) {
+    infrared_signal_set_signal(dest->signal, src->signal);
+    furi_string_set(dest->name, src->name);
+}
+#define IR_BF_DEVICE_ITEM_SET(d, s) (ir_bf_device_item_set(&(d), &(s)))
+
+static inline void ir_bf_device_item_clear(InfraredBruteForceDeviceItem* item) {
     infrared_signal_free(item->signal);
     furi_string_free(item->name);
 }
+#define IR_BF_DEVICE_ITEM_CLEAR(i) (ir_bf_device_item_clear(&(i)))
 
-// m-array moves items by value on growth, so no INIT_SET/SET is provided: the
-// collection only ever uses push_new()/reset(), which call INIT and CLEAR.
-#define IR_BF_DEVICE_ITEM_OPLIST (INIT(API_2(ir_bf_device_item_init)), CLEAR(API_2(ir_bf_device_item_clear)))
+#define IR_BF_DEVICE_ITEM_OPLIST           \
+    (INIT(IR_BF_DEVICE_ITEM_INIT),         \
+     INIT_SET(IR_BF_DEVICE_ITEM_INIT_SET), \
+     SET(IR_BF_DEVICE_ITEM_SET),           \
+     CLEAR(IR_BF_DEVICE_ITEM_CLEAR))
 
-ARRAY_DEF(InfraredBruteForceDeviceItemArray, InfraredBruteForceDeviceItem, IR_BF_DEVICE_ITEM_OPLIST)
+ARRAY_DEF(
+    InfraredBruteForceDeviceItemArray,
+    InfraredBruteForceDeviceItem,
+    IR_BF_DEVICE_ITEM_OPLIST)
 
 struct InfraredBruteForceDevice {
     InfraredBruteForceDeviceItemArray_t items;
