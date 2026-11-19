@@ -8,9 +8,11 @@ assetsenv = env.Clone(
 )
 assetsenv.ApplyLibFlags()
 
+# Also generates assets_icon_index.{c,h}: the built-in icons an asset pack can replace
 icons = assetsenv.CompileIcons(
     assetsenv["ASSETS_WORK_DIR"],
     assetsenv["ASSETS_SRC_DIR"].Dir("icons"),
+    index_list=assetsenv["ASSETS_SRC_DIR"].File("icon_override_list.txt"),
 )
 assetsenv.Alias("icons", icons)
 

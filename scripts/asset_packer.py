@@ -25,6 +25,16 @@ class Main(App):
         p.add_argument("--icons", default=DEFAULT_ICONS, help="built-in icon sources")
         p.set_defaults(func=self.validate)
 
+        p = self.subparsers.add_parser(
+            "icon-list",
+            help="List the built-in icons a firmware build uses (the ones a pack can replace)",
+        )
+        p.add_argument("elf", help="built firmware.elf")
+        p.add_argument("output", help="list file to write (assets/icon_override_list.txt)")
+        p.add_argument("--icons", default=DEFAULT_ICONS, help="built-in icon sources")
+        p.add_argument("--nm", default="arm-none-eabi-nm", help="nm of the toolchain")
+        p.set_defaults(func=self.icon_list)
+
         p = self.subparsers.add_parser("preview", help="Render a pack's icons to a PNG sheet")
         p.add_argument("pack", help="pack folder")
         p.add_argument("output", help="PNG to write")
@@ -52,6 +62,35 @@ class Main(App):
             f"{len(report['errors'])} errors, {len(report['warnings'])} warnings"
         )
         return 1 if report["errors"] else 0
+
+    def icon_list(self):
+        import subprocess
+
+        # Apps on the SD card draw their own copies of icons, so only icons the firmware
+        # itself links can be replaced by a pack. Unused icons are dropped by the linker.
+        out = subprocess.check_output([self.args.nm, self.args.elf], text=True)
+        defined = {
+            parts[2]
+            for parts in (line.split() for line in out.splitlines())
+            if len(parts) == 3 and parts[1] in "dDrR" and parts[2][:2] in ("I_", "A_")
+        }
+        by_symbol = {i["symbol"]: i["path"] for i in pack.source_icons(self.args.icons)}
+        paths = sorted(by_symbol[s] for s in defined if s in by_symbol)
+        unknown = sorted(s for s in defined if s not in by_symbol)
+        for s in unknown:
+            self.logger.warning(f"{s}: defined in the firmware but not in {self.args.icons}")
+        with open(self.args.output, "w", newline="\n") as f:
+            f.write(
+                "# Built-in icons an asset pack can replace: the icons the firmware itself draws.\n"
+                "# Apps on the SD card use their own copies, so they are not listed. The icon index\n"
+                "# (assets_icon_index.c) is generated from this list. Every listed icon is kept in\n"
+                "# the firmware, so only add icons the firmware uses. Regenerate with:\n"
+                "#   python3 scripts/asset_packer.py icon-list build/f7-firmware-C/firmware.elf \\\n"
+                "#       assets/icon_override_list.txt --nm toolchain/current/bin/arm-none-eabi-nm\n"
+            )
+            f.write("\n".join(paths) + "\n")
+        self.logger.info(f"{len(paths)} icons written to {self.args.output}")
+        return 0
 
     def preview(self):
         from PIL import Image, ImageDraw

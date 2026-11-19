@@ -16,6 +16,16 @@ def _icons_emitter(target, source, env):
         target[0].File(env.subst("${ICON_FILE_NAME}.c")),
         target[0].File(env.subst("${ICON_FILE_NAME}.h")),
     ]
+
+    # The firmware's own icon build also generates the icon index (the icons an asset pack can
+    # replace) from a list file. Per-app icon builds pass "-" and get no index.
+    index_list = env.subst("${ICON_INDEX_LIST}")
+    if index_list != "-":
+        target += [
+            target[0].dir.File("assets_icon_index.c"),
+            target[0].dir.File("assets_icon_index.h"),
+        ]
+        icons_src += [env.File(index_list)]
     return target, icons_src
 
 
@@ -121,12 +131,15 @@ def _proto_ver_generator(target, source, env):
         file.write("\n".join(version_file_data))
 
 
-def CompileIcons(env, target_dir, source_dir, *, icon_bundle_name="assets_icons"):
+def CompileIcons(
+    env, target_dir, source_dir, *, icon_bundle_name="assets_icons", index_list=None
+):
     return env.IconBuilder(
         target_dir,
         None,
         ICON_SRC_DIR=source_dir,
         ICON_FILE_NAME=icon_bundle_name,
+        ICON_INDEX_LIST=index_list.abspath if index_list else "-",
     )
 
 
@@ -158,6 +171,8 @@ def generate(env):
                             "${TARGET.dir}",
                             "--filename",
                             "${ICON_FILE_NAME}",
+                            "--index-list",
+                            "${ICON_INDEX_LIST}",
                         ],
                     ],
                     "${ICONSCOMSTR}",

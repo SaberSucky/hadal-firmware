@@ -266,6 +266,79 @@ class PackTreeTests(TempDirCase):
         self.assertTrue(any("would be rejected" in e for e in report["errors"]))
 
 
+class IconIndexTests(TempDirCase):
+    ICONS = [
+        {"path": "StatusBar/Battery_26x8", "symbol": "I_Battery_26x8", "width": 26, "height": 8, "frames": 1, "animated": False},
+        {"path": "MainMenu/NFC_14", "symbol": "A_NFC_14", "width": 14, "height": 14, "frames": 4, "animated": True},
+        {"path": "BLE/BLE_HID/Ok_btn_9x9", "symbol": "I_Ok_btn_9x9", "width": 9, "height": 9, "frames": 1, "animated": False},
+    ]
+
+    def test_parse_list(self):
+        text = "# comment\n\nStatusBar/Battery_26x8\n  MainMenu/NFC_14  \n"
+        self.assertEqual(pack.parse_icon_list(text), ["StatusBar/Battery_26x8", "MainMenu/NFC_14"])
+        with self.assertRaises(pack.PackError):
+            pack.parse_icon_list("A/b\nA/b\n")  # duplicate
+        with self.assertRaises(pack.PackError):
+            pack.parse_icon_list("# nothing\n\n")  # empty
+
+    def test_unknown_listed_icon_fails_loudly(self):
+        with self.assertRaises(pack.PackError) as ctx:
+            pack.generate_icon_index(self.ICONS, ["StatusBar/Renamed_26x8"])
+        self.assertIn("update assets/icon_override_list.txt", str(ctx.exception))
+
+    def test_generated_c_compiles_sorted_and_searchable(self):
+        paths = [i["path"] for i in self.ICONS]
+        header, source = pack.generate_icon_index(self.ICONS, paths)
+        os.makedirs(self.p("gui"))
+        # minimal stand-ins for the firmware headers the generated code includes
+        with open(self.p("gui", "icon.h"), "w") as f:
+            f.write("#pragma once\ntypedef struct Icon { int id; } Icon;\n")
+        with open(self.p("assets_icons.h"), "w") as f:
+            f.write("#pragma once\n#include <gui/icon.h>\n"
+                    "extern const Icon I_Battery_26x8, A_NFC_14, I_Ok_btn_9x9;\n")
+        with open(self.p("assets_icon_index.h"), "w") as f:
+            f.write(header)
+        with open(self.p("assets_icon_index.c"), "w") as f:
+            f.write(source)
+        with open(self.p("main.c"), "w") as f:
+            f.write(r'''
+#include <stdio.h>
+#include "assets_icon_index.h"
+#include "assets_icons.h"
+const Icon I_Battery_26x8 = {1}, A_NFC_14 = {2}, I_Ok_btn_9x9 = {3};
+static const Icon* find(uint32_t h) {
+    size_t lo = 0, hi = assets_icon_index_count;
+    while(lo < hi) {
+        size_t mid = (lo + hi) / 2;
+        if(assets_icon_index[mid].path_hash == h) return assets_icon_index[mid].icon;
+        if(assets_icon_index[mid].path_hash < h) lo = mid + 1; else hi = mid;
+    }
+    return 0;
+}
+int main(int argc, char** argv) {
+    for(size_t i = 1; i < assets_icon_index_count; i++)
+        if(assets_icon_index[i - 1].path_hash >= assets_icon_index[i].path_hash) return 10;
+    /* argv: hash id pairs */
+    for(int i = 1; i + 1 < argc; i += 2) {
+        const Icon* icon = find((uint32_t)strtoul(argv[i], 0, 16));
+        if(!icon || icon->id != atoi(argv[i + 1])) return 20 + i;
+    }
+    if(find(0x12345678u)) return 30;
+    printf("%zu\n", assets_icon_index_count);
+    return 0;
+}
+'''.replace("#include <stdio.h>", "#include <stdio.h>\n#include <stdlib.h>"))
+        import subprocess
+        exe = self.p("t")
+        subprocess.check_call(["gcc", "-Wall", "-Werror", "-I", self.tmp, "-o", exe,
+                               self.p("main.c"), self.p("assets_icon_index.c")])
+        args = []
+        for icon, ident in zip(paths, (1, 2, 3)):
+            args += ["%08x" % pack.icon_path_hash(icon), str(ident)]
+        out = subprocess.check_output([exe] + args, text=True)
+        self.assertEqual(out.strip(), "3")
+
+
 class NestedTests(TempDirCase):
     def test_nested_category_roundtrip_and_index(self):
         icons = self.p("src", "Icons")

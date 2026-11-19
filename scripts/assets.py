@@ -45,6 +45,13 @@ class Main(App):
             default="assets_icons",
         )
 
+        self.parser_icons.add_argument(
+            "--index-list",
+            help="Icon override list: also generate the icon index for these icons",
+            required=False,
+            default="-",
+        )
+
         self.parser_icons.set_defaults(func=self.icons)
 
         self.parser_manifest = self.subparsers.add_parser(
@@ -221,8 +228,31 @@ class Main(App):
         for name, width, height, frame_rate, frame_count in icons:
             icons_h.write(ICONS_TEMPLATE_H_ICON_NAME.format(name=name))
         icons_h.close()
+
+        if self.args.index_list != "-":
+            self._write_icon_index(f"{self.args.filename}.h")
         self.logger.debug("Done")
         return 0
+
+    def _write_icon_index(self, icons_header):
+        from flipper.assets import pack
+
+        self.logger.debug("Creating icon index")
+        try:
+            with open(self.args.index_list, "r") as f:
+                paths = pack.parse_icon_list(f.read())
+            header, source = pack.generate_icon_index(
+                pack.source_icons(self.args.input_directory), paths, icons_header
+            )
+        except pack.PackError as e:
+            self.logger.error(f"Icon index: {e}")
+            exit(255)
+        for suffix, text in ((".h", header), (".c", source)):
+            path = os.path.join(
+                self.args.output_directory, pack.ICON_INDEX_NAME + suffix
+            )
+            with open(path, "w", newline="\n") as f:
+                f.write(text)
 
     def manifest(self):
         from flipper.assets.manifest import Manifest
