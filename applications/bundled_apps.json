@@ -138,6 +138,12 @@
    ]
   },
   {
+   "path": "apps_source_code/fz-em4100-generator",
+   "appids": [
+    "key_generator"
+   ]
+  },
+  {
    "path": "apps_source_code/game_of_life",
    "appids": [
     "gameoflife"
@@ -147,6 +153,12 @@
    "path": "apps_source_code/gpio_controller",
    "appids": [
     "gpio_controller"
+   ]
+  },
+  {
+   "path": "apps_source_code/gpio_pins_reader",
+   "appids": [
+    "gpio_reader"
    ]
   },
   {
@@ -225,6 +237,12 @@
    "path": "apps_source_code/t5577_multiwriter",
    "appids": [
     "t5577_multiwriter"
+   ]
+  },
+  {
+   "path": "apps_source_code/timelapse",
+   "appids": [
+    "gpio_timelapse"
    ]
   },
   {
@@ -444,6 +462,12 @@
    ]
   },
   {
+   "path": "base_pack/mousejacker",
+   "appids": [
+    "nrf24_mouse_jacker"
+   ]
+  },
+  {
    "path": "base_pack/multi_converter",
    "appids": [
     "multi_converter"
@@ -483,6 +507,12 @@
    "path": "base_pack/nfc_rfid_detector",
    "appids": [
     "nfc_rfid_detector"
+   ]
+  },
+  {
+   "path": "base_pack/nrfsniff",
+   "appids": [
+    "nrf24_sniffer"
    ]
   },
   {
@@ -774,6 +804,12 @@
    ]
   },
   {
+   "path": "non_catalog_apps/flipperzero-camera",
+   "appids": [
+    "camera"
+   ]
+  },
+  {
    "path": "non_catalog_apps/flipperzero-qrcode",
    "appids": [
     "qrcode"
@@ -786,9 +822,21 @@
    ]
   },
   {
+   "path": "non_catalog_apps/fm_radio_controller",
+   "appids": [
+    "fmradio_controller"
+   ]
+  },
+  {
    "path": "non_catalog_apps/fmf_to_sub",
    "appids": [
     "fmf_to_sub"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/fmtx",
+   "appids": [
+    "fmtx"
    ]
   },
   {
@@ -906,9 +954,21 @@
    ]
   },
   {
+   "path": "non_catalog_apps/nrf24-batch",
+   "appids": [
+    "nrf24_batch"
+   ]
+  },
+  {
    "path": "non_catalog_apps/nrf24channelscanner",
    "appids": [
     "nrf24channelscanner"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/nrf24scan",
+   "appids": [
+    "nrf24_scanner"
    ]
   },
   {

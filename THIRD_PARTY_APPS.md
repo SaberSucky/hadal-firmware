@@ -14,14 +14,19 @@ Thank you to everyone whose apps these are.
 | [ESP32] WiFi Marauder | - | - | LICENSE |
 | [ESP8266] Deauther | @SequoiaSan & @xMasterX | - | none in the source |
 | [GPIO] i2c Tools | @NaejEL | - | LICENSE |
+| [GPIO] Reader | @aureli1c | https://github.com/aureli1c/flipperzero_GPIO_read | none in the source |
 | [GPIO] Sentry Safe | @H4ckd4ddy & @xMasterX (ported to latest firmware) | - | LICENSE |
+| [GPIO] Timelapse | Aurelius Rosenbaum | https://github.com/theageoflove/flipperzero-zeitraffer | none in the source |
 | [GPIO] Wire Tester | @unixispower | https://gitlab.com/unixispower/flipper-wire-tester | LICENSE |
 | [HC-SR] Dist. Sensor | @xMasterX (first implementation by @Sanqui) | - | none in the source |
 | [INA2xx] INA Meter | cepetr | https://github.com/cepetr/flipper-tina | LICENSE |
 | [J305] Atomic Dice Roller | - | - | none in the source |
 | [J305] Geiger Counter | @nmrr | https://github.com/nmrr/flipperzero-geigercounter | none in the source |
 | [NMEA] GPS | @ezod & @xMasterX | - | LICENSE |
+| [NRF24] Mouse Jacker | @mothball187 & @xMasterX | - | none in the source |
+| [NRF24] Sniffer | @mothball187 & @xMasterX | - | none in the source |
 | [SPI] Terminal | Jan Wiesemann | https://github.com/janwiesemann/flipper-spi-terminal | LICENSE |
+| [TEA5767] FM Radio | coolshrimp | https://coolshrimp/flipperzero-firmware-wPlugins/ | LICENSE |
 | [VGM] Air Mouse | - | - | none in the source |
 | [VGM] Video Game Module Tool | - | - | none in the source |
 | [W5500] Ethernet | @karasevia & @arag0re & @xMasterX | https://github.com/xMasterX/all-the-plugins | none in the source |
@@ -42,6 +47,7 @@ Thank you to everyone whose apps these are.
 | BT Trigger | @Nem0oo | https://github.com/Nem0oo/flipper-zero-bluetooth-trigger | none in the source |
 | Caesar Cipher | @panki27 | https://github.com/panki27/caesar-cipher | LICENSE |
 | Calculator | @n-o-T-I-n-s-a-n-e | https://github.com/n-o-T-I-n-s-a-n-e | none in the source |
+| Camera | Z4urce | https://github.com/Z4urce/flipper-camera | LICENSE |
 | CAN Commander | - | - | none in the source |
 | CAN Tools | Matthew KuKanich | https://github.com/MatthewKuKanich/ | none in the source |
 | Channel Scanner | - | - | none in the source |
@@ -56,6 +62,7 @@ Thank you to everyone whose apps these are.
 | Deauther v2 | @Timmotools & @xMasterX | https://github.com/Timmotools/flipperzero_esp8266_deautherv2 | LICENSE |
 | DOOM | @xMasterX & @Svarich & @hedger (original code by @p4nic4ttack) | - | none in the source |
 | DTMF Dolphin | @litui & @xMasterX | - | LICENSE |
+| EM4100 Key generator | @Milk-Cool | https://github.com/Milk-Cool/fz-em4100-generator | LICENSE |
 | Enhanced Sub-Ghz Chat | @twisted-pear & @xMasterX & more in ReadMe | https://github.com/twisted-pear/esubghz_chat | LICENSE |
 | ESP Flasher | - | - | LICENSE |
 | Etch A Sketch | @SimplyMinimal | https://github.com/SimplyMinimal/FlipperZero-Etch-A-Sketch | LICENSE |
@@ -70,6 +77,7 @@ Thank you to everyone whose apps these are.
 | Flipper Wedge | Dangerous Things | https://github.com/DangerousThings/flipper-wedge | LICENSE |
 | FlipTDI | SkorP | - | none in the source |
 | Flizzer Tracker | LTVA | https://github.com/LTVA1/flizzer_tracker | LICENSE |
+| FM TX | @yo3gnd | - | LICENSE |
 | Game 15 | @x27 | - | none in the source |
 | Game of Life | @tgxn (original by @itsyourbedtime) | https://github.com/tgxn/flipperzero-firmware/blob/dev/applications/game_of_life/game_of_life.c | none in the source |
 | Ghost ESP | - | - | none in the source |
@@ -113,6 +121,8 @@ Thank you to everyone whose apps these are.
 | NFC Magic | - | - | none in the source |
 | NFC Maker | @WillyJL | https://github.com/Next-Flip/Momentum-Apps/tree/dev/nfc_maker | LICENSE |
 | NFC Playlist | @acegoal07 | https://github.com/acegoal07/FlipperZero_NFC_Playlist/tree/main | none in the source |
+| NRF24 Batch | - | - | LICENSE |
+| NRF24 Scanner | - | - | LICENSE |
 | Paint | @n-o-T-I-n-s-a-n-e | https://github.com/n-o-T-I-n-s-a-n-e | none in the source |
 | Passport Reader | bettse | https://github.com/bettse/passy | LICENSE |
 | Password Generator | @anakod & @henrygab | - | LICENSE |
