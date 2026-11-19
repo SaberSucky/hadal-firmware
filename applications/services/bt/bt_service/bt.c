@@ -7,6 +7,7 @@
 #include <notification/notification_messages.h>
 #include <gui/elements.h>
 #include <assets_icons.h>
+#include <toolbox/boot_profile.h>
 #include <profiles/serial_profile.h>
 
 #define TAG "BtSrv"
@@ -546,7 +547,9 @@ int32_t bt_srv(void* p) {
         return 0;
     }
 
+    boot_profile_mark("bt radio start");
     if(furi_hal_bt_start_radio_stack()) {
+        boot_profile_mark("bt radio started");
         bt_init_keys_settings(bt);
         furi_hal_bt_set_key_storage_change_callback(bt_on_key_storage_change_callback, bt);
 

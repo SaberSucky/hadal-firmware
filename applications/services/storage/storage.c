@@ -5,6 +5,7 @@
 #include "storage/storage_glue.h"
 #include "storages/storage_ext.h"
 #include <assets_icons.h>
+#include <toolbox/boot_profile.h>
 
 #define STORAGE_TICK 1000
 
@@ -88,6 +89,7 @@ void storage_tick(Storage* app) {
 
         if(app->storage[ST_EXT].status == StorageStatusOK) {
             FURI_LOG_I(TAG, "SD card mount");
+            boot_profile_mark("SD card mounted");
             StorageEvent event = {.type = StorageEventTypeCardMount};
             furi_pubsub_publish(app->pubsub, &event);
         } else {
@@ -109,6 +111,7 @@ void storage_tick(Storage* app) {
 
 int32_t storage_srv(void* p) {
     UNUSED(p);
+    boot_profile_mark("storage start");
     Storage* app = storage_app_alloc();
     furi_record_create(RECORD_STORAGE, app);
 

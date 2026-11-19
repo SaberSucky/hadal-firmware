@@ -9,6 +9,7 @@
 
 #include <assets_icons.h>
 #include <asset_packs.h>
+#include <toolbox/boot_profile.h>
 
 #include "animations/animation_storage.h"
 #include "scenes/desktop_scene.h"
@@ -356,6 +357,7 @@ static Desktop* desktop_alloc(void) {
 
     desktop->animation_semaphore = furi_semaphore_alloc(1, 0);
     desktop->animation_manager = animation_manager_alloc();
+    boot_profile_mark("animations loaded");
     desktop->gui = furi_record_open(RECORD_GUI);
     desktop->scene_thread = furi_thread_alloc();
     desktop->view_dispatcher = view_dispatcher_alloc();
@@ -623,9 +625,12 @@ int32_t desktop_srv(void* p) {
         return 0;
     }
 
+    boot_profile_mark("desktop start");
     Desktop* desktop = desktop_alloc();
+    boot_profile_mark("desktop allocated");
 
     desktop_init_settings(desktop);
+    boot_profile_mark("desktop settings loaded");
 
     scene_manager_next_scene(desktop->scene_manager, DesktopSceneMain);
 
@@ -665,6 +670,7 @@ int32_t desktop_srv(void* p) {
         animation_manager_unload_and_stall_animation(desktop->animation_manager);
     }
 
+    boot_profile_mark("desktop ready");
     view_dispatcher_run(desktop->view_dispatcher);
 
     // Should never get here (a service thread will crash automatically if it returns)

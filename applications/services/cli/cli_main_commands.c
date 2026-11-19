@@ -11,6 +11,7 @@
 #include <loader/loader.h>
 #include <lib/toolbox/args.h>
 #include <lib/toolbox/strint.h>
+#include <toolbox/boot_profile.h>
 #include <toolbox/pipe.h>
 
 // Close to ISO, `date +'%Y-%m-%d %H:%M:%S %u'`
@@ -60,6 +61,20 @@ void cli_command_uptime(PipeSide* pipe, FuriString* args, void* context) {
     UNUSED(context);
     uint32_t uptime = furi_get_tick() / furi_kernel_get_tick_frequency();
     printf("Uptime: %luh%lum%lus", uptime / 60 / 60, uptime / 60 % 60, uptime % 60);
+}
+
+void cli_command_boot_profile(PipeSide* pipe, FuriString* args, void* context) {
+    UNUSED(pipe);
+    UNUSED(args);
+    UNUSED(context);
+    printf("Start-up timeline, ms since the kernel started (the hardware set-up before it is not counted):\r\n");
+    uint32_t previous = 0, tick = 0;
+    const char* name = NULL;
+    for(size_t i = 0; boot_profile_get(i, &tick, &name); i++) {
+        printf("%6lu  +%-5lu  %s\r\n", tick, tick - previous, name);
+        previous = tick;
+    }
+    if(!boot_profile_count()) printf("No marks recorded.\r\n");
 }
 
 void cli_command_date(PipeSide* pipe, FuriString* args, void* context) {
@@ -423,6 +438,8 @@ void cli_main_commands_init(CliRegistry* registry) {
 
     cli_registry_add_command(
         registry, "uptime", CliCommandFlagParallelSafe, cli_command_uptime, NULL);
+    cli_registry_add_command(
+        registry, "boot_profile", CliCommandFlagParallelSafe, cli_command_boot_profile, NULL);
     cli_registry_add_command(registry, "date", CliCommandFlagParallelSafe, cli_command_date, NULL);
     cli_registry_add_command(registry, "log", CliCommandFlagParallelSafe, cli_command_log, NULL);
     cli_registry_add_command(registry, "sysctl", CliCommandFlagDefault, cli_command_sysctl, NULL);
