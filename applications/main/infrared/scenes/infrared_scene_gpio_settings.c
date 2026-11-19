@@ -11,9 +11,11 @@ static const char* infrared_scene_gpio_settings_otg_text[] = {
     "ON",
 };
 
+// Indexed by InfraredTxSpeed
 static const char* infrared_scene_gpio_settings_speed_text[] = {
     "Normal",
     "Fast",
+    "Turbo",
 };
 
 static void infrared_scene_gpio_settings_speed_change_callback(VariableItem* item) {
@@ -58,7 +60,7 @@ static void infrared_scene_gpio_settings_init(InfraredApp* infrared) {
         infrared_scene_gpio_settings_speed_change_callback,
         infrared);
 
-    value_index = infrared->app_state.is_fast_universal ? 1 : 0;
+    value_index = infrared->app_state.universal_speed;
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(
         item, infrared_scene_gpio_settings_speed_text[value_index]);
@@ -115,7 +117,7 @@ bool infrared_scene_gpio_settings_on_event(void* context, SceneManagerEvent even
         } else if(custom_event_type == InfraredCustomEventTypeGpioOtgChanged) {
             infrared_enable_otg(infrared, custom_event_value);
         } else if(custom_event_type == InfraredCustomEventTypeUniversalSpeedChanged) {
-            infrared_set_fast_universal(infrared, custom_event_value);
+            infrared_set_universal_speed(infrared, custom_event_value);
         }
 
         consumed = true;

@@ -2283,6 +2283,7 @@ Function,-,infrared_brute_force_reset,void,InfraredBruteForce*
 Function,-,infrared_brute_force_send,_Bool,"InfraredBruteForce*, uint32_t"
 Function,-,infrared_brute_force_set_db_filename,void,"InfraredBruteForce*, const char*"
 Function,+,infrared_brute_force_set_fast,void,"InfraredBruteForce*, _Bool"
+Function,-,infrared_brute_force_set_speed,void,"InfraredBruteForce*, InfraredTxSpeed"
 Function,-,infrared_brute_force_start,_Bool,"InfraredBruteForce*, uint32_t, uint32_t*"
 Function,-,infrared_brute_force_stop,void,InfraredBruteForce*
 Function,+,infrared_check_decoder_ready,const InfraredMessage*,InfraredDecoderHandler*
@@ -2321,6 +2322,7 @@ Function,-,infrared_signal_set_message,void,"InfraredSignal*, const InfraredMess
 Function,-,infrared_signal_set_raw_signal,void,"InfraredSignal*, const uint32_t*, size_t, uint32_t, float"
 Function,-,infrared_signal_set_signal,void,"InfraredSignal*, const InfraredSignal*"
 Function,-,infrared_signal_transmit,void,const InfraredSignal*
+Function,-,infrared_signal_transmit_at,void,"const InfraredSignal*, InfraredTxSpeed"
 Function,+,infrared_signal_transmit_fast,void,const InfraredSignal*
 Function,+,infrared_worker_alloc,InfraredWorker*,
 Function,+,infrared_worker_free,void,InfraredWorker*

@@ -54,6 +54,11 @@ void infrared_brute_force_set_db_filename(InfraredBruteForce* brute_force, const
  * was registered via infrared_brute_force_add_record() are added to the dictionary.
  * A database name with no matching record is skipped, which is not an error.
  *
+ * A signal that sends the same code as one already in its category is left out (NEC and
+ * NECext, or a raw capture of a known protocol, count as the code they send). If the database
+ * has an order file next to it ("tv.ir" -> "tv.order", made for that exact file), each
+ * category is sent in the order it lists; otherwise in file order.
+ *
  * @param[in,out] brute_force pointer to the instance to be updated.
  * @returns InfraredErrorCodeNone on success, otherwise error code.
  */
@@ -113,6 +118,14 @@ bool infrared_brute_force_send(InfraredBruteForce* brute_force, uint32_t signal_
  * @param[in] fast true for fast mode, false for normal mode
  */
 void infrared_brute_force_set_fast(InfraredBruteForce* brute_force, bool fast);
+
+/**
+ * @brief Choose how signals are sent by infrared_brute_force_send() (see InfraredTxSpeed).
+ *
+ * @param[in] brute_force pointer to the instance
+ * @param[in] speed the speed to send at
+ */
+void infrared_brute_force_set_speed(InfraredBruteForce* brute_force, InfraredTxSpeed speed);
 
 /**
  * @brief Load a signal from the chosen category without transmitting it.
@@ -233,8 +246,7 @@ const char*
  * @param[in] device pointer to the instance to be queried.
  * @returns pointer to a zero-terminated name, owned by the collection (may be empty).
  */
-const char*
-    infrared_brute_force_device_get_suggested_name(const InfraredBruteForceDevice* device);
+const char* infrared_brute_force_device_get_suggested_name(const InfraredBruteForceDevice* device);
 
 /**
  * @brief Gather the device that owns a given signal into a collection.

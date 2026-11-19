@@ -224,14 +224,37 @@ InfraredErrorCode
 void infrared_signal_transmit(const InfraredSignal* signal);
 
 /**
+ * @brief How quickly codes are sent one after another (universal remotes).
+ */
+typedef enum {
+    InfraredTxSpeedNormal, /**< The protocols' own timings, raw signals whole. */
+    InfraredTxSpeedFast, /**< The gap a real remote leaves between repeated frames; raw
+                              signals trimmed to two identical frames in a row (three for
+                              Sony-like codes, which devices only accept repeated). */
+    InfraredTxSpeedTurbo, /**< The shortest gap an IR receiver needs after the code's longest
+                               burst; raw signals trimmed to one frame (three for Sony-like
+                               codes) without NEC repeat frames. */
+} InfraredTxSpeed;
+
+/**
  * @brief Transmit a signal as fast as safely possible, for sending many codes in a row.
  *
- * Uses the gap a real remote leaves between repeated frames instead of the full
- * protocol silence, and trims raw signals to at most two identical frames in a row.
+ * Same as infrared_signal_transmit_at() with InfraredTxSpeedFast.
  *
  * @param[in] signal pointer to the instance holding the signal to be transmitted.
  */
 void infrared_signal_transmit_fast(const InfraredSignal* signal);
+
+/**
+ * @brief Transmit a signal with the gaps and trimming of a speed (see InfraredTxSpeed).
+ *
+ * InfraredTxSpeedNormal is the same as infrared_signal_transmit().
+ *
+ * @param[in] signal pointer to the instance holding the signal to be transmitted.
+ * @param[in] speed how short the silence before the signal is, and how much of a raw
+ *                  signal is sent.
+ */
+void infrared_signal_transmit_at(const InfraredSignal* signal, InfraredTxSpeed speed);
 
 #ifdef __cplusplus
 }

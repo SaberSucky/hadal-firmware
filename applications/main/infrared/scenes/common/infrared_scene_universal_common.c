@@ -41,6 +41,7 @@ static void
         progress, infrared_scene_universal_common_progress_input_callback, infrared);
     view_stack_add_view(view_stack, infrared_progress_view_get_view(progress));
     infrared_play_notification_message(infrared, InfraredNotificationMessageBlinkStartSend);
+    infrared_set_sending_tick(infrared, true);
 }
 
 static void infrared_scene_universal_common_hide_popup(InfraredApp* infrared) {
@@ -48,6 +49,7 @@ static void infrared_scene_universal_common_hide_popup(InfraredApp* infrared) {
     InfraredProgressView* progress = infrared->progress;
     view_stack_remove_view(view_stack, infrared_progress_view_get_view(progress));
     infrared_play_notification_message(infrared, InfraredNotificationMessageBlinkStop);
+    infrared_set_sending_tick(infrared, false);
 }
 
 static int32_t infrared_scene_universal_common_task_callback(void* context) {
@@ -84,6 +86,7 @@ static void infrared_scene_universal_common_handle_popup_input(
 
     case InfraredProgressViewInputPause: {
         infrared_play_notification_message(infrared, InfraredNotificationMessageBlinkStop);
+        infrared_set_sending_tick(infrared, false);
         infrared_progress_view_set_paused(infrared->progress, true);
         InfraredSceneState scene_state = {
             .packed_value = scene_manager_get_scene_state(scene_manager, scene_id)};
@@ -96,6 +99,7 @@ static void infrared_scene_universal_common_handle_popup_input(
 
     case InfraredProgressViewInputResume: {
         infrared_play_notification_message(infrared, InfraredNotificationMessageBlinkStartSend);
+        infrared_set_sending_tick(infrared, true);
         infrared_progress_view_set_paused(infrared->progress, false);
         InfraredSceneState scene_state = {
             .packed_value = scene_manager_get_scene_state(scene_manager, scene_id)};
@@ -278,6 +282,7 @@ void infrared_scene_universal_common_on_exit(void* context) {
     InfraredApp* infrared = context;
     ButtonPanel* button_panel = infrared->button_panel;
     view_stack_remove_view(infrared->view_stack, button_panel_get_view(button_panel));
+    infrared_set_sending_tick(infrared, false);
     infrared_brute_force_reset(infrared->brute_force);
     // Free any device collected by the Remote Finder but not carried into a save scene
     infrared_brute_force_device_reset(infrared->found_device);

@@ -42,6 +42,10 @@ static bool infrared_back_event_callback(void* context) {
     return scene_manager_handle_back_event(infrared->scene_manager);
 }
 
+// Scene ticks: slow normally, quick while a universal remote sends codes back to back
+#define INFRARED_TICK_PERIOD_MS         (100U)
+#define INFRARED_SENDING_TICK_PERIOD_MS (5U)
+
 static void infrared_tick_event_callback(void* context) {
     furi_assert(context);
     InfraredApp* infrared = context;
@@ -166,7 +170,8 @@ static InfraredApp* infrared_alloc(void) {
     view_dispatcher_set_event_callback_context(view_dispatcher, infrared);
     view_dispatcher_set_custom_event_callback(view_dispatcher, infrared_custom_event_callback);
     view_dispatcher_set_navigation_event_callback(view_dispatcher, infrared_back_event_callback);
-    view_dispatcher_set_tick_event_callback(view_dispatcher, infrared_tick_event_callback, 100);
+    view_dispatcher_set_tick_event_callback(
+        view_dispatcher, infrared_tick_event_callback, INFRARED_TICK_PERIOD_MS);
 
     infrared->storage = furi_record_open(RECORD_STORAGE);
     infrared->dialogs = furi_record_open(RECORD_DIALOGS);
@@ -557,9 +562,18 @@ void infrared_enable_otg(InfraredApp* infrared, bool enable) {
     furi_record_close(RECORD_POWER);
 }
 
-void infrared_set_fast_universal(InfraredApp* infrared, bool fast) {
-    infrared->app_state.is_fast_universal = fast;
-    infrared_brute_force_set_fast(infrared->brute_force, fast);
+void infrared_set_universal_speed(InfraredApp* infrared, InfraredTxSpeed speed) {
+    if(speed > InfraredTxSpeedTurbo) speed = InfraredTxSpeedFast;
+    infrared->app_state.universal_speed = speed;
+    infrared_brute_force_set_speed(infrared->brute_force, speed);
+}
+
+void infrared_set_sending_tick(InfraredApp* infrared, bool sending) {
+    furi_event_loop_tick_set(
+        view_dispatcher_get_event_loop(infrared->view_dispatcher),
+        sending ? INFRARED_SENDING_TICK_PERIOD_MS : INFRARED_TICK_PERIOD_MS,
+        infrared_tick_event_callback,
+        infrared);
 }
 
 static void infrared_load_settings(InfraredApp* infrared) {
@@ -586,11 +600,11 @@ static void infrared_load_settings(InfraredApp* infrared) {
         }
         settings.tx_pin = settings_v1.tx_pin;
         settings.otg_enabled = settings_v1.otg_enabled;
-        settings.fast_universal = true;
+        settings.universal_speed = InfraredTxSpeedFast;
         needs_save = true;
     }
 
-    infrared_set_fast_universal(infrared, settings.fast_universal);
+    infrared_set_universal_speed(infrared, settings.universal_speed);
     infrared_set_tx_pin(infrared, settings.tx_pin);
     if(settings.tx_pin < FuriHalInfraredTxPinMax) {
         infrared_enable_otg(infrared, settings.otg_enabled);
@@ -602,7 +616,7 @@ void infrared_save_settings(InfraredApp* infrared) {
     InfraredSettings settings = {
         .tx_pin = infrared->app_state.tx_pin,
         .otg_enabled = infrared->app_state.is_otg_enabled,
-        .fast_universal = infrared->app_state.is_fast_universal,
+        .universal_speed = infrared->app_state.universal_speed,
     };
 
     if(!saved_struct_save(

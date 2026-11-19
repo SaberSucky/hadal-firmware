@@ -94,7 +94,7 @@ typedef struct {
     int32_t prev_button_index; /**< Previous button index (move source). */
     uint32_t last_transmit_time; /**< Lat time a signal was transmitted. */
     FuriHalInfraredTxPin tx_pin;
-    bool is_fast_universal; /**< Universal remotes send codes with short gaps. */
+    InfraredTxSpeed universal_speed; /**< How quickly universal remotes send codes. */
 } InfraredAppState;
 
 /**
@@ -371,12 +371,23 @@ void infrared_enable_otg(InfraredApp* infrared, bool enable);
 void infrared_save_settings(InfraredApp* infrared);
 
 /**
- * @brief Choose fast (short gaps) or normal (original timings) universal remotes.
+ * @brief Choose how quickly universal remotes send codes.
  *
  * @param[in,out] infrared pointer to the application instance.
- * @param[in] fast true for fast mode.
+ * @param[in] speed normal (original timings), fast or turbo.
  */
-void infrared_set_fast_universal(InfraredApp* infrared, bool fast);
+void infrared_set_universal_speed(InfraredApp* infrared, InfraredTxSpeed speed);
+
+/**
+ * @brief Tick the scenes quickly while a universal remote sends codes, so that the next code
+ * goes out as soon as the last one is done; slowly the rest of the time.
+ *
+ * Input is still handled between codes: the event loop delivers it before a tick.
+ *
+ * @param[in,out] infrared pointer to the application instance.
+ * @param[in] sending true while codes are being sent.
+ */
+void infrared_set_sending_tick(InfraredApp* infrared, bool sending);
 
 /**
  * @brief Common received signal callback.

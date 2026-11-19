@@ -5,18 +5,40 @@
 #include <m-array.h>
 #include <flipper_format/flipper_format.h>
 
+#include <storage/storage.h>
+
 #include "infrared_signal.h"
+#include "infrared_signal_key.h"
 
 ARRAY_DEF(SignalPositionArray, size_t, M_DEFAULT_OPLIST); //-V658
+
+// A signal found while reading the database: where it is, whether it is a raw capture, and
+// what it sends on the air. Eight bytes, as a database category has up to a few hundred: the
+// key is folded to 32 bits (two codes of one button share one about once in 100000 runs).
+typedef struct {
+    uint32_t position : 31;
+    uint32_t is_raw   : 1;
+    uint32_t key;
+} InfraredBruteForceCandidate;
+
+// Database files are far below 2 GB; a position that does not fit is never taken
+#define IR_BF_CANDIDATE_POSITION_MAX (0x7FFFFFFFU)
+
+_Static_assert(sizeof(InfraredBruteForceCandidate) == 8, "a candidate should stay 8 bytes");
+
+ARRAY_DEF(InfraredBruteForceCandidateArray, InfraredBruteForceCandidate, M_POD_OPLIST); //-V658
 
 typedef struct {
     size_t index;
     SignalPositionArray_t signals;
+    // Only while infrared_brute_force_calculate_messages() runs; empty otherwise
+    InfraredBruteForceCandidateArray_t candidates;
 } InfraredBruteForceRecord;
 
 static inline void ir_bf_record_init(InfraredBruteForceRecord* record) {
     record->index = 0;
     SignalPositionArray_init(record->signals);
+    InfraredBruteForceCandidateArray_init(record->candidates);
 }
 #define IR_BF_RECORD_INIT(r) (ir_bf_record_init(&(r)))
 
@@ -24,6 +46,7 @@ static inline void
     ir_bf_record_init_set(InfraredBruteForceRecord* dest, const InfraredBruteForceRecord* src) {
     dest->index = src->index;
     SignalPositionArray_init_set(dest->signals, src->signals);
+    InfraredBruteForceCandidateArray_init_set(dest->candidates, src->candidates);
 }
 #define IR_BF_RECORD_INIT_SET(d, s) (ir_bf_record_init_set(&(d), &(s)))
 
@@ -31,11 +54,13 @@ static inline void
     ir_bf_record_set(InfraredBruteForceRecord* dest, const InfraredBruteForceRecord* src) {
     dest->index = src->index;
     SignalPositionArray_set(dest->signals, src->signals);
+    InfraredBruteForceCandidateArray_set(dest->candidates, src->candidates);
 }
 #define IR_BF_RECORD_SET(d, s) (ir_bf_record_set(&(d), &(s)))
 
 static inline void ir_bf_record_clear(InfraredBruteForceRecord* record) {
     SignalPositionArray_clear(record->signals);
+    InfraredBruteForceCandidateArray_clear(record->candidates);
 }
 #define IR_BF_RECORD_CLEAR(r) (ir_bf_record_clear(&(r)))
 
@@ -60,7 +85,7 @@ struct InfraredBruteForce {
     InfraredSignal* current_signal;
     InfraredBruteForceRecordDict_t records;
     bool is_started;
-    bool is_fast;
+    InfraredTxSpeed speed;
 };
 
 InfraredBruteForce* infrared_brute_force_alloc(void) {
@@ -71,7 +96,7 @@ InfraredBruteForce* infrared_brute_force_alloc(void) {
     brute_force->is_started = false;
     brute_force->current_record_name = furi_string_alloc();
     InfraredBruteForceRecordDict_init(brute_force->records);
-    brute_force->is_fast = true;
+    brute_force->speed = InfraredTxSpeedFast;
     return brute_force;
 }
 
@@ -89,6 +114,140 @@ void infrared_brute_force_set_db_filename(InfraredBruteForce* brute_force, const
     brute_force->db_filename = db_filename;
 }
 
+/* ------------------------------------------------------------------ */
+/* What a signal sends                                                 */
+/* ------------------------------------------------------------------ */
+
+static uint32_t ir_bf_signal_key(const InfraredSignal* signal, InfraredDecoderHandler* decoder) {
+    uint64_t key;
+    if(infrared_signal_is_raw(signal)) {
+        const InfraredRawSignal* raw = infrared_signal_get_raw_signal(signal);
+        key = infrared_signal_key_raw(raw->timings, raw->timings_size, raw->frequency, decoder);
+    } else {
+        key = infrared_signal_key_message(infrared_signal_get_message(signal));
+    }
+    return (uint32_t)(key ^ (key >> 32));
+}
+
+/* ------------------------------------------------------------------ */
+/* Sending order                                                       */
+/* ------------------------------------------------------------------ */
+
+#define IR_BF_ORDER_FILETYPE     "IR library order"
+#define IR_BF_ORDER_VERSION      (1U)
+#define IR_BF_ORDER_LIBRARY_SIZE "Library size"
+
+// The order file next to a database ("tv.ir" -> "tv.order") lists, per button, the indices of
+// its signals (0 = the button's first signal in the file) in the order to send them: the codes
+// most remotes use first. It is made for one exact database file and ignored if the database's
+// size differs, or if a button's list is not a permutation of its signals.
+static FlipperFormat* ir_bf_order_open(Storage* storage, const char* db_filename) {
+    const size_t len = strlen(db_filename);
+    if(len < 3 || strcmp(db_filename + len - 3, ".ir") != 0) return NULL;
+
+    FuriString* path = furi_string_alloc_set(db_filename);
+    furi_string_left(path, len - 3);
+    furi_string_cat_str(path, ".order");
+
+    FlipperFormat* ff = flipper_format_buffered_file_alloc(storage);
+    FuriString* filetype = furi_string_alloc();
+    FileInfo info;
+    uint32_t version = 0, library_size = 0;
+    bool valid = false;
+
+    do {
+        if(storage_common_stat(storage, db_filename, &info) != FSE_OK) break;
+        if(!flipper_format_buffered_file_open_existing(ff, furi_string_get_cstr(path))) break;
+        if(!flipper_format_read_header(ff, filetype, &version)) break;
+        if(!furi_string_equal_str(filetype, IR_BF_ORDER_FILETYPE)) break;
+        if(version != IR_BF_ORDER_VERSION) break;
+        if(!flipper_format_read_uint32(ff, IR_BF_ORDER_LIBRARY_SIZE, &library_size, 1)) break;
+        if(library_size != info.size) break;
+        valid = true;
+    } while(false);
+
+    furi_string_free(filetype);
+    furi_string_free(path);
+    if(!valid) {
+        flipper_format_free(ff);
+        ff = NULL;
+    }
+    return ff;
+}
+
+// The sending order of one button: order[i] is the candidate sent i-th. Falls back to file
+// order when the order file has nothing valid for the button.
+static void
+    ir_bf_order_read(FlipperFormat* order_ff, const char* name, uint32_t* order, size_t count) {
+    for(size_t i = 0; i < count; i++) {
+        order[i] = i;
+    }
+    if(!order_ff || count == 0) return;
+
+    uint32_t listed = 0;
+    if(!flipper_format_rewind(order_ff)) return;
+    if(!flipper_format_get_value_count(order_ff, name, &listed) || listed != count) return;
+    if(!flipper_format_rewind(order_ff)) return;
+
+    uint32_t* wanted = malloc(sizeof(uint32_t) * count);
+    uint8_t* used = malloc((count + 7) / 8);
+    memset(used, 0, (count + 7) / 8);
+    bool valid = flipper_format_read_uint32(order_ff, name, wanted, count);
+    for(size_t i = 0; valid && i < count; i++) {
+        const uint32_t index = wanted[i];
+        if(index >= count || (used[index / 8] & (1U << (index % 8)))) {
+            valid = false;
+        } else {
+            used[index / 8] |= 1U << (index % 8);
+        }
+    }
+    if(valid) memcpy(order, wanted, sizeof(uint32_t) * count);
+    free(used);
+    free(wanted);
+}
+
+// Fill the record's signal list from its candidates, in sending order, without a code that
+// was already in the list (the database often has one code several times: a model's remote
+// was added twice, or as NEC and as NECext, or once parsed and once raw). Of a parsed signal
+// and a raw capture of the same code, the parsed one is sent (clean timings), in the place
+// of whichever came first.
+static void ir_bf_record_finish(
+    InfraredBruteForceRecord* record,
+    const char* name,
+    FlipperFormat* order_ff) {
+    const size_t count = InfraredBruteForceCandidateArray_size(record->candidates);
+    uint32_t* order = malloc(sizeof(uint32_t) * (count ? count : 1));
+    ir_bf_order_read(order_ff, name, order, count);
+
+    InfraredBruteForceCandidate* kept =
+        malloc(sizeof(InfraredBruteForceCandidate) * (count ? count : 1));
+    size_t kept_count = 0;
+
+    for(size_t i = 0; i < count; i++) {
+        const InfraredBruteForceCandidate* candidate =
+            InfraredBruteForceCandidateArray_cget(record->candidates, order[i]);
+        size_t k = 0;
+        while(k < kept_count && kept[k].key != candidate->key) {
+            k++;
+        }
+        if(k == kept_count) {
+            kept[kept_count++] = *candidate;
+        } else if(kept[k].is_raw && !candidate->is_raw) {
+            kept[k] = *candidate;
+        }
+    }
+
+    SignalPositionArray_reset(record->signals);
+    for(size_t k = 0; k < kept_count; k++) {
+        SignalPositionArray_push_back(record->signals, kept[k].position);
+    }
+
+    free(kept);
+    free(order);
+    InfraredBruteForceCandidateArray_clear(record->candidates);
+    InfraredBruteForceCandidateArray_init(record->candidates);
+}
+
 InfraredErrorCode infrared_brute_force_calculate_messages(InfraredBruteForce* brute_force) {
     furi_check(brute_force);
     furi_assert(!brute_force->is_started);
@@ -101,6 +260,17 @@ InfraredErrorCode infrared_brute_force_calculate_messages(InfraredBruteForce* br
     FlipperFormat* ff = flipper_format_buffered_file_alloc(storage);
     FuriString* signal_name = furi_string_alloc();
     InfraredSignal* signal = infrared_signal_alloc();
+    InfraredDecoderHandler* decoder = infrared_alloc_decoder();
+
+    // Start every record empty, so that a second calculation does not add to the first
+    InfraredBruteForceRecordDict_it_t it;
+    for(InfraredBruteForceRecordDict_it(it, brute_force->records);
+        !InfraredBruteForceRecordDict_end_p(it);
+        InfraredBruteForceRecordDict_next(it)) {
+        InfraredBruteForceRecord* record = &InfraredBruteForceRecordDict_ref(it)->value;
+        SignalPositionArray_reset(record->signals);
+        InfraredBruteForceCandidateArray_reset(record->candidates);
+    }
 
     do {
         if(!flipper_format_buffered_file_open_existing(ff, brute_force->db_filename)) {
@@ -118,6 +288,10 @@ InfraredErrorCode infrared_brute_force_calculate_messages(InfraredBruteForce* br
             if(!record) continue;
 
             const size_t signal_start = flipper_format_tell(ff);
+            if(signal_start > IR_BF_CANDIDATE_POSITION_MAX) {
+                error = InfraredErrorCodeFileOperationFailed;
+                break;
+            }
 
             error = infrared_signal_read_body(signal, ff);
             if(INFRARED_ERROR_PRESENT(error)) break;
@@ -129,10 +303,31 @@ InfraredErrorCode infrared_brute_force_calculate_messages(InfraredBruteForce* br
                 break;
             }
 
-            SignalPositionArray_push_back(record->signals, signal_start);
+            InfraredBruteForceCandidate candidate = {
+                .position = (uint32_t)signal_start,
+                .is_raw = infrared_signal_is_raw(signal),
+                .key = ir_bf_signal_key(signal, decoder),
+            };
+            InfraredBruteForceCandidateArray_push_back(record->candidates, candidate);
         }
     } while(false);
 
+    // Put each record's signals in sending order, once each (on error the records stay empty)
+    FlipperFormat* order_ff =
+        INFRARED_ERROR_PRESENT(error) ? NULL : ir_bf_order_open(storage, brute_force->db_filename);
+    for(InfraredBruteForceRecordDict_it(it, brute_force->records);
+        !InfraredBruteForceRecordDict_end_p(it);
+        InfraredBruteForceRecordDict_next(it)) {
+        InfraredBruteForceRecordDict_itref_t* ref = InfraredBruteForceRecordDict_ref(it);
+        if(INFRARED_ERROR_PRESENT(error)) {
+            InfraredBruteForceCandidateArray_reset(ref->value.candidates);
+        } else {
+            ir_bf_record_finish(&ref->value, furi_string_get_cstr(ref->key), order_ff);
+        }
+    }
+    if(order_ff) flipper_format_free(order_ff);
+
+    infrared_free_decoder(decoder);
     infrared_signal_free(signal);
     furi_string_free(signal_name);
 
@@ -224,11 +419,7 @@ bool infrared_brute_force_send(InfraredBruteForce* brute_force, uint32_t signal_
     if(!infrared_brute_force_load_signal(brute_force, signal_index, brute_force->current_signal))
         return false;
 
-    if(brute_force->is_fast) {
-        infrared_signal_transmit_fast(brute_force->current_signal);
-    } else {
-        infrared_signal_transmit(brute_force->current_signal);
-    }
+    infrared_signal_transmit_at(brute_force->current_signal, brute_force->speed);
     return true;
 }
 
@@ -254,8 +445,14 @@ void infrared_brute_force_reset(InfraredBruteForce* brute_force) {
 }
 
 void infrared_brute_force_set_fast(InfraredBruteForce* brute_force, bool fast) {
+    infrared_brute_force_set_speed(
+        brute_force, fast ? InfraredTxSpeedFast : InfraredTxSpeedNormal);
+}
+
+void infrared_brute_force_set_speed(InfraredBruteForce* brute_force, InfraredTxSpeed speed) {
     furi_check(brute_force);
-    brute_force->is_fast = fast;
+    furi_check(speed <= InfraredTxSpeedTurbo);
+    brute_force->speed = speed;
 }
 
 /* ------------------------------------------------------------------ */
@@ -302,10 +499,7 @@ static inline void ir_bf_device_item_clear(InfraredBruteForceDeviceItem* item) {
      SET(IR_BF_DEVICE_ITEM_SET),           \
      CLEAR(IR_BF_DEVICE_ITEM_CLEAR))
 
-ARRAY_DEF(
-    InfraredBruteForceDeviceItemArray,
-    InfraredBruteForceDeviceItem,
-    IR_BF_DEVICE_ITEM_OPLIST)
+ARRAY_DEF(InfraredBruteForceDeviceItemArray, InfraredBruteForceDeviceItem, IR_BF_DEVICE_ITEM_OPLIST)
 
 struct InfraredBruteForceDevice {
     InfraredBruteForceDeviceItemArray_t items;
@@ -348,7 +542,8 @@ const char*
     infrared_brute_force_device_get_name(const InfraredBruteForceDevice* device, size_t index) {
     furi_check(device);
     if(index >= InfraredBruteForceDeviceItemArray_size(device->items)) return NULL;
-    return furi_string_get_cstr(InfraredBruteForceDeviceItemArray_cget(device->items, index)->name);
+    return furi_string_get_cstr(
+        InfraredBruteForceDeviceItemArray_cget(device->items, index)->name);
 }
 
 const char*

@@ -1,4 +1,5 @@
 #include "infrared_signal.h"
+#include "infrared_raw_trim.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -456,14 +457,15 @@ InfraredErrorCode infrared_signal_search_by_index_and_read(
 #define INFRARED_FAST_GAP_KASEIKYO_US (74000U)
 #define INFRARED_FAST_GAP_RAW_US      (50000U)
 
-// Raw captures: a space longer than this separates frames
-#define INFRARED_RAW_FRAME_GAP_US      (10000U)
-// Raw captures: keep at most this many identical frames in a row (some TVs need a repeat)
-#define INFRARED_RAW_MAX_SAME_FRAMES   (2U)
-// Raw captures: timings within this tolerance are considered identical
-#define INFRARED_RAW_SAME_TOLERANCE_US (150U)
+// Turbo mode: an IR receiver needs a silence of about four times its longest burst before it
+// takes the next one at full gain. These are that, with a margin (NEC keeps its 40 ms: its
+// 9 ms leader needs 36).
+#define INFRARED_TURBO_GAP_SAMSUNG_US  (25000U) /* 4.5 ms leader */
+#define INFRARED_TURBO_GAP_KASEIKYO_US (20000U) /* 3.5 ms leader */
+#define INFRARED_TURBO_GAP_RC_US       (15000U) /* RC5 / RC6, bursts under 2.7 ms */
 
-static uint32_t infrared_signal_fast_gap_us(InfraredProtocol protocol) {
+static uint32_t infrared_signal_gap_us(InfraredProtocol protocol, InfraredTxSpeed speed) {
+    const bool turbo = (speed == InfraredTxSpeedTurbo);
     switch(protocol) {
     case InfraredProtocolNEC:
     case InfraredProtocolNECext:
@@ -471,84 +473,44 @@ static uint32_t infrared_signal_fast_gap_us(InfraredProtocol protocol) {
     case InfraredProtocolNEC42ext:
         return INFRARED_FAST_GAP_NEC_US;
     case InfraredProtocolSamsung32:
-        return INFRARED_FAST_GAP_SAMSUNG_US;
+        return turbo ? INFRARED_TURBO_GAP_SAMSUNG_US : INFRARED_FAST_GAP_SAMSUNG_US;
     case InfraredProtocolKaseikyo:
-        return INFRARED_FAST_GAP_KASEIKYO_US;
+        return turbo ? INFRARED_TURBO_GAP_KASEIKYO_US : INFRARED_FAST_GAP_KASEIKYO_US;
+    case InfraredProtocolRC5:
+    case InfraredProtocolRC5X:
+    case InfraredProtocolRC6:
+        return turbo ? INFRARED_TURBO_GAP_RC_US : INFRARED_TX_LEADING_SILENCE_DEFAULT;
     default:
         // Other protocols already use short silences
         return INFRARED_TX_LEADING_SILENCE_DEFAULT;
     }
 }
 
-static bool infrared_raw_timing_same(uint32_t a, uint32_t b) {
-    uint32_t diff = a > b ? a - b : b - a;
-    uint32_t tolerance = MAX(INFRARED_RAW_SAME_TOLERANCE_US, a / 4);
-    return diff <= tolerance;
-}
-
-static bool infrared_raw_frames_same(
-    const uint32_t* timings,
-    size_t a_start,
-    size_t a_len,
-    size_t b_start,
-    size_t b_len) {
-    if(a_len != b_len) return false;
-    for(size_t i = 0; i < a_len; i++) {
-        if(!infrared_raw_timing_same(timings[a_start + i], timings[b_start + i])) return false;
-    }
-    return true;
-}
-
-// Number of timings to send so that at most INFRARED_RAW_MAX_SAME_FRAMES identical
-// frames are transmitted in a row. Always ends on a mark.
-static size_t infrared_raw_fast_length(const uint32_t* timings, size_t size) {
-    size_t prev_start = 0, prev_len = 0;
-    size_t frame_start = 0;
-    uint32_t same_count = 0;
-
-    // Timings start with a mark: odd indices are spaces
-    for(size_t i = 1; i < size; i += 2) {
-        if(timings[i] <= INFRARED_RAW_FRAME_GAP_US) continue;
-
-        // Frame [frame_start, i) ends here, followed by a long space at i
-        size_t frame_len = i - frame_start;
-        if(same_count &&
-           infrared_raw_frames_same(timings, prev_start, prev_len, frame_start, frame_len)) {
-            same_count++;
-        } else {
-            same_count = 1;
-        }
-        if(same_count > INFRARED_RAW_MAX_SAME_FRAMES) {
-            // Drop this frame and everything after it (the space before it too)
-            return frame_start - 1;
-        }
-        prev_start = frame_start;
-        prev_len = frame_len;
-        frame_start = i + 1;
-    }
-
-    // Last frame (no trailing long space)
-    if(frame_start < size && same_count >= INFRARED_RAW_MAX_SAME_FRAMES &&
-       infrared_raw_frames_same(timings, prev_start, prev_len, frame_start, size - frame_start)) {
-        return frame_start - 1;
-    }
-    return size;
-}
-
-void infrared_signal_transmit_fast(const InfraredSignal* signal) {
-    if(signal->is_raw) {
+void infrared_signal_transmit_at(const InfraredSignal* signal, InfraredTxSpeed speed) {
+    furi_check(signal);
+    if(speed == InfraredTxSpeedNormal) {
+        infrared_signal_transmit(signal);
+    } else if(signal->is_raw) {
         const InfraredRawSignal* raw_signal = &signal->payload.raw;
+        const size_t length = infrared_raw_trim_length(
+            raw_signal->timings, raw_signal->timings_size, speed == InfraredTxSpeedTurbo);
         infrared_send_raw_ex(
             raw_signal->timings,
-            infrared_raw_fast_length(raw_signal->timings, raw_signal->timings_size),
+            length,
             true,
             raw_signal->frequency,
             raw_signal->duty_cycle,
-            INFRARED_FAST_GAP_RAW_US);
+            speed == InfraredTxSpeedTurbo ?
+                infrared_raw_trim_turbo_gap_us(raw_signal->timings, length) :
+                INFRARED_FAST_GAP_RAW_US);
     } else {
         const InfraredMessage* message = &signal->payload.message;
-        infrared_send_ex(message, 1, infrared_signal_fast_gap_us(message->protocol));
+        infrared_send_ex(message, 1, infrared_signal_gap_us(message->protocol, speed));
     }
+}
+
+void infrared_signal_transmit_fast(const InfraredSignal* signal) {
+    infrared_signal_transmit_at(signal, InfraredTxSpeedFast);
 }
 
 void infrared_signal_transmit(const InfraredSignal* signal) {

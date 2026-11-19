@@ -22,7 +22,9 @@ typedef struct InfraredApp InfraredApp;
 typedef struct {
     FuriHalInfraredTxPin tx_pin;
     bool otg_enabled;
-    bool fast_universal; /**< Universal remotes: short gaps between codes */
+    /** Universal remotes: an InfraredTxSpeed. One byte, so version 2 files whose bool said
+        normal (0) or fast (1) read the same. */
+    uint8_t universal_speed;
 } InfraredSettings;
 
 /** Settings file layout before version 2, kept for migration */
