@@ -176,6 +176,7 @@ static InfraredApp* infrared_alloc(void) {
     infrared->remote = infrared_remote_alloc();
     infrared->current_signal = infrared_signal_alloc();
     infrared->brute_force = infrared_brute_force_alloc();
+    infrared->found_device = infrared_brute_force_device_alloc();
 
     infrared->submenu = submenu_alloc();
     view_dispatcher_add_view(
@@ -281,6 +282,7 @@ static void infrared_free(InfraredApp* infrared) {
     view_dispatcher_free(view_dispatcher);
     scene_manager_free(infrared->scene_manager);
 
+    infrared_brute_force_device_free(infrared->found_device);
     infrared_brute_force_free(infrared->brute_force);
     infrared_signal_free(infrared->current_signal);
     infrared_remote_free(infrared->remote);
@@ -322,6 +324,52 @@ InfraredErrorCode infrared_add_named_remote_with_button(
         if(INFRARED_ERROR_PRESENT(error)) break;
 
         error = infrared_remote_append_signal(remote, signal, button_name);
+    } while(false);
+
+    furi_string_free(new_name);
+    furi_string_free(new_path);
+
+    return error;
+}
+
+InfraredErrorCode infrared_add_named_remote_with_device(
+    const InfraredApp* infrared,
+    const char* remote_name,
+    const InfraredBruteForceDevice* device) {
+    InfraredRemote* remote = infrared->remote;
+    const size_t count = infrared_brute_force_device_get_count(device);
+
+    FuriString* new_name = furi_string_alloc_set(remote_name);
+    FuriString* new_path = furi_string_alloc_set(INFRARED_APP_FOLDER);
+
+    infrared_find_vacant_remote_name(new_name, furi_string_get_cstr(new_path));
+    furi_string_cat_printf(
+        new_path, "/%s%s", furi_string_get_cstr(new_name), INFRARED_APP_EXTENSION);
+
+    InfraredErrorCode error = InfraredErrorCodeNone;
+
+    do {
+        error = infrared_remote_create(remote, furi_string_get_cstr(new_path));
+        if(INFRARED_ERROR_PRESENT(error)) break;
+
+        // Append every button, skipping any duplicate name (keep-first) so the saved
+        // remote never holds two buttons with the same name.
+        for(size_t i = 0; i < count; i++) {
+            const char* button_name = infrared_brute_force_device_get_name(device, i);
+
+            bool duplicate = false;
+            for(size_t j = 0; j < i; j++) {
+                if(strcmp(button_name, infrared_brute_force_device_get_name(device, j)) == 0) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if(duplicate) continue;
+
+            error = infrared_remote_append_signal(
+                remote, infrared_brute_force_device_get_signal(device, i), button_name);
+            if(INFRARED_ERROR_PRESENT(error)) break;
+        }
     } while(false);
 
     furi_string_free(new_name);

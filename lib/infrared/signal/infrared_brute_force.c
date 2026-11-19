@@ -252,3 +252,230 @@ void infrared_brute_force_set_fast(InfraredBruteForce* brute_force, bool fast) {
     furi_check(brute_force);
     brute_force->is_fast = fast;
 }
+
+/* ------------------------------------------------------------------ */
+/* Remote Finder                                                       */
+/* ------------------------------------------------------------------ */
+
+typedef struct {
+    InfraredSignal* signal;
+    FuriString* name;
+} InfraredBruteForceDeviceItem;
+
+static void ir_bf_device_item_init(InfraredBruteForceDeviceItem* item) {
+    item->signal = infrared_signal_alloc();
+    item->name = furi_string_alloc();
+}
+
+static void ir_bf_device_item_clear(InfraredBruteForceDeviceItem* item) {
+    infrared_signal_free(item->signal);
+    furi_string_free(item->name);
+}
+
+// m-array moves items by value on growth, so no INIT_SET/SET is provided: the
+// collection only ever uses push_new()/reset(), which call INIT and CLEAR.
+#define IR_BF_DEVICE_ITEM_OPLIST (INIT(API_2(ir_bf_device_item_init)), CLEAR(API_2(ir_bf_device_item_clear)))
+
+ARRAY_DEF(InfraredBruteForceDeviceItemArray, InfraredBruteForceDeviceItem, IR_BF_DEVICE_ITEM_OPLIST)
+
+struct InfraredBruteForceDevice {
+    InfraredBruteForceDeviceItemArray_t items;
+    FuriString* suggested_name;
+};
+
+InfraredBruteForceDevice* infrared_brute_force_device_alloc(void) {
+    InfraredBruteForceDevice* device = malloc(sizeof(InfraredBruteForceDevice));
+    InfraredBruteForceDeviceItemArray_init(device->items);
+    device->suggested_name = furi_string_alloc();
+    return device;
+}
+
+void infrared_brute_force_device_free(InfraredBruteForceDevice* device) {
+    furi_check(device);
+    InfraredBruteForceDeviceItemArray_clear(device->items);
+    furi_string_free(device->suggested_name);
+    free(device);
+}
+
+void infrared_brute_force_device_reset(InfraredBruteForceDevice* device) {
+    furi_check(device);
+    InfraredBruteForceDeviceItemArray_reset(device->items);
+    furi_string_reset(device->suggested_name);
+}
+
+size_t infrared_brute_force_device_get_count(const InfraredBruteForceDevice* device) {
+    furi_check(device);
+    return InfraredBruteForceDeviceItemArray_size(device->items);
+}
+
+const InfraredSignal*
+    infrared_brute_force_device_get_signal(const InfraredBruteForceDevice* device, size_t index) {
+    furi_check(device);
+    if(index >= InfraredBruteForceDeviceItemArray_size(device->items)) return NULL;
+    return InfraredBruteForceDeviceItemArray_cget(device->items, index)->signal;
+}
+
+const char*
+    infrared_brute_force_device_get_name(const InfraredBruteForceDevice* device, size_t index) {
+    furi_check(device);
+    if(index >= InfraredBruteForceDeviceItemArray_size(device->items)) return NULL;
+    return furi_string_get_cstr(InfraredBruteForceDeviceItemArray_cget(device->items, index)->name);
+}
+
+const char*
+    infrared_brute_force_device_get_suggested_name(const InfraredBruteForceDevice* device) {
+    furi_check(device);
+    return furi_string_get_cstr(device->suggested_name);
+}
+
+// One entry of the on-demand library index. Names are not stored here: they are
+// read back from the file by offset only for the few entries a run touches.
+typedef struct {
+    size_t name_offset; /**< Stream position of the signal's "name:" line. */
+    size_t body_offset; /**< Stream position of the signal body (matches load_signal). */
+    bool is_raw;
+    InfraredProtocol protocol;
+    uint32_t address;
+} InfraredBruteForceIndexEntry;
+
+ARRAY_DEF(InfraredBruteForceIndexArray, InfraredBruteForceIndexEntry, M_POD_OPLIST)
+
+// Two entries belong to the same device only if both are raw, or both are parsed
+// with the same protocol and address. The command differs per button, so ignore it.
+static bool ir_bf_index_same_device(
+    const InfraredBruteForceIndexEntry* a,
+    const InfraredBruteForceIndexEntry* b) {
+    if(a->is_raw || b->is_raw) return a->is_raw && b->is_raw;
+    return a->protocol == b->protocol && a->address == b->address;
+}
+
+// Read just the button name of the entry at name_offset into out_name.
+static bool ir_bf_read_entry_name(FlipperFormat* ff, size_t name_offset, FuriString* out_name) {
+    if(!flipper_format_seek(ff, name_offset, FlipperFormatOffsetFromStart)) return false;
+    return infrared_signal_read_name(ff, out_name) == InfraredErrorCodeNone;
+}
+
+// True if name already appears among the run's names; a repeat marks a device boundary.
+static bool ir_bf_name_seen(FuriString** seen, size_t seen_count, const FuriString* name) {
+    for(size_t i = 0; i < seen_count; i++) {
+        if(furi_string_equal(seen[i], name)) return true;
+    }
+    return false;
+}
+
+size_t infrared_brute_force_collect_device(
+    InfraredBruteForce* brute_force,
+    uint32_t signal_index,
+    size_t max_signals,
+    InfraredBruteForceDevice* device) {
+    furi_check(brute_force);
+    furi_check(device);
+    furi_assert(brute_force->is_started);
+
+    infrared_brute_force_device_reset(device);
+
+    if(max_signals == 0) return 0;
+    if(signal_index >= SignalPositionArray_size(brute_force->current_record.signals)) return 0;
+    const size_t target_offset =
+        *SignalPositionArray_cget(brute_force->current_record.signals, signal_index);
+
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    FlipperFormat* ff = flipper_format_buffered_file_alloc(storage);
+    InfraredBruteForceIndexArray_t index;
+    InfraredBruteForceIndexArray_init(index);
+    InfraredSignal* signal = infrared_signal_alloc();
+    FuriString* name = furi_string_alloc();
+
+    // seen[] holds copies of the names already in the run (capped at max_signals)
+    FuriString** seen = malloc(sizeof(FuriString*) * max_signals);
+    size_t seen_count = 0;
+    size_t collected = 0;
+
+    do {
+        if(!flipper_format_buffered_file_open_existing(ff, brute_force->db_filename)) break;
+
+        // Pass 1: index every signal's position and device key (no names, no body kept)
+        size_t target_pos = (size_t)-1;
+        while(true) {
+            const size_t name_offset = flipper_format_tell(ff);
+            if(infrared_signal_read_name(ff, name) != InfraredErrorCodeNone) break;
+            const size_t body_offset = flipper_format_tell(ff);
+            if(INFRARED_ERROR_PRESENT(infrared_signal_read_body(signal, ff))) break;
+
+            InfraredBruteForceIndexEntry entry = {
+                .name_offset = name_offset,
+                .body_offset = body_offset,
+                .is_raw = infrared_signal_is_raw(signal),
+            };
+            if(!entry.is_raw) {
+                const InfraredMessage* message = infrared_signal_get_message(signal);
+                entry.protocol = message->protocol;
+                entry.address = message->address;
+            }
+            if(body_offset == target_offset) {
+                target_pos = InfraredBruteForceIndexArray_size(index);
+            }
+            InfraredBruteForceIndexArray_push_back(index, entry);
+        }
+
+        const size_t count = InfraredBruteForceIndexArray_size(index);
+        if(target_pos == (size_t)-1) break; // confirmed signal not found in the file
+
+        const InfraredBruteForceIndexEntry* target =
+            InfraredBruteForceIndexArray_cget(index, target_pos);
+
+        // Pass 2: grow a run of the same device around the target, stopping at a
+        // key change or a repeated button name, capped at max_signals.
+        if(!ir_bf_read_entry_name(ff, target->name_offset, name)) break;
+        seen[seen_count++] = furi_string_alloc_set(name);
+        size_t lo = target_pos, hi = target_pos;
+
+        while(lo > 0 && seen_count < max_signals) {
+            const InfraredBruteForceIndexEntry* e =
+                InfraredBruteForceIndexArray_cget(index, lo - 1);
+            if(!ir_bf_index_same_device(e, target)) break;
+            if(!ir_bf_read_entry_name(ff, e->name_offset, name)) break;
+            if(ir_bf_name_seen(seen, seen_count, name)) break;
+            seen[seen_count++] = furi_string_alloc_set(name);
+            lo--;
+        }
+        while(hi + 1 < count && seen_count < max_signals) {
+            const InfraredBruteForceIndexEntry* e =
+                InfraredBruteForceIndexArray_cget(index, hi + 1);
+            if(!ir_bf_index_same_device(e, target)) break;
+            if(!ir_bf_read_entry_name(ff, e->name_offset, name)) break;
+            if(ir_bf_name_seen(seen, seen_count, name)) break;
+            seen[seen_count++] = furi_string_alloc_set(name);
+            hi++;
+        }
+
+        // Pass 3: read the run's names and bodies in file order into the collection
+        for(size_t i = lo; i <= hi; i++) {
+            const InfraredBruteForceIndexEntry* e = InfraredBruteForceIndexArray_cget(index, i);
+            if(!flipper_format_seek(ff, e->name_offset, FlipperFormatOffsetFromStart)) break;
+            if(infrared_signal_read_name(ff, name) != InfraredErrorCodeNone) break;
+            if(INFRARED_ERROR_PRESENT(infrared_signal_read_body(signal, ff))) break;
+
+            InfraredBruteForceDeviceItem* item =
+                InfraredBruteForceDeviceItemArray_push_new(device->items);
+            infrared_signal_set_signal(item->signal, signal);
+            furi_string_set(item->name, name);
+            collected++;
+        }
+
+        furi_string_set(device->suggested_name, brute_force->current_record_name);
+    } while(false);
+
+    for(size_t i = 0; i < seen_count; i++) {
+        furi_string_free(seen[i]);
+    }
+    free(seen);
+    furi_string_free(name);
+    infrared_signal_free(signal);
+    InfraredBruteForceIndexArray_clear(index);
+    flipper_format_free(ff);
+    furi_record_close(RECORD_STORAGE);
+
+    if(collected == 0) infrared_brute_force_device_reset(device);
+    return collected;
+}

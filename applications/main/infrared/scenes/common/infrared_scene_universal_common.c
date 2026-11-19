@@ -143,6 +143,35 @@ static void infrared_scene_universal_common_handle_popup_input(
         break;
     }
 
+    case InfraredProgressViewInputSaveDevice: {
+        InfraredSceneState scene_state = {
+            .packed_value = scene_manager_get_scene_state(scene_manager, scene_id)};
+        // Gather the whole device (all its buttons) before the brute force is torn down.
+        const size_t count = infrared_brute_force_collect_device(
+            brute_force,
+            scene_state.signal_index,
+            INFRARED_UNIVERSAL_DEVICE_MAX_SIGNALS,
+            infrared->found_device);
+        if(count == 0) {
+            infrared_show_error_message(infrared, "Failed to read\nthe signal");
+            break;
+        }
+        infrared_text_store_set(
+            infrared, 1, "%s", infrared_brute_force_get_current_record_name(brute_force));
+        infrared_brute_force_stop(brute_force);
+        infrared_scene_universal_common_hide_popup(infrared);
+        if(count == 1) {
+            // Lone signal (e.g. a brand-specific power code): fall back to single save
+            infrared_signal_set_signal(
+                infrared->current_signal,
+                infrared_brute_force_device_get_signal(infrared->found_device, 0));
+            scene_manager_next_scene(scene_manager, InfraredSceneUniversalSave);
+        } else {
+            scene_manager_next_scene(scene_manager, InfraredSceneUniversalSaveDevice);
+        }
+        break;
+    }
+
     case InfraredProgressViewInputSendSingle: {
         InfraredSceneState scene_state = {
             .packed_value = scene_manager_get_scene_state(scene_manager, scene_id)};
@@ -250,5 +279,7 @@ void infrared_scene_universal_common_on_exit(void* context) {
     ButtonPanel* button_panel = infrared->button_panel;
     view_stack_remove_view(infrared->view_stack, button_panel_get_view(button_panel));
     infrared_brute_force_reset(infrared->brute_force);
+    // Free any device collected by the Remote Finder but not carried into a save scene
+    infrared_brute_force_device_reset(infrared->found_device);
     button_panel_reset(button_panel);
 }

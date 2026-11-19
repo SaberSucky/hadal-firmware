@@ -52,6 +52,9 @@
 #define INFRARED_DEFAULT_REMOTE_NAME "Remote"
 #define INFRARED_LOG_TAG             "InfraredApp"
 
+/** Remote Finder: largest device (button count) it will collect from the library. */
+#define INFRARED_UNIVERSAL_DEVICE_MAX_SIGNALS 40
+
 /**
  * @brief Enumeration of invalid remote button indices.
  */
@@ -109,6 +112,7 @@ struct InfraredApp {
     InfraredRemote* remote; /**< Holds the currently loaded remote. */
     InfraredSignal* current_signal; /**< Holds the currently loaded signal. */
     InfraredBruteForce* brute_force; /**< Used for the Universal Remote feature. */
+    InfraredBruteForceDevice* found_device; /**< Device gathered by the Remote Finder. */
 
     Submenu* submenu; /**< Standard view for displaying application menus. */
     TextInput* text_input; /**< Standard view for receiving user text input. */
@@ -199,6 +203,23 @@ InfraredErrorCode infrared_add_named_remote_with_button(
     const char* remote_name,
     const char* button_name,
     const InfraredSignal* signal);
+
+/**
+ * @brief Add a new remote with a given name holding every button of a collected device.
+ *
+ * Used by the Remote Finder. If a remote with that name already exists, a number is
+ * appended to keep it distinct. Buttons whose name was already written are skipped
+ * (keep-first), so a remote never contains two buttons with the same name.
+ *
+ * @param[in] infrared pointer to the application instance.
+ * @param[in] remote_name pointer to a zero-terminated string containing the remote name.
+ * @param[in] device pointer to the collected device to be saved.
+ * @return InfraredErrorCodeNone if the remote was successfully created, otherwise error code.
+ */
+InfraredErrorCode infrared_add_named_remote_with_device(
+    const InfraredApp* infrared,
+    const char* remote_name,
+    const InfraredBruteForceDevice* device);
 
 /**
  * @brief Find a remote name that is not taken yet in the given directory.

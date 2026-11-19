@@ -161,6 +161,102 @@ void infrared_brute_force_add_record(
  */
 void infrared_brute_force_reset(InfraredBruteForce* brute_force);
 
+/*
+ * Remote Finder support.
+ *
+ * When brute-forcing a universal category (e.g. TV Power), the signals of one
+ * physical device are stored consecutively in the library and share a common
+ * key: for parsed signals the protocol and address, for raw signals simply
+ * "raw". infrared_brute_force_collect_device() takes the index of a signal the
+ * user confirmed works and gathers that device's whole run of buttons into an
+ * opaque, independently-owned collection, so a complete personal remote can be
+ * saved from it.
+ */
+
+/**
+ * @brief Opaque collection of one device's signals gathered by the Remote Finder.
+ */
+typedef struct InfraredBruteForceDevice InfraredBruteForceDevice;
+
+/**
+ * @brief Create an empty device collection.
+ *
+ * @returns pointer to the created instance.
+ */
+InfraredBruteForceDevice* infrared_brute_force_device_alloc(void);
+
+/**
+ * @brief Delete a device collection and all signals it owns.
+ *
+ * @param[in,out] device pointer to the instance to be deleted.
+ */
+void infrared_brute_force_device_free(InfraredBruteForceDevice* device);
+
+/**
+ * @brief Drop all signals held by a device collection, keeping the instance.
+ *
+ * @param[in,out] device pointer to the instance to be reset.
+ */
+void infrared_brute_force_device_reset(InfraredBruteForceDevice* device);
+
+/**
+ * @brief Number of signals held by a device collection.
+ *
+ * @param[in] device pointer to the instance to be queried.
+ * @returns the number of signals.
+ */
+size_t infrared_brute_force_device_get_count(const InfraredBruteForceDevice* device);
+
+/**
+ * @brief Get a signal held by a device collection.
+ *
+ * @param[in] device pointer to the instance to be queried.
+ * @param[in] index index of the signal, 0 to get_count()-1.
+ * @returns pointer to the signal, owned by the collection, or NULL if out of range.
+ */
+const InfraredSignal*
+    infrared_brute_force_device_get_signal(const InfraredBruteForceDevice* device, size_t index);
+
+/**
+ * @brief Get the button name of a signal held by a device collection.
+ *
+ * @param[in] device pointer to the instance to be queried.
+ * @param[in] index index of the signal, 0 to get_count()-1.
+ * @returns pointer to a zero-terminated name, owned by the collection, or NULL if out of range.
+ */
+const char*
+    infrared_brute_force_device_get_name(const InfraredBruteForceDevice* device, size_t index);
+
+/**
+ * @brief Get a suggested remote name for a device collection.
+ *
+ * @param[in] device pointer to the instance to be queried.
+ * @returns pointer to a zero-terminated name, owned by the collection (may be empty).
+ */
+const char*
+    infrared_brute_force_device_get_suggested_name(const InfraredBruteForceDevice* device);
+
+/**
+ * @brief Gather the device that owns a given signal into a collection.
+ *
+ * Opens its own view of the database (the transmitting one is left untouched), so it
+ * must be called while the instance is started. Grows a run of consecutive signals
+ * around @p signal_index while they share the same key (parsed protocol+address, or
+ * both raw) and no button name repeats, capped at @p max_signals. The collected
+ * signals are deep-copied and remain valid after the instance is stopped or reset.
+ *
+ * @param[in,out] brute_force pointer to a started instance.
+ * @param[in] signal_index index of the confirmed signal within the current category.
+ * @param[in] max_signals maximum number of signals to collect.
+ * @param[out] device collection to fill; its previous contents are discarded.
+ * @returns the number of signals collected (at least 1 on success), or 0 on failure.
+ */
+size_t infrared_brute_force_collect_device(
+    InfraredBruteForce* brute_force,
+    uint32_t signal_index,
+    size_t max_signals,
+    InfraredBruteForceDevice* device);
+
 #ifdef __cplusplus
 }
 #endif

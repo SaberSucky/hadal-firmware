@@ -1,5 +1,5 @@
 entry,status,name,type,params
-Version,+,88.30,,
+Version,+,88.31,,
 Header,+,applications/drivers/subghz/cc1101_ext/cc1101_ext_interconnect.h,,
 Header,+,applications/services/applications.h,,
 Header,+,applications/services/bt/bt_service/bt.h,,
@@ -2267,6 +2267,14 @@ Function,+,infrared_alloc_encoder,InfraredEncoderHandler*,
 Function,-,infrared_brute_force_add_record,void,"InfraredBruteForce*, uint32_t, const char*"
 Function,-,infrared_brute_force_alloc,InfraredBruteForce*,
 Function,-,infrared_brute_force_calculate_messages,InfraredErrorCode,InfraredBruteForce*
+Function,-,infrared_brute_force_collect_device,size_t,"InfraredBruteForce*, uint32_t, size_t, InfraredBruteForceDevice*"
+Function,-,infrared_brute_force_device_alloc,InfraredBruteForceDevice*,
+Function,-,infrared_brute_force_device_free,void,InfraredBruteForceDevice*
+Function,-,infrared_brute_force_device_get_count,size_t,const InfraredBruteForceDevice*
+Function,-,infrared_brute_force_device_get_name,const char*,"const InfraredBruteForceDevice*, size_t"
+Function,-,infrared_brute_force_device_get_signal,const InfraredSignal*,"const InfraredBruteForceDevice*, size_t"
+Function,-,infrared_brute_force_device_get_suggested_name,const char*,const InfraredBruteForceDevice*
+Function,-,infrared_brute_force_device_reset,void,InfraredBruteForceDevice*
 Function,-,infrared_brute_force_free,void,InfraredBruteForce*
 Function,-,infrared_brute_force_get_current_record_name,const char*,const InfraredBruteForce*
 Function,-,infrared_brute_force_is_started,_Bool,const InfraredBruteForce*
