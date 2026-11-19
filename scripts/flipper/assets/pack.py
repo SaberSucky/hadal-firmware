@@ -43,6 +43,10 @@ ANIM_META_NAME = "meta"
 HEATSHRINK_WINDOW = 8
 HEATSHRINK_LOOKAHEAD = 4
 
+# A font file may not exceed this, and a pack's fonts together stay within the budget
+MAX_FONT_BYTES = 6144
+FONT_RAM_BUDGET = 12288
+
 # Base name of the generated icon index (assets_icon_index.c / .h)
 ICON_INDEX_NAME = "assets_icon_index"
 
@@ -284,6 +288,136 @@ def font_info(font: bytes) -> dict:
         "ascent_para": s8(font[15]),
         "descent_para": s8(font[16]),
     }
+
+
+def _u8(v):
+    return v & 0xFF
+
+
+def _s8(v):
+    v &= 0xFF
+    return v - 256 if v > 127 else v
+
+
+class _BitReader:
+    """Same value u8g2_font_decode_get_unsigned_bits() returns, but never reads past the glyph."""
+
+    def __init__(self, data):
+        self.data = data
+        self.bit_count = len(data) * 8
+        self.position = 0
+        self.exhausted = False
+
+    def read(self, count):
+        value = 0
+        for i in range(count):
+            if self.position >= self.bit_count:
+                self.exhausted = True
+                return 0
+            bit = (self.data[self.position >> 3] >> (self.position & 7)) & 1
+            value |= bit << i
+            self.position += 1
+        return value
+
+
+def _run_step(length, glyph_width, x, y):
+    """u8g2_font_decode_len() without the drawing, with its 8 bit wraparound."""
+    count = length
+    local_x, local_y = _u8(x), _u8(y)
+    while True:
+        remaining = _u8(_u8(glyph_width) - local_x)
+        if count < remaining:
+            break
+        count -= remaining
+        local_x = 0
+        local_y = _u8(local_y + 1)
+    local_x = _u8(local_x + count)
+    return _s8(local_x), _s8(local_y)
+
+
+def _glyph_decodes_in_bounds(font, data):
+    reader = _BitReader(data)
+    bits_per_0, bits_per_1 = font[2], font[3]
+    glyph_width = _s8(reader.read(font[4]))
+    glyph_height = _s8(reader.read(font[5]))
+    reader.read(font[6])
+    reader.read(font[7])
+    reader.read(font[8])
+    if reader.exhausted:
+        return False
+    if glyph_width > 0:
+        x = y = 0
+        while True:
+            zeros = reader.read(bits_per_0)
+            ones = reader.read(bits_per_1)
+            if reader.exhausted:
+                return False
+            while True:
+                x, y = _run_step(zeros, glyph_width, x, y)
+                x, y = _run_step(ones, glyph_width, x, y)
+                if reader.read(1) == 0 or reader.exhausted:
+                    break
+            if reader.exhausted:
+                return False
+            if y >= glyph_height:
+                break
+    return True
+
+
+_EMPTY_UNICODE_SECTION = bytes([0x00, 0x04, 0xFF, 0xFF, 0x00, 0x00])
+
+
+def font_problem(font: bytes, expected: dict = None):
+    """Why a u8g2 font would be refused as a pack font, or None if it is acceptable.
+
+    Mirrors asset_pack_font_check() in lib/asset_packs/asset_pack_format.c: the firmware walks
+    the font the way u8g2 does and refuses anything u8g2 could read outside of. expected holds
+    the max_char_height / ascent_A / descent_g of the built-in font being replaced (optional)."""
+    size = len(font)
+    if size < 23 + 2 + len(_EMPTY_UNICODE_SECTION):
+        return "too short to be a font"
+    if size > MAX_FONT_BYTES:
+        return f"{size} bytes, the limit is {MAX_FONT_BYTES}"
+    for i in range(2, 9):
+        if not 1 <= font[i] <= 8:
+            return f"header field {i} is {font[i]}, must be 1 to 8"
+    if expected is not None:
+        info = font_info(font)
+        for key in ("max_char_height", "ascent_A", "descent_g"):
+            if info[key] != expected[key]:
+                return (
+                    f"{key} is {info[key]}, the font it replaces has {expected[key]} "
+                    f"(it would change the layout of every screen)"
+                )
+    upper_a = (font[17] << 8) | font[18]
+    lower_a = (font[19] << 8) | font[20]
+    unicode = (font[21] << 8) | font[22]
+    upper_found, lower_found = upper_a == 0, lower_a == 0
+
+    position = 23
+    while True:
+        if position + 1 >= size:
+            return "the glyph list runs off the end of the font"
+        entry = font[position + 1]
+        if position - 23 == upper_a:
+            upper_found = True
+        if position - 23 == lower_a:
+            lower_found = True
+        if entry == 0:
+            break
+        if entry < 3 or position + entry > size:
+            return "a glyph entry has an impossible size"
+        if not _glyph_decodes_in_bounds(font, font[position + 2 : position + entry]):
+            return f"glyph at offset {position - 23} would be read past its own data"
+        position += entry
+    if not (upper_found and lower_found):
+        return "the header's 'A' or 'a' shortcut does not point at a glyph"
+    section = position + 2
+    if unicode != section - 23:
+        return "the header's Unicode offset does not match the font"
+    if font[section : section + 6] != _EMPTY_UNICODE_SECTION:
+        return "has Unicode glyphs; only characters 0-255 are supported"
+    return None
 
 
 def stock_font_info(repo_root: str, slot: str) -> dict:
@@ -697,19 +831,20 @@ def validate_pack(pack_dir: str, icon_index: dict = None, repo_root: str = None)
             data = _read(os.path.join(fonts, entry))
             font_bytes += len(data)
             try:
-                info = font_info(data)
+                font_info(data)
                 if data[-1] != 0:
                     errors.append(f"Fonts/{entry}: missing terminating zero byte")
-                if repo_root:
-                    stock = stock_font_info(repo_root, stem)
-                    for key in ("max_char_height", "ascent_A", "descent_g"):
-                        if info[key] != stock[key]:
-                            errors.append(
-                                f"Fonts/{entry}: {key} is {info[key]}, stock font has "
-                                f"{stock[key]} (would be rejected: it changes layout)"
-                            )
+                expected = stock_font_info(repo_root, stem) if repo_root else None
+                problem = font_problem(data, expected)
+                if problem:
+                    errors.append(f"Fonts/{entry}: would be rejected: {problem}")
             except PackError as e:
                 errors.append(f"Fonts/{entry}: {e}")
+
+    if font_bytes > FONT_RAM_BUDGET:
+        errors.append(
+            f"fonts take {font_bytes} B, the firmware loads at most {FONT_RAM_BUDGET} B of them"
+        )
 
     anims = os.path.join(pack_dir, "Anims")
     anim_count = 0

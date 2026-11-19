@@ -36,6 +36,7 @@ typedef enum {
     AssetPackErrLength,
     AssetPackErrDecode,
     AssetPackErrSize,
+    AssetPackErrMetrics,
 } AssetPackStatus;
 
 /** FNV-1a 32 of a pack path such as "StatusBar/Battery_26x8". Matches the generated icon index. */
@@ -100,6 +101,18 @@ AssetPackStatus asset_pack_blob_check(
 /** RAM a pack icon costs: bookkeeping plus its frames' blobs. */
 size_t asset_pack_icon_ram_cost(size_t frame_count, size_t total_blob_bytes);
 
+/** Font slots a pack can replace, in the order of the firmware's Font enum. */
+#define ASSET_PACK_FONT_SLOTS        5u
+/** One font file may not be larger than this, and a pack's fonts together stay within the budget. */
+#define ASSET_PACK_MAX_FONT_BYTES    6144u
+#define ASSET_PACK_FONT_RAM_BUDGET   12288u
+
+/** Size of the u8g2 font header, which holds the bit widths and layout metrics. */
+#define ASSET_PACK_FONT_HEADER_SIZE  23u
+
+/** File name stem of a font slot ("Primary" for Fonts/Primary.u8f); NULL past the last slot. */
+const char* asset_pack_font_slot_name(unsigned slot);
+
 /** Font header fields that decide text layout (u8g2 font header offsets 9, 10, 13, 14). */
 typedef struct {
     int8_t max_char_height;
@@ -109,6 +122,26 @@ typedef struct {
 
 /** Read the metrics of a u8g2 font; false if it is shorter than a header. */
 bool asset_pack_font_metrics(const uint8_t* font, size_t size, AssetPackFontMetrics* out);
+
+/**
+ * Check that a u8g2 font is safe to hand to the text renderer in place of the built-in font
+ * it replaces.
+ *
+ * u8g2 trusts font data completely: a corrupt glyph makes its decoder read on past the end of
+ * the font, up to a bus fault. So this walks the font the way u8g2 does and refuses anything
+ * that could read outside it:
+ *  - the layout metrics (height, ascent, descent) must equal the replaced font's, or every
+ *    screen's layout would change;
+ *  - the glyph chain must stay inside the data and end properly, and the header's shortcut
+ *    offsets must point at glyphs;
+ *  - every glyph is decoded with u8g2's own algorithm against a bit budget of exactly the bytes
+ *    the glyph occupies, so a glyph that wants more bits than it has is rejected;
+ *  - the Unicode section must be the empty one the built-in fonts have: characters 0-255 only.
+ *
+ * @param expected metrics of the built-in font this one replaces
+ */
+AssetPackStatus
+    asset_pack_font_check(const uint8_t* font, size_t size, const AssetPackFontMetrics* expected);
 
 #ifdef __cplusplus
 }

@@ -1,6 +1,6 @@
 /**
  * @file asset_packs.h
- * Runtime asset packs: icons (and fonts) loaded from /ext/asset_packs/<Name>/.
+ * Runtime asset packs: icons and fonts loaded from /ext/asset_packs/<Name>/.
  *
  * With no pack active nothing changes: every call below is a no-op and drawing takes the
  * original code path. Anything a pack does not provide, or provides wrongly, is simply not
@@ -13,6 +13,8 @@
 #include <stdint.h>
 #include <gui/icon.h>
 
+#include "asset_pack_format.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -20,6 +22,10 @@ extern "C" {
 #define ASSET_PACKS_PATH     "/ext/asset_packs"
 /** Size of a pack name buffer, terminator included. */
 #define ASSET_PACK_NAME_SIZE 32
+/** How long a replaced pack font stays in memory before it is freed. */
+#ifndef ASSET_PACKS_FONT_GRACE_MS
+#define ASSET_PACKS_FONT_GRACE_MS 3000
+#endif
 
 /** Called after the set of replaced assets changed, from the thread that changed it. */
 typedef void (*AssetPacksChangedCallback)(void* context);
@@ -58,6 +64,23 @@ void asset_packs_set_changed_callback(AssetPacksChangedCallback callback, void* 
 const Icon* asset_packs_icon_acquire(const Icon* icon);
 
 void asset_packs_icon_release(void);
+
+/**
+ * Tell the manager which built-in font each slot uses (the canvas's Font enum order,
+ * ASSET_PACK_FONT_SLOTS entries). Pack fonts are checked against these fonts' layout metrics.
+ * Call once at start-up, before a pack is loaded; the array must stay valid.
+ */
+void asset_packs_set_stock_fonts(const uint8_t* const* fonts);
+
+/**
+ * The u8g2 font to use for a slot: the active pack's replacement, or `stock`. Lock-free, one
+ * pointer read when no pack font is loaded.
+ *
+ * The result stays valid for ASSET_PACKS_FONT_GRACE_MS after the pack changes, which is far
+ * longer than a frame takes to draw. A canvas only reads its font while drawing, and every draw
+ * starts by selecting a font again, so none keeps a stale pointer.
+ */
+const uint8_t* asset_packs_font(unsigned slot, const uint8_t* stock);
 
 #ifdef __cplusplus
 }

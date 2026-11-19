@@ -28,6 +28,13 @@ typedef struct {
     const Icon* replacement; /**< one malloc: Icon, frame pointers, frame blobs */
 } PackIcon;
 
+/** A loaded font. The font bytes u8g2 reads are `data`; `next` chains the graveyard. */
+typedef struct FontBlock {
+    struct FontBlock* next;
+    uint32_t buried_tick;
+    uint8_t data[];
+} FontBlock;
+
 typedef struct {
     FuriMutex* mutex;
     PackIcon* icons; /**< sorted by original; guarded by mutex */
@@ -36,6 +43,17 @@ typedef struct {
     atomic_bool active;
     /** Bumped whenever loaded icons are discarded, so a load that started earlier drops its result. */
     atomic_uint generation;
+    /** Built-in font of each slot, from the canvas; the metrics pack fonts are checked against. */
+    const uint8_t* const* stock_fonts;
+    /** Pack font of each slot, NULL for the built-in one. Written under the mutex, read lock-free. */
+    _Atomic(const uint8_t*) font_data[ASSET_PACK_FONT_SLOTS];
+    FontBlock* fonts[ASSET_PACK_FONT_SLOTS]; /**< owner of each font_data; guarded by mutex */
+    /**
+     * Replaced fonts wait here before being freed: a draw that began just before the switch may
+     * still be reading one. Guarded by mutex.
+     */
+    FontBlock* graveyard;
+    FuriTimer* graveyard_timer;
     char name[ASSET_PACK_NAME_SIZE]; /**< active pack, empty for none */
     bool icons_unloaded;
     FuriThread* loader;
@@ -49,9 +67,13 @@ static AssetPacks asset_packs = {0};
 /* State                                                                                       */
 /* ------------------------------------------------------------------------------------------ */
 
+static void graveyard_timer_callback(void* context);
+
 static void ensure_init(void) {
     if(!asset_packs.mutex) {
         asset_packs.mutex = furi_mutex_alloc(FuriMutexTypeNormal);
+        asset_packs.graveyard_timer =
+            furi_timer_alloc(graveyard_timer_callback, FuriTimerTypeOnce, NULL);
     }
 }
 
@@ -71,6 +93,52 @@ static void discard_icons_locked(void) {
     asset_packs.icon_count = 0;
     atomic_fetch_add_explicit(&asset_packs.generation, 1, memory_order_relaxed);
     free_icons(icons, count);
+}
+
+/** Free the graveyard blocks that have waited out the grace period. Caller holds the mutex. */
+static void empty_graveyard_locked(void) {
+    FontBlock** link = &asset_packs.graveyard;
+    bool waiting = false;
+    while(*link) {
+        FontBlock* block = *link;
+        if(furi_get_tick() - block->buried_tick >= ASSET_PACKS_FONT_GRACE_MS) {
+            *link = block->next;
+            free(block);
+        } else {
+            waiting = true;
+            link = &block->next;
+        }
+    }
+    if(waiting) {
+        furi_timer_restart(
+            asset_packs.graveyard_timer, furi_ms_to_ticks(ASSET_PACKS_FONT_GRACE_MS));
+    }
+}
+
+static void graveyard_timer_callback(void* context) {
+    UNUSED(context);
+    furi_mutex_acquire(asset_packs.mutex, FuriWaitForever);
+    empty_graveyard_locked();
+    furi_mutex_release(asset_packs.mutex);
+}
+
+/** Stop using the pack fonts. They are freed later, see graveyard. Caller holds the mutex. */
+static void discard_fonts_locked(void) {
+    bool buried = false;
+    for(size_t slot = 0; slot < ASSET_PACK_FONT_SLOTS; slot++) {
+        FontBlock* block = asset_packs.fonts[slot];
+        if(!block) continue;
+        atomic_store_explicit(&asset_packs.font_data[slot], NULL, memory_order_release);
+        asset_packs.fonts[slot] = NULL;
+        block->buried_tick = furi_get_tick();
+        block->next = asset_packs.graveyard;
+        asset_packs.graveyard = block;
+        buried = true;
+    }
+    if(buried) {
+        furi_timer_restart(
+            asset_packs.graveyard_timer, furi_ms_to_ticks(ASSET_PACKS_FONT_GRACE_MS));
+    }
 }
 
 static void notify_changed(void) {
@@ -139,6 +207,16 @@ void asset_packs_icon_release(void) {
     furi_mutex_release(asset_packs.mutex);
 }
 
+void asset_packs_set_stock_fonts(const uint8_t* const* fonts) {
+    asset_packs.stock_fonts = fonts;
+}
+
+const uint8_t* asset_packs_font(unsigned slot, const uint8_t* stock) {
+    if(slot >= ASSET_PACK_FONT_SLOTS) return stock;
+    const uint8_t* font = atomic_load_explicit(&asset_packs.font_data[slot], memory_order_acquire);
+    return font ? font : stock;
+}
+
 /* ------------------------------------------------------------------------------------------ */
 /* Loading                                                                                     */
 /* ------------------------------------------------------------------------------------------ */
@@ -152,6 +230,9 @@ typedef struct {
     size_t icon_count;
     size_t icon_capacity;
     size_t ram_used;
+    FontBlock* fonts[ASSET_PACK_FONT_SLOTS]; /**< checked fonts, not yet installed */
+    size_t font_count;
+    size_t font_bytes;
     char pack_path[PATH_SIZE];
 } LoadState;
 
@@ -418,6 +499,39 @@ static void scan_directory(
     storage_file_free(dir);
 }
 
+/** Read, check and take the pack's Fonts/<Slot>.u8f files. */
+static void load_fonts(LoadState* state, const char* fonts_path) {
+    if(!asset_packs.stock_fonts) return;
+
+    for(size_t slot = 0; slot < ASSET_PACK_FONT_SLOTS && !load_cancelled(state); slot++) {
+        char file_name[32], path[PATH_SIZE];
+        snprintf(file_name, sizeof(file_name), "%s.u8f", asset_pack_font_slot_name(slot));
+        if(!join_path(path, sizeof(path), fonts_path, file_name)) continue;
+
+        size_t size = 0;
+        uint8_t* data = read_file(state->storage, path, ASSET_PACK_MAX_FONT_BYTES, &size);
+        if(!data) continue;
+
+        AssetPackFontMetrics expected;
+        AssetPackStatus status = AssetPackErrTooShort;
+        if(asset_pack_font_metrics(asset_packs.stock_fonts[slot], ASSET_PACK_FONT_HEADER_SIZE, &expected)) {
+            status = asset_pack_font_check(data, size, &expected);
+        }
+        if(status != AssetPackOk) {
+            FURI_LOG_W(TAG, "%s: skipped (%d)", file_name, status);
+        } else if(state->font_bytes + size > ASSET_PACK_FONT_RAM_BUDGET) {
+            FURI_LOG_W(TAG, "%s: skipped, font RAM budget used up", file_name);
+        } else {
+            FontBlock* block = malloc(sizeof(FontBlock) + size);
+            memcpy(block->data, data, size);
+            state->fonts[slot] = block;
+            state->font_count++;
+            state->font_bytes += size;
+        }
+        free(data);
+    }
+}
+
 /** Lookup is by the original icon's address, so keep the table sorted by it. */
 static void sort_icons(PackIcon* icons, size_t count) {
     for(size_t i = 1; i < count; i++) {
@@ -433,6 +547,7 @@ static void sort_icons(PackIcon* icons, size_t count) {
 
 typedef struct {
     unsigned generation;
+    bool load_fonts; /**< false when only the icons come back after an app */
     char name[ASSET_PACK_NAME_SIZE];
 } LoaderContext;
 
@@ -472,10 +587,28 @@ static int32_t loader_thread(void* context) {
         FURI_LOG_I(TAG, "%s has no icons", loader->name);
     }
 
+    char fonts_path[PATH_SIZE];
+    if(loader->load_fonts && path_ok &&
+       join_path(fonts_path, sizeof(fonts_path), state.pack_path, "Fonts") &&
+       storage_common_exists(state.storage, fonts_path)) {
+        load_fonts(&state, fonts_path);
+    }
+
     sort_icons(state.icons, state.icon_count);
 
     furi_mutex_acquire(asset_packs.mutex, FuriWaitForever);
     bool installed = false;
+    if(!load_cancelled(&state) && state.font_count > 0) {
+        discard_fonts_locked(); // nothing should be there; never leak or double-own if something is
+        for(size_t slot = 0; slot < ASSET_PACK_FONT_SLOTS; slot++) {
+            if(!state.fonts[slot]) continue;
+            asset_packs.fonts[slot] = state.fonts[slot];
+            atomic_store_explicit(
+                &asset_packs.font_data[slot], state.fonts[slot]->data, memory_order_release);
+            state.fonts[slot] = NULL;
+        }
+        installed = true;
+    }
     if(!load_cancelled(&state) && state.icon_count > 0) {
         PackIcon* old = asset_packs.icons;
         size_t old_count = asset_packs.icon_count;
@@ -489,16 +622,21 @@ static int32_t loader_thread(void* context) {
     furi_mutex_release(asset_packs.mutex);
 
     if(state.icons) free_icons(state.icons, state.icon_count);
+    for(size_t slot = 0; slot < ASSET_PACK_FONT_SLOTS; slot++) {
+        free(state.fonts[slot]); // only those that were not installed are still here
+    }
 
     storage_simply_remove(state.storage, ASSET_PACKS_LOADING_MARKER);
     furi_record_close(RECORD_STORAGE);
 
     FURI_LOG_I(
         TAG,
-        "%s: %u icons, %u B, %lu ms%s",
+        "%s: %u icons, %u B, %u fonts, %u B, %lu ms%s",
         loader->name,
         (unsigned)state.icon_count,
         (unsigned)state.ram_used,
+        (unsigned)state.font_count,
+        (unsigned)state.font_bytes,
         (unsigned long)(furi_get_tick() - started),
         installed ? "" : " (not installed)");
 
@@ -508,7 +646,7 @@ static int32_t loader_thread(void* context) {
 }
 
 /** Start a background load of the active pack. At most one loader runs: wait for the last. */
-static void start_loader(void) {
+static void start_loader(bool load_fonts) {
     if(asset_packs.loader) {
         furi_thread_join(asset_packs.loader);
         furi_thread_free(asset_packs.loader);
@@ -518,6 +656,7 @@ static void start_loader(void) {
 
     LoaderContext* loader = malloc(sizeof(LoaderContext));
     loader->generation = atomic_load_explicit(&asset_packs.generation, memory_order_relaxed);
+    loader->load_fonts = load_fonts;
     strlcpy(loader->name, asset_packs.name, sizeof(loader->name));
 
     asset_packs.loader =
@@ -538,10 +677,11 @@ void asset_packs_set_active(const char* name) {
     if(name_is_valid(name)) strlcpy(asset_packs.name, name, sizeof(asset_packs.name));
     asset_packs.icons_unloaded = false;
     discard_icons_locked(); // also cancels a load that is still running
+    discard_fonts_locked();
     furi_mutex_release(asset_packs.mutex);
 
     notify_changed();
-    start_loader();
+    start_loader(true);
 }
 
 void asset_packs_unload_icons(void) {
@@ -559,9 +699,14 @@ void asset_packs_reload_icons(void) {
     furi_mutex_acquire(asset_packs.mutex, FuriWaitForever);
     bool reload = asset_packs.icons_unloaded && asset_packs.name[0];
     asset_packs.icons_unloaded = false;
+    // Fonts stay loaded through unload/reload; they only come back if the unload cut a load short
+    bool fonts_missing = true;
+    for(size_t slot = 0; slot < ASSET_PACK_FONT_SLOTS; slot++) {
+        if(asset_packs.fonts[slot]) fonts_missing = false;
+    }
     furi_mutex_release(asset_packs.mutex);
 
-    if(reload) start_loader();
+    if(reload) start_loader(fonts_missing);
 }
 
 bool asset_packs_previous_load_crashed(void) {

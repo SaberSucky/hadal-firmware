@@ -39,6 +39,96 @@ def read_u8g2_fonts():
         return f.read()
 
 
+def stock_font_bytes():
+    """The five built-in fonts, by slot, straight from lib/u8g2/u8g2_fonts.c."""
+    text = read_u8g2_fonts()
+    return {
+        slot: pack.extract_u8g2_font(pack.find_u8g2_font_source(text, name), name)
+        for slot, name in pack.STOCK_FONTS.items()
+    }
+
+
+def write_stock_fonts_c(path):
+    """C file with the stock fonts for the host harnesses: stock_fonts[] and stock_font_sizes[]."""
+    fonts = stock_font_bytes()
+    out = ["#include <stddef.h>", "#include <stdint.h>"]
+    for i, slot in enumerate(pack.STOCK_FONTS):
+        out.append(f"static const uint8_t stock_{i}[] = {{{','.join(map(str, fonts[slot]))}}};")
+    names = ",".join(f"stock_{i}" for i in range(len(fonts)))
+    sizes = ",".join(str(len(fonts[slot])) for slot in pack.STOCK_FONTS)
+    out.append(f"const uint8_t* const stock_fonts[{len(fonts)}] = {{{names}}};")
+    out.append(f"const size_t stock_font_sizes[{len(fonts)}] = {{{sizes}}};")
+    with open(path, "w") as f:
+        f.write("\n".join(out) + "\n")
+
+
+def font_chain_end(font):
+    """Offset of the entry that ends the 8-bit glyph list."""
+    position = 23
+    while font[position + 1] != 0:
+        position += font[position + 1]
+    return position
+
+
+def with_unicode_offset(font):
+    """Set the header's unicode section offset to follow the glyph list, as it must."""
+    font = bytearray(font)
+    offset = font_chain_end(font) + 2 - 23
+    font[21], font[22] = offset >> 8, offset & 0xFF
+    return bytes(font)
+
+
+def pad_font(font, size):
+    """A valid font of about `size` bytes: the first glyph repeated after the last one."""
+    first = bytes(font[23 : 23 + font[24]])
+    end = font_chain_end(font)
+    padding = first * max(0, (size - len(font)) // len(first))
+    return with_unicode_offset(font[:end] + padding + font[end:])
+
+
+def variant_font(font, seed):
+    """Same length, valid, but not the same bytes: one glyph bit flipped."""
+    info = pack.font_info(font)
+    rng = random.Random(seed)
+    while True:
+        candidate = bytearray(font)
+        candidate[rng.randrange(23, len(font) - 8)] ^= 1 << rng.randrange(8)
+        if bytes(candidate) != font and pack.font_problem(bytes(candidate), info) is None:
+            return bytes(candidate)
+
+
+def overrun_font(font):
+    """A font that passes every structural check but whose one glyph wants far more data than it
+    has: 127 x 127 pixels, no pixel data. u8g2 would decode on past the end of the font."""
+    header = bytearray(font[:23])
+    for i in range(2, 9):
+        header[i] = 8
+    header[17:21] = bytes(4)  # no 'A' / 'a' shortcuts
+    glyph = bytes([65, 7, 127, 127, 0, 0, 0])
+    body = bytes(header) + glyph + bytes([0, 0]) + bytes([0, 4, 255, 255, 0, 0])
+    return with_unicode_offset(body)
+
+
+def mutate_font(rng, font):
+    """The kinds of damage a bad copy, a bad converter or a bit rot would do."""
+    font = bytearray(font)
+    for _ in range(rng.randint(1, 6)):
+        kind = rng.randrange(6)
+        if kind == 0:
+            font[rng.randrange(len(font))] ^= 1 << rng.randrange(8)
+        elif kind == 1:
+            font[rng.randrange(len(font))] = rng.randrange(256)
+        elif kind == 2:
+            font[rng.randrange(min(23, len(font)))] ^= 1 << rng.randrange(8)
+        elif kind == 3 and len(font) > 23:
+            font[rng.randrange(23, len(font))] = rng.randrange(12)
+        elif kind == 4 and len(font) > 1:
+            del font[rng.randrange(1, len(font)) :]
+        else:
+            font += bytes(rng.randrange(256) for _ in range(rng.randint(1, 40)))
+    return bytes(font)
+
+
 def make_png(path, w, h, seed, density=0.5):
     rng = random.Random(seed)
     im = Image.new("1", (w, h), 1)
@@ -121,6 +211,24 @@ class FontTests(unittest.TestCase):
             info = pack.font_info(data)
             self.assertGreater(info["max_char_height"], 0, slot)
             self.assertEqual(data[-1], 0)
+
+    def test_canvas_font_table_matches_the_pack_slots(self):
+        # The manager and the packer name font slots by position in the canvas's Font enum, and
+        # check a pack font against the built-in font of that slot
+        import re
+
+        with open(os.path.join(REPO_ROOT, "applications", "services", "gui", "canvas.c")) as f:
+            canvas_c = f.read()
+        table = re.search(r"canvas_stock_fonts\[FontTotalNumber\] = \{(.*?)\};", canvas_c, re.S).group(1)
+        entries = re.findall(r"\[Font(\w+)\]\s*=\s*(u8g2_font_\w+)", table)
+        self.assertEqual(entries, list(pack.STOCK_FONTS.items()))
+
+        with open(os.path.join(REPO_ROOT, "applications", "services", "gui", "canvas.h")) as f:
+            canvas_h = f.read()
+        body = re.search(r"typedef enum \{([^}]*)\} Font;", canvas_h).group(1)
+        body = re.sub(r"//.*", "", body)
+        names = [n for n in re.findall(r"Font\w+", body) if n != "FontTotalNumber"]
+        self.assertEqual(names, ["Font" + slot for slot in pack.STOCK_FONTS])
 
     def test_escapes(self):
         src = 'const uint8_t f[4] U8G2_FONT_SECTION("f") = "\\1\\10\\x41\\377";'
@@ -409,6 +517,14 @@ class CFormatTests(TempDirCase):
             want = pack.ICON_RAM_OVERHEAD + frames * pack.FRAME_RAM_OVERHEAD + nbytes
             self.assertEqual(int(out[0]), want)
 
+    def test_font_slots_and_limits_match_python(self):
+        status, out = self.run_c("slots", "x")
+        self.assertEqual(out[:-1], list(pack.STOCK_FONTS))
+        slots, max_bytes, budget = map(int, out[-1].split())
+        self.assertEqual(slots, len(pack.STOCK_FONTS))
+        self.assertEqual(max_bytes, pack.MAX_FONT_BYTES)
+        self.assertEqual(budget, pack.FONT_RAM_BUDGET)
+
     def test_font_metrics_match_python(self):
         text = read_u8g2_fonts()
         for slot, name in pack.STOCK_FONTS.items():
@@ -442,8 +558,10 @@ class HostLoaderTests(TempDirCase):
     """The real lib/asset_packs/asset_packs.c and the real firmware decoder, compiled on the host
     against stand-ins for furi and storage (scripts/host_tests), loading packs the packer wrote."""
 
+    FONT_GRACE_MS = 300
+
     @classmethod
-    def build(cls, name, sanitizer, source_format=None):
+    def build(cls, name, sanitizer, source_format=None, grace_ms=None):
         import subprocess
 
         exe = os.path.join(cls.build_dir, name)
@@ -460,8 +578,10 @@ class HostLoaderTests(TempDirCase):
                 "-I", os.path.join(REPO_ROOT, "lib", "asset_packs"),
                 "-I", os.path.join(REPO_ROOT, "lib", "heatshrink"),
                 "-I", gen,
+                f"-DASSET_PACKS_FONT_GRACE_MS={cls.FONT_GRACE_MS if grace_ms is None else grace_ms}",
                 "-o", exe,
                 os.path.join(REPO_ROOT, "scripts", "host_tests", "asset_packs_host.c"),
+                os.path.join(gen, "stock_fonts.c"),
                 os.path.join(REPO_ROOT, "scripts", "host_tests", "stubs", "storage_host.c"),
                 fmt,
                 os.path.join(REPO_ROOT, "lib", "toolbox", "compress.c"),
@@ -491,8 +611,10 @@ class HostLoaderTests(TempDirCase):
              "--index-list", os.path.join(REPO_ROOT, "assets", "icon_override_list.txt")],
             stdout=subprocess.DEVNULL,
         )
+        write_stock_fonts_c(os.path.join(gen, "stock_fonts.c"))
         cls.asan = cls.build("host_asan", "address,undefined")
         cls.tsan = None
+        cls.stock_fonts = stock_font_bytes()
 
         with open(os.path.join(REPO_ROOT, "assets", "icon_override_list.txt")) as f:
             cls.index_paths = pack.parse_icon_list(f.read())
@@ -512,6 +634,12 @@ class HostLoaderTests(TempDirCase):
         real_src = os.path.join(cls.build_dir, "real_src")
         source_tree(real_src, cls.index_paths)
         pack.pack_tree(real_src, os.path.join(cls.template, "ext", "asset_packs", "Real"))
+        # "Real" also replaces every font, with valid fonts that differ from the built-in ones
+        fonts_dir = os.path.join(cls.template, "ext", "asset_packs", "Real", "Fonts")
+        os.makedirs(fonts_dir)
+        for n, slot in enumerate(pack.STOCK_FONTS):
+            with open(os.path.join(fonts_dir, f"{slot}.u8f"), "wb") as f:
+                f.write(variant_font(cls.stock_fonts[slot], 100 + n))
         small_src = os.path.join(cls.build_dir, "small_src")
         shutil.copytree(os.path.join(base, "StatusBar"), os.path.join(small_src, "Icons", "StatusBar"))
         shutil.copytree(os.path.join(base, "MainMenu"), os.path.join(small_src, "Icons", "MainMenu"))
@@ -659,6 +787,103 @@ class HostLoaderTests(TempDirCase):
             self.assertEqual(result.returncode, 0, result.stderr[-1500:])
             self.assertNotIn("ThreadSanitizer", result.stderr)
 
+    # ---- fonts ----
+
+    def pack_with_fonts(self, name, fonts):
+        """A pack folder holding just these fonts: {slot: bytes}."""
+        fonts_dir = os.path.join(self.root, "ext", "asset_packs", name, "Fonts")
+        os.makedirs(fonts_dir)
+        for slot, data in fonts.items():
+            with open(os.path.join(fonts_dir, f"{slot}.u8f"), "wb") as f:
+                f.write(data)
+
+    def font_report(self, name):
+        result = self.run_host("fonts", name)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr[-1500:])
+        self.assertNotIn("FAIL", result.stdout)
+        # three reports of one row per slot: loaded, after an icon unload/reload, after dropping
+        rows = [line.split()[1:] for line in result.stdout.splitlines() if line.startswith("F ")]
+        count = len(pack.STOCK_FONTS)
+        reports = [rows[i * count : (i + 1) * count] for i in range(3)]
+        return result, reports
+
+    def test_pack_fonts_replace_exactly_the_slots_the_pack_has(self):
+        stock = self.stock_fonts
+        self.pack_with_fonts(
+            "Two",
+            {"Secondary": variant_font(stock["Secondary"], 1), "BigNumbers": variant_font(stock["BigNumbers"], 2)},
+        )
+        result, (loaded, reloaded, dropped) = self.font_report("Two")
+        for report in (loaded, reloaded):
+            self.assertEqual(
+                [(row[1], row[2] if len(row) > 2 else None) for row in report],
+                [("S", None), ("R", "same"), ("S", None), ("R", "same"), ("S", None)],
+            )
+        # dropping the pack puts every built-in font back
+        self.assertTrue(all(row[1] == "S" for row in dropped), dropped)
+        self.assertIn("after reload 2", result.stdout)
+        self.assertIn("after drop 0 buried 2", result.stdout)
+        # ... and the replaced fonts are freed once the grace period is over
+        self.assertIn("later buried 0", result.stdout)
+
+    def test_every_slot_and_the_real_pack_fonts(self):
+        result, (loaded, _, _) = self.font_report("Real")
+        self.assertEqual(
+            [(row[1], row[2]) for row in loaded], [("R", "same")] * len(pack.STOCK_FONTS)
+        )
+
+    def test_unsafe_or_mismatched_fonts_are_ignored(self):
+        stock = self.stock_fonts
+        good = variant_font(stock["Secondary"], 3)
+        self.pack_with_fonts(
+            "Bad",
+            {
+                # the wrong font for the slot: its height would change every layout
+                "Primary": stock["Secondary"],
+                # valid font, but cut short
+                "Secondary": good[: len(good) - 9],
+                # a glyph that wants more data than it has
+                "Keyboard": overrun_font(stock["Keyboard"]),
+                # nothing at all
+                "BigNumbers": b"",
+                # not a font
+                "BatteryPercent": bytes(range(256)) * 3,
+            },
+        )
+        result, (loaded, _, _) = self.font_report("Bad")
+        self.assertTrue(all(row[1] == "S" for row in loaded), loaded)
+        self.assertIn("replaced 0", result.stdout)
+
+    def test_fonts_over_the_ram_budget_are_ignored(self):
+        stock = self.stock_fonts
+        big = {s: pad_font(stock[s], 6000) for s in ("Primary", "Secondary", "Keyboard")}
+        for slot, data in big.items():
+            self.assertIsNone(pack.font_problem(data, pack.font_info(stock[slot])), slot)
+            self.assertGreater(len(data), 5900)
+        self.pack_with_fonts("Big", big)
+        result, (loaded, _, _) = self.font_report("Big")
+        # two fit (12000 of 12288 B); the third would not, and the slot keeps its built-in font
+        self.assertEqual([row[1] for row in loaded], ["R", "R", "S", "S", "S"], loaded)
+
+    def test_a_font_over_the_size_limit_is_ignored(self):
+        stock = self.stock_fonts
+        self.pack_with_fonts("Huge", {"Primary": pad_font(stock["Primary"], 6600)})
+        result, (loaded, _, _) = self.font_report("Huge")
+        self.assertTrue(all(row[1] == "S" for row in loaded), loaded)
+
+    def test_replaced_fonts_are_freed_late_not_at_once(self):
+        # With no grace period a draw holding the old pointer reads freed memory: AddressSanitizer
+        # must see that, which shows the stress test below really exercises the graveyard.
+        cls = type(self)
+        immediate = cls.build("host_nograce", "address,undefined", grace_ms=0)
+        failed = False
+        for _ in range(3):
+            result = self.run_host("stress", "Real", 2, exe=immediate)
+            if result.returncode != 0 and "AddressSanitizer" in result.stderr:
+                failed = True
+                break
+        self.assertTrue(failed, "a font freed with no grace period was not noticed")
+
     # ---- fuzzing: whatever is on the card, loading must never crash the firmware ----
 
     def mutate_pack(self, pack_dir, rng):
@@ -736,6 +961,168 @@ class HostLoaderTests(TempDirCase):
         failures = self.fuzz(400, 1000, exe=exe, stop_at_first=True)
         self.assertTrue(failures, "the fuzz did not notice a validator that skips decoding")
         self.assertIn("furi_check failed", failures[0][1])
+
+
+class FontHostTests(TempDirCase):
+    """asset_pack_font_check() against the real u8g2 text renderer under AddressSanitizer.
+
+    u8g2 trusts a font completely and reads wherever it says, so the only proof that a font the
+    check accepts is safe is to draw with it, in a heap block of exactly the font's size."""
+
+    U8G2_SOURCES = [
+        "u8g2_font", "u8g2_setup", "u8g2_buffer", "u8g2_hvline", "u8g2_ll_hvline",
+        "u8g2_intersection", "u8g2_d_memory", "u8g2_bitmap", "u8g2_box", "u8g2_circle",
+        "u8g2_line", "u8x8_setup", "u8x8_8x8", "u8x8_byte", "u8x8_cad", "u8x8_display", "u8x8_gpio",
+    ]
+
+    @classmethod
+    def build(cls, name, source_format=None):
+        import subprocess
+
+        u8g2 = os.path.join(REPO_ROOT, "lib", "u8g2")
+        exe = os.path.join(cls.build_dir, name)
+        subprocess.check_call(
+            [
+                "gcc", "-std=gnu11", "-g", "-O1", "-ffunction-sections", "-fdata-sections",
+                "-Wl,--gc-sections", "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
+                "-I", u8g2, "-I", os.path.join(REPO_ROOT, "lib", "asset_packs"),
+                "-o", exe,
+                os.path.join(REPO_ROOT, "scripts", "host_tests", "font_host.c"),
+                os.path.join(cls.build_dir, "stock_fonts.c"),
+                source_format or os.path.join(REPO_ROOT, "lib", "asset_packs", "asset_pack_format.c"),
+                *[os.path.join(u8g2, f"{n}.c") for n in cls.U8G2_SOURCES],
+            ],
+            stderr=subprocess.DEVNULL,
+        )
+        return exe
+
+    @classmethod
+    def setUpClass(cls):
+        if not _have_sanitizer("address,undefined"):
+            raise unittest.SkipTest("gcc with AddressSanitizer is not available")
+        cls.build_dir = tempfile.mkdtemp(prefix="apf_")
+        write_stock_fonts_c(os.path.join(cls.build_dir, "stock_fonts.c"))
+        cls.exe = cls.build("font_asan")
+        cls.stock = stock_font_bytes()
+        cls.slots = list(pack.STOCK_FONTS)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.build_dir, True)
+
+    def run_font(self, *args, exe=None, timeout=120):
+        import subprocess
+
+        return subprocess.run(
+            [exe or self.exe, *map(str, args)], capture_output=True, text=True, timeout=timeout
+        )
+
+    def write(self, name, data):
+        path = self.p(name)
+        with open(path, "wb") as f:
+            f.write(data)
+        return path
+
+    def c_status(self, data, slot, exe=None):
+        result = self.run_font("check", self.write("f.u8f", data), slot, exe=exe)
+        self.assertEqual(result.returncode, 0, result.stderr[-1500:])
+        return int(result.stdout.split()[1])
+
+    def test_stock_fonts_are_accepted_for_their_own_slot_and_draw_something(self):
+        for i, slot in enumerate(self.slots):
+            self.assertEqual(self.c_status(self.stock[slot], i), 0, slot)
+            result = self.run_font("draw", self.write("s.u8f", self.stock[slot]))
+            self.assertEqual(result.returncode, 0, result.stderr[-1500:])
+            lit = int(result.stdout.split()[1])
+            self.assertGreater(lit, 500, f"{slot} drew almost nothing: the test would be vacuous")
+
+    def test_a_font_with_other_metrics_is_refused_for_the_slot(self):
+        metrics = {s: tuple(pack.font_info(self.stock[s]).values())[:3] for s in self.slots}
+        refused = 0
+        for i, slot in enumerate(self.slots):
+            for other in self.slots:
+                if other != slot and metrics[other] != metrics[slot]:
+                    self.assertEqual(self.c_status(self.stock[other], i), 7, f"{other} in {slot}")
+                    refused += 1
+        self.assertGreater(refused, 8)
+
+    def test_the_overrun_font_is_refused_by_both_checks(self):
+        font = overrun_font(self.stock["Secondary"])
+        info = pack.font_info(self.stock["Secondary"])
+        self.assertIn("past its own data", pack.font_problem(font, info))
+        self.assertEqual(self.c_status(font, self.slots.index("Secondary")), 5)
+
+    def test_python_and_c_agree_on_damaged_fonts(self):
+        import struct
+
+        for i, slot in enumerate(self.slots):
+            info = pack.font_info(self.stock[slot])
+            rng = random.Random(500 + i)
+            fonts = [mutate_font(rng, self.stock[slot]) for _ in range(1500)]
+            fonts += [overrun_font(self.stock[slot]), self.stock[slot], b"", b"\0" * 40]
+            batch = self.write("batch.bin", b"".join(struct.pack("<I", len(f)) + f for f in fonts))
+            result = self.run_font("batch", i, batch)
+            self.assertEqual(result.returncode, 0, result.stderr[-1500:])
+            statuses = [int(x) for x in result.stdout.split()]
+            self.assertEqual(len(statuses), len(fonts))
+            accepted = 0
+            for font, status in zip(fonts, statuses):
+                python_ok = pack.font_problem(font, info) is None
+                self.assertEqual(python_ok, status == 0, f"{slot}: {font.hex()}")
+                accepted += status == 0
+            self.assertGreater(accepted, 100, "too few accepted fonts for the comparison to mean much")
+            self.assertLess(accepted, len(fonts) - 100)
+
+    def fuzz(self, slot, rounds, seed, exe=None):
+        result = self.run_font("fuzz", slot, rounds, seed, exe=exe, timeout=600)
+        return result
+
+    def test_every_accepted_mutation_of_every_stock_font_draws_inside_its_bounds(self):
+        for slot in range(len(self.slots)):
+            result = self.fuzz(slot, 4000, 11 + slot)
+            self.assertEqual(result.returncode, 0, f"{self.slots[slot]}: {result.stdout}{result.stderr[-1500:]}")
+            fields = result.stdout.split()
+            accepted, changed = int(fields[3]), int(fields[5].rstrip(")"))
+            self.assertGreater(accepted, 300, result.stdout)
+            self.assertGreater(changed, 200, "the accepted fonts were mostly unchanged")
+
+    def weak_build(self, name, old, new):
+        with open(os.path.join(REPO_ROOT, "lib", "asset_packs", "asset_pack_format.c")) as f:
+            source = f.read()
+        weak = source.replace(old, new)
+        self.assertNotEqual(weak, source)
+        path = self.p(f"{name}.c")
+        with open(path, "w") as f:
+            f.write(weak)
+        return type(self).build(name, source_format=path)
+
+    def test_teeth_a_check_that_does_not_decode_glyphs_lets_the_overrun_through(self):
+        exe = self.weak_build(
+            "weak_glyphs",
+            "if(!glyph_decodes_in_bounds(font, font + position + 2, entry_size - 2)) {",
+            "if(0) {",
+        )
+        font = overrun_font(self.stock["Secondary"])
+        slot = self.slots.index("Secondary")
+        self.assertEqual(self.c_status(font, slot, exe=exe), 0, "the weakened check should accept it")
+        result = self.run_font("draw", self.write("o.u8f", font), exe=exe)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("AddressSanitizer: heap-buffer-overflow", result.stderr)
+
+    def test_teeth_the_fuzz_catches_a_check_that_trusts_the_glyph_chain(self):
+        # Accept any glyph entry size: u8g2 is then sent past the end of the font
+        exe = self.weak_build(
+            "weak_chain",
+            "if(entry_size < U8G2_MIN_GLYPH_ENTRY || position + entry_size > size) {",
+            "if(0) {",
+        )
+        caught = False
+        for seed in range(1, 6):
+            result = self.fuzz(self.slots.index("Secondary"), 4000, seed, exe=exe)
+            if result.returncode != 0:
+                caught = True
+                break
+        self.assertTrue(caught, "the fuzz did not notice a check that ignores the glyph chain")
 
 
 class IconIndexTests(TempDirCase):

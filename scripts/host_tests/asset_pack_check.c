@@ -7,6 +7,7 @@
  *   asset_pack_check hash  PATH         path hash in hex
  *   asset_pack_check cost  FRAMES BYTES RAM cost of an icon
  *   asset_pack_check font  FILE         layout metrics of a u8g2 font
+ *   asset_pack_check slots X            font slot names, in order, then the font limits
  *
  * Prints the AssetPackStatus number (0 = ok). Compressed frames are decoded with the bundled
  * heatshrink using the firmware's parameters (window 8, lookahead 4).
@@ -98,6 +99,18 @@ int main(int argc, char** argv) {
         printf(
             "%zu\nstatus 0\n",
             asset_pack_icon_ram_cost(strtoul(argv[2], 0, 10), strtoul(argv[3], 0, 10)));
+        return 0;
+    }
+
+    if(!strcmp(cmd, "slots")) {
+        for(unsigned i = 0; asset_pack_font_slot_name(i); i++) {
+            printf("%s\n", asset_pack_font_slot_name(i));
+        }
+        printf(
+            "%u %u %u\nstatus 0\n",
+            ASSET_PACK_FONT_SLOTS,
+            ASSET_PACK_MAX_FONT_BYTES,
+            ASSET_PACK_FONT_RAM_BUDGET);
         return 0;
     }
 

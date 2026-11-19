@@ -11,6 +11,8 @@
  *   switch ROOT A B               select A and at once B: only B may end up loaded
  *   stress ROOT NAME SECONDS      a drawing thread against unload/reload/switch
  *   crash  ROOT                   the crash marker is reported once
+ *   fonts  ROOT NAME              which font slots a pack replaces; then drop it and watch the
+ *                                 replaced fonts leave the graveyard after the grace period
  *
  * ROOT is a directory standing in for the SD card (ROOT/ext/asset_packs/...) and internal
  * storage (ROOT/int/). HOST_LOG=1 prints the manager's log lines.
@@ -27,6 +29,10 @@
 #include "../../lib/asset_packs/asset_packs.c"
 
 #define CANVAS_DECODE_BUFFER (128u * 64 / 8)
+
+/* The five built-in fonts, generated from lib/u8g2/u8g2_fonts.c (stock_fonts.c) */
+extern const uint8_t* const stock_fonts[ASSET_PACK_FONT_SLOTS];
+extern const size_t stock_font_sizes[ASSET_PACK_FONT_SLOTS];
 
 static CompressIcon* canvas_decoder;
 
@@ -81,6 +87,53 @@ static size_t count_replaced(void) {
     return replaced;
 }
 
+/* ---- fonts ---- */
+
+static size_t graveyard_count(void) {
+    furi_mutex_acquire(asset_packs.mutex, FuriWaitForever);
+    size_t count = 0;
+    for(const FontBlock* b = asset_packs.graveyard; b; b = b->next) count++;
+    furi_mutex_release(asset_packs.mutex);
+    return count;
+}
+
+/** Bytes of Fonts/<slot>.u8f in the pack, or NULL. */
+static uint8_t* read_pack_font(const char* pack, unsigned slot, size_t* size) {
+    char path[512];
+    snprintf(
+        path,
+        sizeof(path),
+        "%s/ext/asset_packs/%s/Fonts/%s.u8f",
+        host_storage_root,
+        pack,
+        asset_pack_font_slot_name(slot));
+    FILE* f = fopen(path, "rb");
+    if(!f) return NULL;
+    uint8_t* data = malloc(ASSET_PACK_MAX_FONT_BYTES * 2);
+    *size = fread(data, 1, ASSET_PACK_MAX_FONT_BYTES * 2, f);
+    fclose(f);
+    return data;
+}
+
+/** One line per slot: S for the built-in font, R for a pack font (same/diff against its file). */
+static size_t report_fonts(const char* pack) {
+    size_t replaced = 0;
+    for(unsigned slot = 0; slot < ASSET_PACK_FONT_SLOTS; slot++) {
+        const uint8_t* font = asset_packs_font(slot, stock_fonts[slot]);
+        if(font == stock_fonts[slot]) {
+            printf("F %u S\n", slot);
+            continue;
+        }
+        replaced++;
+        size_t size = 0;
+        uint8_t* file = read_pack_font(pack, slot, &size);
+        bool same = file && memcmp(font, file, size) == 0;
+        printf("F %u R %s %zu\n", slot, same ? "same" : "diff", size);
+        free(file);
+    }
+    return replaced;
+}
+
 /* ---- stress ---- */
 
 static atomic_bool stress_run;
@@ -103,6 +156,16 @@ static void* drawer(void* arg) {
             if(shown != original) asset_packs_icon_release();
             atomic_fetch_add(&stress_draws, 1);
         }
+        // A draw that picks its fonts, takes its time (the pack may be switched meanwhile) and
+        // then reads them end to end. Pack fonts have the length of the built-in ones.
+        for(unsigned slot = 0; slot < ASSET_PACK_FONT_SLOTS && stress_run; slot++) {
+            const uint8_t* font = asset_packs_font(slot, stock_fonts[slot]);
+            usleep(1500);
+            unsigned sum = 0;
+            for(size_t i = 0; i < stock_font_sizes[slot]; i++) sum += font[i];
+            volatile unsigned keep = sum;
+            (void)keep;
+        }
     }
     compress_icon_free(decoder);
     return NULL;
@@ -113,6 +176,7 @@ int main(int argc, char** argv) {
     const char* command = argv[1];
     host_storage_root = argv[2];
     host_log_enabled = getenv("HOST_LOG") != NULL;
+    asset_packs_set_stock_fonts(stock_fonts);
     canvas_decoder = compress_icon_alloc(CANVAS_DECODE_BUFFER);
     int rc = 0;
 
@@ -186,6 +250,21 @@ int main(int argc, char** argv) {
         pthread_join(thread, NULL);
         wait_for_loader();
         printf("draws %lu ops %lu\n", (unsigned long)atomic_load(&stress_draws), ops);
+    } else if(!strcmp(command, "fonts") && argc == 4) {
+        asset_packs_set_active(argv[3]);
+        wait_for_loader();
+        const size_t replaced = report_fonts(argv[3]);
+        printf("replaced %zu\n", replaced);
+        // Unloading the icons for an app must leave the fonts alone
+        asset_packs_unload_icons();
+        asset_packs_reload_icons();
+        wait_for_loader();
+        printf("after reload %zu\n", report_fonts(argv[3]));
+        // Dropping the pack buries its fonts; the grace period frees them
+        asset_packs_set_active(NULL);
+        printf("after drop %zu buried %zu\n", report_fonts(argv[3]), graveyard_count());
+        usleep((ASSET_PACKS_FONT_GRACE_MS + 400) * 1000);
+        printf("later buried %zu\n", graveyard_count());
     } else if(!strcmp(command, "crash")) {
         char path[512];
         snprintf(path, sizeof(path), "%s/int/.asset_pack_loading", host_storage_root);
@@ -203,6 +282,12 @@ int main(int argc, char** argv) {
     asset_packs_set_active(NULL);
     if(asset_packs.loader != NULL) {
         printf("FAIL: a loader is still tracked after deselecting\n");
+        rc = 1;
+    }
+    // Fonts buried by that leave the graveyard on their own, so nothing is left allocated
+    for(int waited = 0; graveyard_count() > 0 && waited < 600; waited++) usleep(10000);
+    if(graveyard_count() != 0) {
+        printf("FAIL: fonts still in the graveyard\n");
         rc = 1;
     }
     compress_icon_free(canvas_decoder);

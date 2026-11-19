@@ -16,7 +16,20 @@ const CanvasFontParameters canvas_font_params[FontTotalNumber] = {
     [FontBatteryPercent] = {.leading_default = 11, .leading_min = 9, .height = 6, .descender = 0},
 };
 
+/** The built-in font of each Font slot. Asset packs may replace them, see asset_packs_font(). */
+static const uint8_t* const canvas_stock_fonts[FontTotalNumber] = {
+    [FontPrimary] = u8g2_font_helvB08_tr,
+    [FontSecondary] = u8g2_font_haxrcorp4089_tr,
+    [FontKeyboard] = u8g2_font_profont11_mr,
+    [FontBigNumbers] = u8g2_font_profont22_tn,
+    [FontBatteryPercent] = u8g2_font_5x7_tr,
+};
+
+_Static_assert(FontTotalNumber == ASSET_PACK_FONT_SLOTS, "asset packs need a slot for every font");
+
 Canvas* canvas_init(void) {
+    asset_packs_set_stock_fonts(canvas_stock_fonts);
+
     Canvas* canvas = malloc(sizeof(Canvas));
     canvas->compress_icon = compress_icon_alloc(ICON_DECOMPRESSOR_BUFFER_SIZE);
 
@@ -123,7 +136,10 @@ size_t canvas_current_font_height(const Canvas* canvas) {
     furi_check(canvas);
     size_t font_height = u8g2_GetMaxCharHeight(&canvas->fb);
 
-    if(canvas->fb.font == u8g2_font_haxrcorp4089_tr) {
+    // The secondary font sits one pixel low in its line, whether it is the built-in one or a
+    // pack's replacement
+    if(canvas->fb.font == canvas_stock_fonts[FontSecondary] ||
+       canvas->fb.font == asset_packs_font(FontSecondary, canvas_stock_fonts[FontSecondary])) {
         font_height += 1;
     }
 
@@ -162,20 +178,9 @@ void canvas_invert_color(Canvas* canvas) {
 
 void canvas_set_font(Canvas* canvas, Font font) {
     furi_check(canvas);
+    furi_check(font < FontTotalNumber);
     u8g2_SetFontMode(&canvas->fb, 1);
-    if(font == FontPrimary) {
-        u8g2_SetFont(&canvas->fb, u8g2_font_helvB08_tr);
-    } else if(font == FontSecondary) {
-        u8g2_SetFont(&canvas->fb, u8g2_font_haxrcorp4089_tr);
-    } else if(font == FontKeyboard) {
-        u8g2_SetFont(&canvas->fb, u8g2_font_profont11_mr);
-    } else if(font == FontBigNumbers) {
-        u8g2_SetFont(&canvas->fb, u8g2_font_profont22_tn);
-    } else if(font == FontBatteryPercent) {
-        u8g2_SetFont(&canvas->fb, u8g2_font_5x7_tr); //u8g2_font_micro_tr);
-    } else {
-        furi_crash();
-    }
+    u8g2_SetFont(&canvas->fb, asset_packs_font(font, canvas_stock_fonts[font]));
 }
 
 void canvas_set_custom_u8g2_font(Canvas* canvas, const uint8_t* font) {

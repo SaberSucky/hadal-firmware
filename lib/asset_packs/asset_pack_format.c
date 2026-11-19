@@ -2,8 +2,6 @@
 
 #include <string.h>
 
-#define U8G2_FONT_HEADER_SIZE 23u
-
 uint32_t asset_pack_path_hash(const char* path) {
     uint32_t hash = 0x811C9DC5u;
     for(const uint8_t* p = (const uint8_t*)path; *p; p++) {
@@ -80,10 +78,156 @@ size_t asset_pack_icon_ram_cost(size_t frame_count, size_t total_blob_bytes) {
            total_blob_bytes;
 }
 
+static const char* const font_slot_names[ASSET_PACK_FONT_SLOTS] = {
+    "Primary",
+    "Secondary",
+    "Keyboard",
+    "BigNumbers",
+    "BatteryPercent",
+};
+
+const char* asset_pack_font_slot_name(unsigned slot) {
+    return slot < ASSET_PACK_FONT_SLOTS ? font_slot_names[slot] : NULL;
+}
+
 bool asset_pack_font_metrics(const uint8_t* font, size_t size, AssetPackFontMetrics* out) {
-    if(size < U8G2_FONT_HEADER_SIZE) return false;
+    if(size < ASSET_PACK_FONT_HEADER_SIZE) return false;
     out->max_char_height = (int8_t)font[10];
     out->ascent_a = (int8_t)font[13];
     out->descent_g = (int8_t)font[14];
     return true;
+}
+
+/* ------------------------------------------------------------------------------------------ */
+/* u8g2 font validation                                                                        */
+/* ------------------------------------------------------------------------------------------ */
+
+/** Glyph entry: encoding byte, size byte, then at least one byte of glyph data. */
+#define U8G2_MIN_GLYPH_ENTRY    3u
+/** The Unicode section of a font without Unicode glyphs: table (length 4, last code 0xFFFF), end. */
+static const uint8_t empty_unicode_section[6] = {0x00, 0x04, 0xFF, 0xFF, 0x00, 0x00};
+
+typedef struct {
+    const uint8_t* data;
+    size_t bit_count;
+    size_t position;
+    bool exhausted;
+} BitReader;
+
+/** Same value u8g2_font_decode_get_unsigned_bits() returns, but never reads past the glyph. */
+static uint8_t bit_read(BitReader* reader, uint8_t count) {
+    uint8_t value = 0;
+    for(uint8_t i = 0; i < count; i++) {
+        if(reader->position >= reader->bit_count) {
+            reader->exhausted = true;
+            return 0;
+        }
+        const uint8_t bit = (reader->data[reader->position >> 3] >> (reader->position & 7u)) & 1u;
+        value |= (uint8_t)(bit << i);
+        reader->position++;
+    }
+    return value;
+}
+
+/** u8g2_font_decode_len() without the drawing: how a run of pixels moves the glyph cursor. */
+static void run_step(uint8_t length, int8_t glyph_width, int8_t* x, int8_t* y) {
+    uint8_t count = length;
+    uint8_t local_x = (uint8_t)*x, local_y = (uint8_t)*y;
+    for(;;) {
+        uint8_t remaining = (uint8_t)glyph_width;
+        remaining -= local_x;
+        if(count < remaining) break;
+        count -= remaining;
+        local_x = 0;
+        local_y++;
+    }
+    local_x += count;
+    *x = (int8_t)local_x;
+    *y = (int8_t)local_y;
+}
+
+/**
+ * u8g2_font_decode_glyph() with a bit budget. The bit widths come from the font header and have
+ * been checked to be 1..8; the data is exactly the glyph's bytes.
+ */
+static bool glyph_decodes_in_bounds(const uint8_t* font, const uint8_t* data, size_t length) {
+    BitReader reader = {data, length * 8u, 0, false};
+    const uint8_t bits_per_0 = font[2], bits_per_1 = font[3];
+
+    const int8_t glyph_width = (int8_t)bit_read(&reader, font[4]);
+    const int8_t glyph_height = (int8_t)bit_read(&reader, font[5]);
+    bit_read(&reader, font[6]); // x offset
+    bit_read(&reader, font[7]); // y offset
+    bit_read(&reader, font[8]); // advance
+    if(reader.exhausted) return false;
+
+    if(glyph_width > 0) {
+        int8_t x = 0, y = 0;
+        for(;;) {
+            const uint8_t zeros = bit_read(&reader, bits_per_0);
+            const uint8_t ones = bit_read(&reader, bits_per_1);
+            if(reader.exhausted) return false;
+            do {
+                run_step(zeros, glyph_width, &x, &y);
+                run_step(ones, glyph_width, &x, &y);
+            } while(bit_read(&reader, 1) != 0 && !reader.exhausted);
+            if(reader.exhausted) return false;
+            if(y >= glyph_height) break;
+        }
+    }
+    return true;
+}
+
+static uint16_t read_u16_be(const uint8_t* p) {
+    return (uint16_t)((p[0] << 8) | p[1]);
+}
+
+AssetPackStatus
+    asset_pack_font_check(const uint8_t* font, size_t size, const AssetPackFontMetrics* expected) {
+    if(size < ASSET_PACK_FONT_HEADER_SIZE + 2 + sizeof(empty_unicode_section)) return AssetPackErrTooShort;
+    if(size > ASSET_PACK_MAX_FONT_BYTES) return AssetPackErrSize;
+
+    // Bit widths: u8g2 reads them as counts of 1..8 bits (0 would shift by 255)
+    for(size_t i = 2; i <= 8; i++) {
+        if(font[i] < 1 || font[i] > 8) return AssetPackErrBadHeader;
+    }
+
+    AssetPackFontMetrics metrics;
+    asset_pack_font_metrics(font, size, &metrics);
+    if(metrics.max_char_height != expected->max_char_height ||
+       metrics.ascent_a != expected->ascent_a || metrics.descent_g != expected->descent_g) {
+        return AssetPackErrMetrics;
+    }
+
+    const size_t upper_a = read_u16_be(font + 17);
+    const size_t lower_a = read_u16_be(font + 19);
+    const size_t unicode = read_u16_be(font + 21);
+    bool upper_a_found = upper_a == 0, lower_a_found = lower_a == 0;
+
+    // The glyph chain: [encoding][size] entries until one with size 0
+    size_t position = ASSET_PACK_FONT_HEADER_SIZE;
+    for(;;) {
+        if(position + 1 >= size) return AssetPackErrLength;
+        const size_t entry_size = font[position + 1];
+        if(position - ASSET_PACK_FONT_HEADER_SIZE == upper_a) upper_a_found = true;
+        if(position - ASSET_PACK_FONT_HEADER_SIZE == lower_a) lower_a_found = true;
+        if(entry_size == 0) break; // end of the 8-bit section
+        if(entry_size < U8G2_MIN_GLYPH_ENTRY || position + entry_size > size) {
+            return AssetPackErrLength;
+        }
+        if(!glyph_decodes_in_bounds(font, font + position + 2, entry_size - 2)) {
+            return AssetPackErrDecode;
+        }
+        position += entry_size;
+    }
+    if(!upper_a_found || !lower_a_found) return AssetPackErrBadHeader;
+
+    // After the end marker comes the Unicode section; only the empty one is accepted
+    const size_t section = position + 2;
+    if(unicode != section - ASSET_PACK_FONT_HEADER_SIZE) return AssetPackErrBadHeader;
+    if(section + sizeof(empty_unicode_section) > size) return AssetPackErrLength;
+    for(size_t i = 0; i < sizeof(empty_unicode_section); i++) {
+        if(font[section + i] != empty_unicode_section[i]) return AssetPackErrBadHeader;
+    }
+    return AssetPackOk;
 }
