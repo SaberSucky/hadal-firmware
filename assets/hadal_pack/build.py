@@ -4,8 +4,8 @@
     python3 assets/hadal_pack/build.py --install
 
 writes the pack to applications/main/hadal_resources/resources/asset_packs/Hadal (it reaches the SD
-card with the firmware's resources) and the first-start / firmware-updated frames to
-assets/slideshow. Without --install it builds into --out (default: a temporary folder) and only
+card with the firmware's resources), the first-start / firmware-updated frames to assets/slideshow,
+and the icon of the on-device update screen to assets/icons/Update. Without --install it builds into --out (default: a temporary folder) and only
 reports. --previews DIR also writes contact sheets of everything for a look.
 """
 
@@ -24,6 +24,7 @@ import anims  # noqa: E402
 import boot  # noqa: E402
 import fontstyle  # noqa: E402
 import icons  # noqa: E402
+import updater_art  # noqa: E402
 from flipper.assets import pack  # noqa: E402
 from pixel import contact_sheet  # noqa: E402
 
@@ -202,6 +203,16 @@ def slideshow_frames():
     return boot.first_start_frames(), boot.update_frames()
 
 
+UPDATER_ICON = os.path.join(REPO, "assets", "icons", "Update", "Updating_32x40.png")
+
+
+def install_updater_icon():
+    """The icon on the on-device update screen. The updater draws it from the firmware's own
+    icon table, so it replaces the source icon instead of living in the asset pack."""
+    updater_art.updating_32x40().save(UPDATER_ICON)
+    print("updater icon written")
+
+
 def install_slideshow():
     first, update = slideshow_frames()
     for folder, frames in (("first_start", first), ("update_default", update)):
@@ -248,6 +259,7 @@ def main():
     if args.install:
         build(PACK_DIR, args.previews)
         install_slideshow()
+        install_updater_icon()
     else:
         out = args.out or os.path.join(tempfile.mkdtemp(prefix="hadal_pack_"), PACK_NAME)
         build(out, args.previews)

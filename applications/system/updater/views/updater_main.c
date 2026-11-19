@@ -93,8 +93,9 @@ static void updater_main_draw_callback(Canvas* canvas, void* _model) {
         canvas_draw_icon(canvas, 7, 54, &I_Ok_btn_9x9);
         canvas_draw_icon(canvas, 75, 55, &I_Pin_back_arrow_10x8);
     } else {
-        canvas_draw_str_aligned(canvas, 55, 14, AlignLeft, AlignTop, "UPDATING");
+        canvas_draw_str_aligned(canvas, 42, 5, AlignLeft, AlignTop, "HADAL");
         canvas_set_font(canvas, FontSecondary);
+        canvas_draw_str_aligned(canvas, 42, 17, AlignLeft, AlignTop, "Updating firmware");
         canvas_draw_str_aligned(
             canvas, 64, 51, AlignCenter, AlignTop, furi_string_get_cstr(model->status));
         canvas_draw_icon(canvas, 4, 5, &I_Updating_32x40);
