@@ -19,9 +19,12 @@ DEBUG = 1
 DIST_SUFFIX = "local"
 
 # Coprocessor firmware
-# BLE Full stack layout: radio starts at page 0xCE. SRAM2 secure boundaries
-# (SBRSA/SNBRSA) are set by FUS from the stack image and left unchecked here.
-COPRO_OB_DATA = "scripts/ob_ble_full.data"
+# The option bytes for the BLE Full stack are the ones documentation/OTA.md gives for a
+# stack other than Light: ob_custradio.data leaves the secure flash and SRAM2 boundaries
+# (SFSA, SBRSA, SNBRSA...) to the radio chip's own updater, which sets them from the stack.
+# Use scripts/ob.data together with the Light stack below instead for a package that is
+# identical to every other firmware's (see the ReadMe).
+COPRO_OB_DATA = "scripts/ob_custradio.data"
 
 # Must match lib/stm32wb_copro version
 COPRO_CUBE_VERSION = "1.20.0"

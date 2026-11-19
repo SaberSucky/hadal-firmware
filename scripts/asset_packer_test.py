@@ -1498,10 +1498,27 @@ class UpdatePackageCheckTests(TempDirCase):
         report = self.run_check(self.make_package(stack="full", ob="scripts/ob_custradio.data"), "full")
         self.assertEqual(self.failures(report), [])
 
+    HOME_MADE_FULL_OB = 'RDP:0xAA:r\nBOR_LEV:0x4:rw\nnBOOT0:0x1:rw\nnBOOT1:0x1:rw\nnSWBOOT0:0x1:rw\nSRAM2RST:0x0:rw\nSRAM2PE:0x1:rw\nnRST_STOP:0x1:rw\nnRST_STDBY:0x1:rw\nnRSTSHDW:0x1:rw\nWWDGSW:0x1:rw\nIWGDSTDBY:0x1:rw\nIWDGSTOP:0x1:rw\nIWDGSW:0x1:rw\nIPCCDBA:0x0:rw\nESE:0x1:r\nSFSA:0xCE:r\nFSD:0x0:r\nDDS:0x1:r\nC2OPT:0x1:r\nNBRSD:0x0:r\nBRSD:0x0:r\nSBRV:0x35C00:r\nPCROP1A_STRT:0x1FF:r\nPCROP1A_END:0x0:r\nPCROP_RDP:0x1:rw\nPCROP1B_STRT:0x1FF:r\nPCROP1B_END:0x0:r\nWRP1A_STRT:0xFF:r\nWRP1A_END:0x0:r\nWRP1B_STRT:0xFF:r\nWRP1B_END:0x0:r\n'
+
     def test_the_full_package_with_a_home_made_option_byte_file_is_refused(self):
-        # What was flashed once and hung the radio install
-        report = self.run_check(self.make_package(stack="full", ob="scripts/ob_ble_full.data"), "full")
+        # The option bytes of the Full-stack package that was flashed once and hung the radio
+        # install: written by hand instead of the file documentation/OTA.md gives
+        home_made = self.p("ob_home_made.data")
+        with open(home_made, "w") as f:
+            f.write(self.HOME_MADE_FULL_OB)
+        report = self.run_check(self.make_package(stack="full", ob=home_made), "full")
         self.assertTrue(any("option bytes" in f for f in self.failures(report)), self.failures(report))
+
+    def test_the_repository_default_is_the_documented_full_stack_recipe(self):
+        # A plain ./fbt updater_package must give a package that passes as the documented Full stack
+        import re
+
+        with open(os.path.join(REPO_ROOT, "fbt_options.py")) as f:
+            options = f.read()
+        self.assertIn('COPRO_OB_DATA = "scripts/ob_custradio.data"', options)
+        self.assertIn('COPRO_STACK_TYPE = "ble_full"', options)
+        self.assertIn('COPRO_STACK_BIN = "stm32wb5x_BLE_Stack_full_fw.bin"', options)
+        self.assertTrue(os.path.isfile(os.path.join(REPO_ROOT, "scripts", "ob_custradio.data")))
 
     def test_a_stack_other_than_the_expected_one_is_refused(self):
         report = self.run_check(self.make_package(stack="full", ob="scripts/ob_custradio.data"), "light")
