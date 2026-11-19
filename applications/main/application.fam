@@ -14,6 +14,7 @@ App(
         "archive",
         "clock",
         "extra_resources",
+        "hadal_resources",
         "subghz_remote",
         "main_apps_on_start",
     ],

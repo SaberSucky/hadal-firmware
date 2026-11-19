@@ -75,6 +75,30 @@ as the status bar show the built-in icons. Fonts and animations stay as they are
   after choosing a pack will switch it off; just choose it again.
 - Delete the pack's folder from the SD card to remove it.
 
+## The Hadal pack
+
+Hadal ships one pack, installed to `/ext/asset_packs/Hadal` with the firmware's resources
+(`applications/main/hadal_resources`). It is **generated**, not drawn by hand, from the scripts in
+`assets/hadal_pack/`:
+
+| File | Makes |
+|---|---|
+| `anims.py` | the idle animations: an anglerfish (it talks, with speech bubbles), a jellyfish, a bathyscaphe and a hydrothermal vent. The scenes loop without a jump |
+| `icons.py` | the status bar icons, the 13 main menu icons and the loading spinner |
+| `boot.py` | the first-start and "firmware updated" slideshows (they are built into the firmware, not part of the pack) |
+| `fontstyle.py` | a lighter `Primary` font and instrument-panel `BigNumbers`; the other three fonts stay the firmware's |
+| `build.py` | puts it all together, validates it and installs it |
+
+```
+python3 assets/hadal_pack/build.py --install              # rewrite the pack and the slideshow frames
+python3 assets/hadal_pack/build.py --previews sheets/     # also write contact sheets to look at
+```
+
+The fonts are drawn from the firmware's own glyphs and keep every glyph's box and advance, so text
+takes the same room as before. To go back to the standard look for one of them, delete its file
+from `Fonts/` on the card. `scripts/flipper/assets/u8g2font.py` reads and writes u8g2 fonts, if you
+want to restyle the others.
+
 ## Building a pack
 
 `scripts/asset_packer.py` builds a pack from PNG sources laid out like `assets/icons`:

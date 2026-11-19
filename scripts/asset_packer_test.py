@@ -4,6 +4,7 @@
 
 import os
 import random
+import re
 import shutil
 import sys
 import tempfile
@@ -16,6 +17,10 @@ from PIL import Image  # noqa: E402
 from flipper.assets import pack  # noqa: E402
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HADAL_PACK_DIR = os.path.join(
+    REPO_ROOT, "applications", "main", "hadal_resources", "resources", "asset_packs", "Hadal"
+)
+HADAL_ART_DIR = os.path.join(REPO_ROOT, "assets", "hadal_pack")
 
 
 def reference_raw(png_path):
@@ -911,6 +916,33 @@ class HostLoaderTests(TempDirCase):
                 break
         self.assertTrue(failed, "a font freed with no grace period was not noticed")
 
+    # ---- the shipped pack ----
+
+    def install_hadal_pack(self):
+        shutil.copytree(HADAL_PACK_DIR, os.path.join(self.root, "ext", "asset_packs", "Hadal"))
+
+    def test_the_shipped_hadal_pack_loads_completely_and_draws_identically(self):
+        self.install_hadal_pack()
+        result = self.run_host("verify", "Hadal")
+        self.assertEqual(result.returncode, 0, result.stderr[-1500:])
+        loaded, replaced = self.parse_verify(result)
+        packed = {pack.icon_path_hash(p) for p, *_ in pack.iter_pack_icons(HADAL_PACK_DIR)}
+        # every icon in the pack is one the firmware keeps, and the real loader took all of them
+        self.assertEqual(loaded, len(packed))
+        self.assertEqual(set(replaced), packed)
+        self.assertTrue(all(v == "same" or v == "diff" for v in replaced.values()))
+        # ... and they really are different from the built-in ones (the pack is not a no-op)
+        self.assertGreater(sum(v == "diff" for v in replaced.values()), len(packed) // 2)
+
+    def test_the_shipped_hadal_pack_fonts_are_taken_for_their_slots_only(self):
+        self.install_hadal_pack()
+        result, (loaded, _, _) = self.font_report("Hadal")
+        self.assertEqual(
+            [(row[1], row[2] if row[1] == "R" else None) for row in loaded],
+            [("R", "same"), ("S", None), ("S", None), ("R", "same"), ("S", None)],
+            loaded,
+        )
+
     # ---- fuzzing: whatever is on the card, loading must never crash the firmware ----
 
     def mutate_pack(self, pack_dir, rng):
@@ -1063,6 +1095,29 @@ class FontHostTests(TempDirCase):
             lit = int(result.stdout.split()[1])
             self.assertGreater(lit, 500, f"{slot} drew almost nothing: the test would be vacuous")
 
+    def test_the_shipped_hadal_fonts_are_accepted_for_their_slots_and_draw(self):
+        for slot in ("Primary", "BigNumbers"):
+            with open(os.path.join(HADAL_PACK_DIR, "Fonts", slot + ".u8f"), "rb") as f:
+                data = f.read()
+            self.assertEqual(self.c_status(data, self.slots.index(slot)), 0, slot)
+            # and refused for any slot whose font has other metrics
+            for other, name in enumerate(self.slots):
+                if name != slot and pack.font_info(self.stock[name]) != pack.font_info(self.stock[slot]):
+                    self.assertEqual(self.c_status(data, other), 7, f"{slot} in {name}")
+            result = self.run_font("draw", self.write("hadal.u8f", data))
+            self.assertEqual(result.returncode, 0, result.stderr[-1500:])
+            self.assertGreater(int(result.stdout.split()[1]), 300, f"{slot} drew almost nothing")
+
+    def test_re_encoded_stock_fonts_draw_exactly_like_the_originals(self):
+        from flipper.assets import u8g2font
+
+        for slot in self.slots:
+            original = self.run_font("draw", self.write("a.u8f", self.stock[slot]))
+            again = u8g2font.serialize_font(u8g2font.parse_font(self.stock[slot]))
+            copy = self.run_font("draw", self.write("b.u8f", again))
+            self.assertEqual(copy.returncode, 0, copy.stderr[-1500:])
+            self.assertEqual(copy.stdout, original.stdout, f"{slot}: the codec changed what is drawn")
+
     def test_a_font_with_other_metrics_is_refused_for_the_slot(self):
         metrics = {s: tuple(pack.font_info(self.stock[s]).values())[:3] for s in self.slots}
         refused = 0
@@ -1150,6 +1205,233 @@ class FontHostTests(TempDirCase):
                 caught = True
                 break
         self.assertTrue(caught, "the fuzz did not notice a check that ignores the glyph chain")
+
+
+class U8g2FontCodecTests(unittest.TestCase):
+    """scripts/flipper/assets/u8g2font.py: decoding and encoding u8g2 fonts."""
+
+    def test_every_stock_font_survives_a_round_trip(self):
+        from flipper.assets import u8g2font
+
+        for slot, data in stock_font_bytes().items():
+            font = u8g2font.parse_font(data)
+            again = u8g2font.parse_font(u8g2font.serialize_font(font))
+            self.assertEqual(sorted(font.glyphs), sorted(again.glyphs), slot)
+            for encoding in font.glyphs:
+                self.assertEqual(font.glyphs[encoding], again.glyphs[encoding], f"{slot} {encoding}")
+
+    def test_re_encoded_fonts_pass_the_firmware_check(self):
+        from flipper.assets import u8g2font
+
+        for slot, data in stock_font_bytes().items():
+            new = u8g2font.serialize_font(u8g2font.parse_font(data))
+            self.assertIsNone(pack.font_problem(new, pack.font_info(data)), slot)
+            self.assertLessEqual(len(new), len(data) + 8, f"{slot} should not get bigger")
+
+    def test_a_glyph_is_what_it_was_drawn_as(self):
+        from flipper.assets import u8g2font
+
+        g = u8g2font.Glyph(65, [[0, 1, 1, 0], [1, 0, 0, 1], [1, 1, 1, 1], [1, 0, 0, 1]], 0, 0, 5)
+        base = stock_font_bytes()["Secondary"]
+        font = u8g2font.Font(base[:23], {65: g, 32: u8g2font.Glyph(32, [], 0, 0, 3)})
+        again = u8g2font.parse_font(u8g2font.serialize_font(font))
+        self.assertEqual(again.glyphs[65].rows(), [".##.", "#..#", "####", "#..#"])
+        self.assertEqual(again.glyphs[65].advance, 5)
+        self.assertEqual(again.glyphs[32].width, 0)
+
+    def test_long_runs_are_split_to_fit(self):
+        from flipper.assets import u8g2font
+
+        # 60 lit pixels in a row cannot be one run when runs hold at most 7: the encoder splits
+        g = u8g2font.Glyph(66, [[1] * 60, [0] * 60, [1] * 60], 0, 0, 61)
+        base = bytearray(stock_font_bytes()["Secondary"][:23])
+        font = u8g2font.Font(bytes(base), {66: g})
+        again = u8g2font.parse_font(u8g2font.serialize_font(font))
+        self.assertEqual(again.glyphs[66], g)
+
+    def test_text_is_drawn_with_the_glyph_boxes(self):
+        from flipper.assets import u8g2font
+        from PIL import Image
+
+        font = u8g2font.parse_font(stock_font_bytes()["Secondary"])
+        image = Image.new("1", (40, 12), 1)
+        end = font.draw_text(image, 1, 9, "Hi", lit=0)
+        self.assertEqual(end, 1 + font.text_width("Hi"))
+        self.assertTrue(any(image.getpixel((x, y)) == 0 for x in range(40) for y in range(12)))
+
+
+class HadalPackTests(TempDirCase):
+    """The generated Hadal pack: what is committed is what the scripts produce, it is complete,
+    safe to load, and keeps every size the firmware lays out around."""
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, HADAL_ART_DIR)
+        import build as hadal_build  # noqa: E402
+
+        cls.build = hadal_build
+        cls.out = tempfile.mkdtemp(prefix="hadal_")
+        cls.fresh = os.path.join(cls.out, "Hadal")
+        hadal_build.build(cls.fresh)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.out, True)
+        if HADAL_ART_DIR in sys.path:
+            sys.path.remove(HADAL_ART_DIR)
+
+    def decoded_icons(self, root):
+        return {
+            path: (w, h, [pack.decode_blob(b, w, h) for b in blobs], rate)
+            for path, w, h, blobs, rate in pack.iter_pack_icons(root)
+        }
+
+    def decoded_anims(self, root):
+        out = {}
+        anims = os.path.join(root, "Anims")
+        for name in sorted(os.listdir(anims)):
+            folder = os.path.join(anims, name)
+            if not os.path.isdir(folder):
+                continue
+            keys = pack._read_keys(os.path.join(folder, "meta.txt"))
+            w, h = int(keys["Width"]), int(keys["Height"])
+            frames = sorted(f for f in os.listdir(folder) if f.endswith(".bm"))
+            out[name] = []
+            for f in sorted(frames, key=lambda n: int(n[6:-3])):
+                with open(os.path.join(folder, f), "rb") as fh:
+                    out[name].append(pack.decode_blob(fh.read(), w, h))
+        return out
+
+    def plain_files(self, root):
+        """The files that are not compressed bitmaps, by relative path: metadata and fonts."""
+        found = {}
+        for d, _, files in os.walk(root):
+            for f in files:
+                if f.endswith((".bm", ".bmx")):
+                    continue
+                rel = os.path.relpath(os.path.join(d, f), root)
+                with open(os.path.join(d, f), "rb") as fh:
+                    found[rel] = fh.read()
+        return found
+
+    def test_the_committed_pack_is_what_the_scripts_generate(self):
+        # Compressed frames are compared by what they decode to, so another heatshrink version
+        # that packs the same pixels differently does not fail this
+        self.assertEqual(self.decoded_icons(HADAL_PACK_DIR), self.decoded_icons(self.fresh))
+        self.assertEqual(self.decoded_anims(HADAL_PACK_DIR), self.decoded_anims(self.fresh))
+        self.assertEqual(self.plain_files(HADAL_PACK_DIR), self.plain_files(self.fresh))
+
+    def test_the_committed_slideshow_frames_are_what_the_scripts_generate(self):
+        from PIL import Image
+
+        first, update = self.build.slideshow_frames()
+        for folder, frames in (("first_start", first), ("update_default", update)):
+            directory = os.path.join(REPO_ROOT, "assets", "slideshow", folder)
+            names = sorted(os.listdir(directory))
+            self.assertEqual(names, [f"frame_{i:02d}.png" for i in range(len(frames))], folder)
+            for name, frame in zip(names, frames):
+                with Image.open(os.path.join(directory, name)) as im:
+                    self.assertEqual(im.mode, "1", name)
+                    self.assertEqual(im.size, (128, 64), name)
+                    same = im.convert("L").tobytes() == frame.image.convert("L").tobytes()
+                    self.assertTrue(same, f"{folder}/{name} differs from what the scripts generate")
+
+    def test_the_pack_validates_clean(self):
+        index = pack.source_icon_index(os.path.join(REPO_ROOT, "assets", "icons"))
+        report = pack.validate_pack(HADAL_PACK_DIR, index, REPO_ROOT)
+        self.assertEqual(report["errors"], [])
+        self.assertEqual(report["warnings"], [])
+        self.assertEqual(report["stats"]["anims"], 4)
+        self.assertGreaterEqual(report["stats"]["icons"], 25)
+
+    def test_every_icon_is_one_the_firmware_draws_at_the_size_it_has(self):
+        with open(os.path.join(REPO_ROOT, "assets", "icon_override_list.txt")) as f:
+            replaceable = set(pack.parse_icon_list(f.read()))
+        index = pack.source_icon_index(os.path.join(REPO_ROOT, "assets", "icons"))
+        for path, w, h, blobs, rate in pack.iter_pack_icons(HADAL_PACK_DIR):
+            self.assertIn(path, replaceable, path)
+            self.assertEqual((w, h, len(blobs)), index[path], path)
+
+    def test_icons_with_a_mask_are_replaced_together(self):
+        paths = {p for p, *_ in pack.iter_pack_icons(HADAL_PACK_DIR)}
+        for path in paths:
+            twin = pack.mask_twin(path)
+            if twin and twin in self.build.pack.source_icon_index(os.path.join(REPO_ROOT, "assets", "icons")):
+                self.assertIn(twin, paths, f"{path} without {twin}")
+
+    def test_the_battery_frame_leaves_its_inside_free(self):
+        # power.c draws the charge in from (1,1) to (22,6); anything in the frame there would
+        # show through the bar
+        battery = self.decoded_icons(HADAL_PACK_DIR)["StatusBar/Battery_26x8"]
+        w, h, frames, _ = battery
+        raw = frames[0]
+        for y in range(1, 7):
+            for x in range(1, 23):
+                bit = (raw[y * ((w + 7) // 8) + x // 8] >> (x % 8)) & 1
+                self.assertEqual(bit, 0, f"({x},{y}) is lit inside the battery")
+
+    def test_every_animation_loops_without_a_jump(self):
+        # frame `loop` of a loop would be frame 0 again: the scenes are periodic in the loop
+        anims = self.build.anims
+        for name, fn in (
+            ("angler", lambda p: anims.anglerfish_frame(p, self.build.LOOP)),
+            ("jelly", lambda p: anims.jellyfish_frame(p, self.build.LOOP)),
+            ("bathy", lambda p: anims.bathyscaphe_frame(p, self.build.LOOP)),
+            ("vent", lambda p: anims.vent_frame(p, self.build.LOOP)),
+        ):
+            first, wrapped = fn(0), fn(self.build.LOOP)
+            self.assertTrue(first.image.tobytes() == wrapped.image.tobytes(), f"{name} jumps at the loop point")
+            # and it does move
+            self.assertTrue(first.image.tobytes() != fn(1).image.tobytes(), f"{name} does not move")
+
+    def test_animation_metadata_is_consistent(self):
+        anims_dir = os.path.join(HADAL_PACK_DIR, "Anims")
+        with open(os.path.join(anims_dir, "manifest.txt")) as fh:
+            manifest = fh.read()
+        names = [line.split(":", 1)[1].strip() for line in manifest.splitlines() if line.startswith("Name:")]
+        self.assertEqual(len(names), 4)
+        for name in names:
+            with open(os.path.join(anims_dir, name, "meta.txt")) as fh:
+                text = fh.read()
+            keys = pack._read_keys(os.path.join(anims_dir, name, "meta.txt"))
+            passive, active = int(keys["Passive frames"]), int(keys["Active frames"])
+            cycles = int(keys["Active cycles"])
+            self.assertEqual(len(keys["Frames order"].split()), passive + active, name)
+            frames = [f for f in os.listdir(os.path.join(anims_dir, name)) if f.endswith(".bm")]
+            self.assertEqual(len(frames), passive + active, name)
+            total = passive + active * cycles
+            # speech bubbles stay inside the period they play in
+            for start, end in zip(
+                [int(v) for v in re.findall(r"StartFrame: (\d+)", text)],
+                [int(v) for v in re.findall(r"EndFrame: (\d+)", text)],
+            ):
+                self.assertLess(start, end, name)
+                self.assertLess(end, total, name)
+                self.assertGreaterEqual(start, passive, f"{name}: bubbles belong to the active part")
+
+    def test_the_pack_fonts_change_no_glyph_box_or_advance(self):
+        from flipper.assets import u8g2font
+
+        stock = stock_font_bytes()
+        for slot in ("Primary", "BigNumbers"):
+            with open(os.path.join(HADAL_PACK_DIR, "Fonts", slot + ".u8f"), "rb") as fh:
+                mine = u8g2font.parse_font(fh.read())
+            theirs = u8g2font.parse_font(stock[slot])
+            self.assertEqual(sorted(mine.glyphs), sorted(theirs.glyphs), slot)
+            for e, g in theirs.glyphs.items():
+                m = mine.glyphs[e]
+                self.assertEqual(
+                    (m.width, m.height, m.x_offset, m.y_offset, m.advance),
+                    (g.width, g.height, g.x_offset, g.y_offset, g.advance),
+                    f"{slot} {e}",
+                )
+            self.assertEqual(mine.header[9:17], theirs.header[9:17], slot)
+
+    def test_the_pack_is_small(self):
+        total = sum(
+            os.path.getsize(os.path.join(d, f)) for d, _, files in os.walk(HADAL_PACK_DIR) for f in files
+        )
+        self.assertLess(total, 40 * 1024, "the pack should stay light enough for the SD card resources")
 
 
 class SettingsMigrationTests(TempDirCase):

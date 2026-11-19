@@ -1,0 +1,31 @@
+Filetype: Flipper Animation Manifest
+Version: 1
+
+Name: L1_Anglerfish_128x64
+Min butthurt: 0
+Max butthurt: 14
+Min level: 1
+Max level: 3
+Weight: 3
+
+Name: L1_Jellyfish_128x64
+Min butthurt: 0
+Max butthurt: 14
+Min level: 1
+Max level: 3
+Weight: 3
+
+Name: L2_Bathyscaphe_128x64
+Min butthurt: 0
+Max butthurt: 14
+Min level: 2
+Max level: 3
+Weight: 3
+
+Name: L1_Vent_128x64
+Min butthurt: 0
+Max butthurt: 14
+Min level: 1
+Max level: 3
+Weight: 2
+

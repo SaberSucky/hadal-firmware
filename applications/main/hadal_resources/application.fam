@@ -1,0 +1,12 @@
+# The Hadal asset pack: animations, icons and fonts that Settings -> Desktop -> Asset Pack can
+# switch to. Deployed like any app's resources folder, so everything under resources/ lands at
+# the same path on the SD card: /ext/asset_packs/Hadal/...
+#
+# The pack is generated, not drawn by hand: python3 assets/hadal_pack/build.py --install
+# rewrites it (and the first-start and update slideshow frames) from the scripts beside it.
+App(
+    appid="hadal_resources",
+    name="Hadal asset pack",
+    apptype=FlipperAppType.METAPACKAGE,
+    resources="resources",
+)
