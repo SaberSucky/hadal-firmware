@@ -1434,6 +1434,143 @@ class HadalPackTests(TempDirCase):
         self.assertLess(total, 40 * 1024, "the pack should stay light enough for the SD card resources")
 
 
+class UpdatePackageCheckTests(TempDirCase):
+    """scripts/update_package_check.py: it passes a well-formed package and fails each way one can
+    go wrong. Packages are made with the real scripts/update.py from a tiny fake firmware and updater."""
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+        import update_package_check as checker
+
+        cls.checker = checker
+        cls.light = os.path.join(REPO_ROOT, "lib", "stm32wb_copro", "firmware", "stm32wb5x_BLE_Stack_light_fw.bin")
+        cls.full = os.path.join(REPO_ROOT, "lib", "stm32wb_copro", "firmware", "stm32wb5x_BLE_Stack_full_fw.bin")
+
+    def make_package(
+        self, firmware_size=64 * 1024, stack="light", ob="scripts/ob.data", address=None,
+        updater_reset=0x2000_0101, force=False,
+    ):
+        import struct
+        import subprocess
+
+        d = self.p("pkg_%d" % len(os.listdir(self.tmp)))
+        os.makedirs(d)
+        firmware = struct.pack("<II", 0x20030000, 0x08000101) + bytes(firmware_size - 8)
+        updater = struct.pack("<II", 0x20030000, updater_reset) + bytes(4096)
+        fw_bin, stage = self.p("fw.bin"), self.p("updater.bin")
+        with open(fw_bin, "wb") as f:
+            f.write(firmware)
+        with open(stage, "wb") as f:
+            f.write(updater)
+        dfu = self.p("firmware.dfu")
+        subprocess.check_call(
+            [sys.executable, os.path.join(REPO_ROOT, "scripts", "bin2dfu.py"), "-i", fw_bin, "-o", dfu,
+             "-a", "0x08000000", "-l", "test"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        radio = self.light if stack == "light" else self.full
+        cmd = [
+            sys.executable, os.path.join(REPO_ROOT, "scripts", "update.py"), "generate",
+            "-t", "f7", "-d", d, "-v", "test", "--stage", stage, "--dfu", dfu, "--radio", radio,
+            "--radiotype", "ble_light" if stack == "light" else "ble_full",
+            "--obdata", os.path.join(REPO_ROOT, ob),
+        ]
+        if address is not None:
+            cmd += ["--radioaddr", hex(address)]
+        if force:
+            cmd += ["--I-understand-what-I-am-doing", "yes"]
+        subprocess.check_call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return d
+
+    def run_check(self, package, expect="any", **kw):
+        with tempfile.TemporaryDirectory() as scratch:
+            return self.checker.check_package(package, expect, scratch=scratch, **kw)[0]
+
+    def failures(self, report):
+        return [text for level, text in report.lines if level == "FAIL"]
+
+    def test_a_well_formed_light_package_passes_as_standard(self):
+        report = self.run_check(self.make_package(), "light")
+        self.assertEqual(self.failures(report), [])
+
+    def test_a_full_package_made_the_documented_way_passes_as_full(self):
+        report = self.run_check(self.make_package(stack="full", ob="scripts/ob_custradio.data"), "full")
+        self.assertEqual(self.failures(report), [])
+
+    def test_the_full_package_with_a_home_made_option_byte_file_is_refused(self):
+        # What was flashed once and hung the radio install
+        report = self.run_check(self.make_package(stack="full", ob="scripts/ob_ble_full.data"), "full")
+        self.assertTrue(any("option bytes" in f for f in self.failures(report)), self.failures(report))
+
+    def test_a_stack_other_than_the_expected_one_is_refused(self):
+        report = self.run_check(self.make_package(stack="full", ob="scripts/ob_custradio.data"), "light")
+        self.assertTrue(any("BLE_FULL" in f for f in self.failures(report)), self.failures(report))
+
+    def test_a_firmware_that_runs_into_the_radio_stack_is_refused(self):
+        # 0x080D7000 is the Light stack; a firmware this big ends beyond it. The packager refuses to
+        # make such a package unless told to, which is the first line of defence ...
+        import subprocess
+
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.make_package(firmware_size=0xD8000)
+        # ... and the checker is the second: it still says no when the packager was overruled
+        report = self.run_check(self.make_package(firmware_size=0xD8000, force=True), "light")
+        self.assertTrue(any("OVERLAPPING" in f for f in self.failures(report)), self.failures(report))
+
+    def test_damage_to_any_file_is_noticed(self):
+        for name in ("firmware.dfu", "updater.bin", "radio.bin"):
+            package = self.make_package()
+            path = os.path.join(package, name)
+            with open(path, "r+b") as f:
+                f.seek(100)
+                byte = f.read(1)
+                f.seek(100)
+                f.write(bytes([byte[0] ^ 0xFF]))
+            report = self.run_check(package, "light")
+            self.assertTrue(self.failures(report), f"damage to {name} went unnoticed")
+
+    def test_a_missing_file_is_noticed(self):
+        package = self.make_package()
+        os.remove(os.path.join(package, "radio.bin"))
+        self.assertTrue(self.failures(self.run_check(package, "light")))
+
+    def test_a_manifest_edited_to_other_option_bytes_is_noticed(self):
+        package = self.make_package()
+        manifest = os.path.join(package, "update.fuf")
+        with open(manifest) as f:
+            lines = f.read().splitlines()
+        for i, line in enumerate(lines):
+            if line.startswith("OB write mask:"):
+                values = line.split(":", 1)[1].split()
+                values[0] = "FF"  # let the updater rewrite more than the standard file allows
+                lines[i] = "OB write mask: " + " ".join(values)
+        with open(manifest, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        self.assertTrue(any("option bytes" in f for f in self.failures(self.run_check(package, "light"))))
+
+    def test_an_updater_that_does_not_run_from_ram_is_refused(self):
+        report = self.run_check(self.make_package(updater_reset=0x0800_0101), "light")
+        self.assertTrue(any("updater vector table" in f for f in self.failures(report)), self.failures(report))
+
+    def test_the_comparison_with_a_reference_package_reports_every_difference(self):
+        light = self.make_package()
+        full = self.make_package(stack="full", ob="scripts/ob_custradio.data")
+        with tempfile.TemporaryDirectory() as s1, tempfile.TemporaryDirectory() as s2:
+            report, summary = self.checker.check_package(full, "any", scratch=s1)
+            _, reference = self.checker.check_package(light, "any", scratch=s2)
+            self.checker.compare_with_reference(report, summary, reference)
+        text = " ".join(self.failures(report))
+        for key in ("stack", "radio_address", "radio_version", "radio_crc", "OB reference"):
+            self.assertIn(key, text)
+        # and a package equals itself
+        with tempfile.TemporaryDirectory() as s1, tempfile.TemporaryDirectory() as s2:
+            report, summary = self.checker.check_package(light, "any", scratch=s1)
+            _, same = self.checker.check_package(light, "any", scratch=s2)
+            self.checker.compare_with_reference(report, summary, same)
+        self.assertEqual(self.failures(report), [])
+
+
 class SettingsMigrationTests(TempDirCase):
     """applications/services/desktop/desktop_settings.c: every older settings file must still
     load, with the asset pack setting empty, and a damaged one must fall back to defaults."""

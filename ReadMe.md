@@ -45,14 +45,31 @@ Everything else (Sub-GHz protocols, NFC, RFID, Infrared, BadUSB and the rest) co
 
 ## 🚀 Installing
 
-There are no prebuilt releases yet. Build the update package yourself (see below), then:
+There are no prebuilt releases yet. Build the update package yourself (see below).
+
+> [!WARNING]
+> **A default build installs the BLE "Full" radio stack, which is experimental.** Its install did not complete on the author's Flipper and the Flipper had to be repaired through qFlipper. The cause is not yet known. Until it is, build with the standard radio stack and the standard option bytes, the same ones Unleashed and the official firmware use:
+>
+> ```
+> ./fbt COMPACT=1 DEBUG=0 updater_package COPRO_OB_DATA=scripts/ob.data COPRO_STACK_BIN=stm32wb5x_BLE_Stack_light_fw.bin COPRO_STACK_TYPE=ble_light
+> ```
+>
+> The BLE Scanner then reports that scanning is unsupported; everything else works.
+
+Check a package before you flash it. This re-derives from the files what the updater will do, and compares it with the standard configuration:
+
+```
+python3 scripts/update_package_check.py dist/f7-C/flipper-z-f7-update-local.tgz --expect light
+```
+
+Then:
 
 1. Open [qFlipper](https://flipperzero.one/update) and connect your Flipper
 2. Choose **Install from file** and pick `dist/f7-C/flipper-z-f7-update-local.tgz`
 
-The first install replaces the Flipper's radio stack (Light → Full). The Flipper restarts several times and this takes a few minutes, so don't disconnect it. You may need to pair your phone again afterwards.
+With the standard radio stack the Flipper's radio is left alone. A Full-stack build replaces it (Light → Full): the Flipper restarts several times, this takes a few minutes, and you may need to pair your phone again.
 
-**Going back:** installing official or Unleashed firmware through qFlipper restores the Light radio stack automatically. If the Flipper ever fails to boot, use qFlipper's repair mode.
+**Going back:** installing official or Unleashed firmware through qFlipper restores the Light radio stack. If the Flipper ever fails to boot, use qFlipper's repair mode (see `documentation/KeyCombo.md` for the DFU button combinations).
 
 
 ## 👨‍💻 Building
