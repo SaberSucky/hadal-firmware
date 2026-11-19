@@ -23,6 +23,16 @@ LIST_DEF(StorageAnimationList, StorageAnimation*, M_PTR_OPLIST)
 #define M_OPL_StorageAnimationList_t() LIST_OPLIST(StorageAnimationList)
 
 /**
+ * Choose the folder the external (SD card) animations are read from: it holds manifest.txt
+ * and one folder per animation. Defaults to /ext/dolphin. NULL, an empty string or a path
+ * that is too long restores the default. Animations that are already loaded are not
+ * affected; the new folder is used for the next ones.
+ *
+ * @directory   folder path, copied
+ */
+void animation_storage_set_directory(const char* directory);
+
+/**
  * Fill list of available animations.
  * List will contain all idle animations on inner flash
  * and all available on SD-card, mentioned in manifest.txt.

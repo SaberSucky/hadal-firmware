@@ -12,9 +12,37 @@
 #include <assets_dolphin_blocking.h>
 
 #define ANIMATION_META_FILE     "meta.txt"
-#define ANIMATION_DIR           EXT_PATH("dolphin")
-#define ANIMATION_MANIFEST_FILE ANIMATION_DIR "/manifest.txt"
+#define ANIMATION_MANIFEST_FILE "manifest.txt"
+#define ANIMATION_DEFAULT_DIR   EXT_PATH("dolphin")
+#define ANIMATION_DIR_SIZE      96
 #define TAG                     "AnimationStorage"
+
+/**
+ * Folder the external animations are read from. The desktop thread and the animation manager's
+ * timer both load animations, so it is read as a snapshot (animation_storage_get_directory())
+ * once per operation, never used in place. A short critical section covers the copy.
+ */
+static char animation_directory[ANIMATION_DIR_SIZE] = ANIMATION_DEFAULT_DIR;
+
+void animation_storage_set_directory(const char* directory) {
+    if(!directory || !directory[0] || strlen(directory) >= ANIMATION_DIR_SIZE) {
+        directory = ANIMATION_DEFAULT_DIR;
+    }
+    FURI_CRITICAL_ENTER();
+    strlcpy(animation_directory, directory, ANIMATION_DIR_SIZE);
+    FURI_CRITICAL_EXIT();
+}
+
+static void animation_storage_get_directory(char* directory, size_t size) {
+    FURI_CRITICAL_ENTER();
+    strlcpy(directory, animation_directory, size);
+    FURI_CRITICAL_EXIT();
+}
+
+/** "<directory>/manifest.txt" into path; the directory is a snapshot taken by the caller. */
+static void animation_storage_manifest_path(const char* directory, FuriString* path) {
+    furi_string_printf(path, "%s/" ANIMATION_MANIFEST_FILE, directory);
+}
 
 static void animation_storage_free_bubbles(BubbleAnimation* animation);
 static void animation_storage_free_frames(BubbleAnimation* animation);
@@ -27,6 +55,10 @@ static bool animation_storage_load_single_manifest_info(
     furi_assert(manifest_info);
 
     bool result = false;
+    char directory[ANIMATION_DIR_SIZE];
+    animation_storage_get_directory(directory, sizeof(directory));
+    FuriString* manifest_path = furi_string_alloc();
+    animation_storage_manifest_path(directory, manifest_path);
     Storage* storage = furi_record_open(RECORD_STORAGE);
     FlipperFormat* file = flipper_format_buffered_file_alloc(storage);
     flipper_format_set_strict_mode(file, true);
@@ -36,7 +68,8 @@ static bool animation_storage_load_single_manifest_info(
     do {
         uint32_t u32value;
         if(FSE_OK != storage_sd_status(storage)) break;
-        if(!flipper_format_buffered_file_open_existing(file, ANIMATION_MANIFEST_FILE)) break;
+        if(!flipper_format_buffered_file_open_existing(file, furi_string_get_cstr(manifest_path)))
+            break;
 
         if(!flipper_format_read_header(file, read_string, &u32value)) break;
         if(furi_string_cmp_str(read_string, "Flipper Animation Manifest")) break;
@@ -70,6 +103,7 @@ static bool animation_storage_load_single_manifest_info(
         free((void*)manifest_info->name);
     }
     furi_string_free(read_string);
+    furi_string_free(manifest_path);
     flipper_format_free(file);
 
     furi_record_close(RECORD_STORAGE);
@@ -81,6 +115,10 @@ void animation_storage_fill_animation_list(StorageAnimationList_t* animation_lis
     furi_assert(sizeof(StorageAnimationList_t) == sizeof(void*));
     furi_assert(!StorageAnimationList_size(*animation_list));
 
+    char directory[ANIMATION_DIR_SIZE];
+    animation_storage_get_directory(directory, sizeof(directory));
+    FuriString* manifest_path = furi_string_alloc();
+    animation_storage_manifest_path(directory, manifest_path);
     Storage* storage = furi_record_open(RECORD_STORAGE);
     FlipperFormat* file = flipper_format_buffered_file_alloc(storage);
     /* Forbid skipping fields */
@@ -93,7 +131,8 @@ void animation_storage_fill_animation_list(StorageAnimationList_t* animation_lis
         StorageAnimation* storage_animation = NULL;
 
         if(FSE_OK != storage_sd_status(storage)) break;
-        if(!flipper_format_buffered_file_open_existing(file, ANIMATION_MANIFEST_FILE)) break;
+        if(!flipper_format_buffered_file_open_existing(file, furi_string_get_cstr(manifest_path)))
+            break;
         if(!flipper_format_read_header(file, read_string, &u32value)) break;
         if(furi_string_cmp_str(read_string, "Flipper Animation Manifest")) break;
         do {
@@ -123,6 +162,7 @@ void animation_storage_fill_animation_list(StorageAnimationList_t* animation_lis
     } while(0);
 
     furi_string_free(read_string);
+    furi_string_free(manifest_path);
     flipper_format_free(file);
 
     // add hard-coded animations
@@ -260,6 +300,7 @@ static void animation_storage_free_frames(BubbleAnimation* animation) {
 
 static bool animation_storage_load_frames(
     Storage* storage,
+    const char* directory,
     const char* name,
     BubbleAnimation* animation,
     uint32_t* frame_order,
@@ -293,7 +334,7 @@ static bool animation_storage_load_frames(
 
     for(int i = 0; i < icon->frame_count; ++i) {
         frames_ok = false;
-        furi_string_printf(filename, ANIMATION_DIR "/%s/frame_%d.bm", name, i);
+        furi_string_printf(filename, "%s/%s/frame_%d.bm", directory, name, i);
 
         if(storage_common_stat(storage, furi_string_get_cstr(filename), &file_info) != FSE_OK)
             break;
@@ -426,6 +467,9 @@ static bool animation_storage_load_bubbles(BubbleAnimation* animation, FlipperFo
 static BubbleAnimation* animation_storage_load_animation(const char* name) {
     furi_assert(name);
     BubbleAnimation* animation = malloc(sizeof(BubbleAnimation));
+    // One snapshot for the meta file and the frames, even if the folder is changed meanwhile
+    char directory[ANIMATION_DIR_SIZE];
+    animation_storage_get_directory(directory, sizeof(directory));
 
     uint32_t height = 0;
     uint32_t width = 0;
@@ -444,7 +488,7 @@ static BubbleAnimation* animation_storage_load_animation(const char* name) {
 
         if(FSE_OK != storage_sd_status(storage)) break;
 
-        furi_string_printf(str, ANIMATION_DIR "/%s/" ANIMATION_META_FILE, name);
+        furi_string_printf(str, "%s/%s/" ANIMATION_META_FILE, directory, name);
         if(!flipper_format_buffered_file_open_existing(ff, furi_string_get_cstr(str))) break;
         if(!flipper_format_read_header(ff, str, &u32value)) break;
         if(furi_string_cmp_str(str, "Flipper Animation")) break;
@@ -472,7 +516,8 @@ static BubbleAnimation* animation_storage_load_animation(const char* name) {
         }
 
         /* passive and active frames must be loaded up to this point */
-        if(!animation_storage_load_frames(storage, name, animation, u32array, width, height))
+        if(!animation_storage_load_frames(
+               storage, directory, name, animation, u32array, width, height))
             break;
 
         if(!flipper_format_read_uint32(ff, "Active cycles", &u32value, 1)) break; //-V779
