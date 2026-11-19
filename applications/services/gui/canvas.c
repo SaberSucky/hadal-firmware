@@ -1,6 +1,7 @@
 #include "canvas_i.h"
 #include "canvas.h"
 #include "icon_animation_i.h"
+#include <asset_packs.h>
 
 #include <furi.h>
 #include <furi_hal.h>
@@ -271,17 +272,20 @@ void canvas_draw_icon_animation(
 
     x += canvas->offset_x;
     y += canvas->offset_y;
+    // An asset pack may replace the icon (same size and frame count); its lock is held while drawing
+    const Icon* icon = asset_packs_icon_acquire(icon_animation->icon);
     uint8_t* icon_data = NULL;
     compress_icon_decode(
-        canvas->compress_icon, icon_animation_get_data(icon_animation), &icon_data);
+        canvas->compress_icon, icon_get_frame_data(icon, icon_animation->frame), &icon_data);
     canvas_draw_u8g2_bitmap(
         &canvas->fb,
         x,
         y,
-        icon_animation_get_width(icon_animation),
-        icon_animation_get_height(icon_animation),
+        icon_get_width(icon),
+        icon_get_height(icon),
         icon_data,
         IconRotation0);
+    if(icon != icon_animation->icon) asset_packs_icon_release();
 }
 
 static void canvas_draw_u8g2_bitmap_int(
@@ -398,10 +402,12 @@ void canvas_draw_icon_ex(
 
     x += canvas->offset_x;
     y += canvas->offset_y;
+    const Icon* drawn = asset_packs_icon_acquire(icon);
     uint8_t* icon_data = NULL;
-    compress_icon_decode(canvas->compress_icon, icon_get_frame_data(icon, 0), &icon_data);
+    compress_icon_decode(canvas->compress_icon, icon_get_frame_data(drawn, 0), &icon_data);
     canvas_draw_u8g2_bitmap(
-        &canvas->fb, x, y, icon_get_width(icon), icon_get_height(icon), icon_data, rotation);
+        &canvas->fb, x, y, icon_get_width(drawn), icon_get_height(drawn), icon_data, rotation);
+    if(drawn != icon) asset_packs_icon_release();
 }
 
 void canvas_draw_icon(Canvas* canvas, int32_t x, int32_t y, const Icon* icon) {
@@ -410,10 +416,18 @@ void canvas_draw_icon(Canvas* canvas, int32_t x, int32_t y, const Icon* icon) {
 
     x += canvas->offset_x;
     y += canvas->offset_y;
+    const Icon* drawn = asset_packs_icon_acquire(icon);
     uint8_t* icon_data = NULL;
-    compress_icon_decode(canvas->compress_icon, icon_get_frame_data(icon, 0), &icon_data);
+    compress_icon_decode(canvas->compress_icon, icon_get_frame_data(drawn, 0), &icon_data);
     canvas_draw_u8g2_bitmap(
-        &canvas->fb, x, y, icon_get_width(icon), icon_get_height(icon), icon_data, IconRotation0);
+        &canvas->fb,
+        x,
+        y,
+        icon_get_width(drawn),
+        icon_get_height(drawn),
+        icon_data,
+        IconRotation0);
+    if(drawn != icon) asset_packs_icon_release();
 }
 
 void canvas_draw_dot(Canvas* canvas, int32_t x, int32_t y) {
@@ -557,9 +571,11 @@ void canvas_draw_icon_bitmap(
 
     x += canvas->offset_x;
     y += canvas->offset_y;
+    const Icon* drawn = asset_packs_icon_acquire(icon);
     uint8_t* icon_data = NULL;
-    compress_icon_decode(canvas->compress_icon, icon_get_frame_data(icon, 0), &icon_data);
+    compress_icon_decode(canvas->compress_icon, icon_get_frame_data(drawn, 0), &icon_data);
     u8g2_DrawXBM(&canvas->fb, x, y, w, h, icon_data);
+    if(drawn != icon) asset_packs_icon_release();
 }
 
 void canvas_set_bitmap_mode(Canvas* canvas, bool alpha) {

@@ -22,6 +22,7 @@
         "signal_reader",
         "microtar",
         "usb_stm32",
+        "asset_packs",
         "assets",
         "one_wire",
         "music_worker",

@@ -1,0 +1,64 @@
+/**
+ * @file asset_packs.h
+ * Runtime asset packs: icons (and fonts) loaded from /ext/asset_packs/<Name>/.
+ *
+ * With no pack active nothing changes: every call below is a no-op and drawing takes the
+ * original code path. Anything a pack does not provide, or provides wrongly, is simply not
+ * replaced. See documentation/AssetPacks.md.
+ */
+#pragma once
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <gui/icon.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define ASSET_PACKS_PATH     "/ext/asset_packs"
+/** Size of a pack name buffer, terminator included. */
+#define ASSET_PACK_NAME_SIZE 32
+
+/** Called after the set of replaced assets changed, from the thread that changed it. */
+typedef void (*AssetPacksChangedCallback)(void* context);
+
+/**
+ * Make a pack the active one, or none with NULL or "". Icons are loaded in the background;
+ * until that finishes, and whenever loading fails, the built-in icons are used.
+ * Not thread safe against itself: call from one thread (the desktop service).
+ */
+void asset_packs_set_active(const char* name);
+
+/** Name of the active pack, empty if none. */
+void asset_packs_get_active(char* name, size_t size);
+
+/** Free the active pack's icons, e.g. to give a big app the RAM. Drawing falls back to built-in. */
+void asset_packs_unload_icons(void);
+
+/** Load the active pack's icons again after asset_packs_unload_icons(). No-op if not unloaded. */
+void asset_packs_reload_icons(void);
+
+/**
+ * True if the last pack load did not finish, i.e. it crashed the firmware. Clears that state, so
+ * it answers true only once. Call before asset_packs_set_active() at boot.
+ */
+bool asset_packs_previous_load_crashed(void);
+
+void asset_packs_set_changed_callback(AssetPacksChangedCallback callback, void* context);
+
+/**
+ * The icon to draw in place of `icon`: a pack's replacement, or `icon` itself.
+ *
+ * If this returns something other than `icon`, the pack is locked and the caller MUST call
+ * asset_packs_icon_release() as soon as it has finished drawing, and must not keep the result.
+ * With no pack active this is a single flag check.
+ */
+const Icon* asset_packs_icon_acquire(const Icon* icon);
+
+void asset_packs_icon_release(void);
+
+#ifdef __cplusplus
+}
+#endif

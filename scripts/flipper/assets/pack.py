@@ -48,6 +48,8 @@ ICON_INDEX_NAME = "assets_icon_index"
 
 # Largest icon the firmware will accept (a full screen)
 MAX_ICON_DIM = 128
+# The canvas decodes icons into a 1 KB buffer, so no icon bitmap may be larger
+MAX_RAW_BYTES = 1024
 MAX_ICON_FRAMES = 32
 # RAM budget the firmware enforces for pack icons (keep in sync with the C side)
 ICON_RAM_BUDGET = 24 * 1024
@@ -112,8 +114,14 @@ def _heatshrink_decompress(payload: bytes) -> bytes:
 
 
 def decode_blob(blob: bytes, width: int, height: int) -> bytes:
-    """Return the raw XBM bitmap of a frame blob, checking it is well formed."""
+    """Return the raw XBM bitmap of a frame blob, checking it is well formed. Applies the
+    same limits as the firmware (asset_pack_blob_check): sizes up to 128x128 whose bitmap
+    fits the canvas's 1 KB icon decode buffer."""
     want = raw_size(width, height)
+    if not (1 <= width <= MAX_ICON_DIM and 1 <= height <= MAX_ICON_DIM):
+        raise PackError(f"size {width}x{height} out of range")
+    if want > MAX_RAW_BYTES:
+        raise PackError(f"{width}x{height} bitmap is {want} bytes, the limit is {MAX_RAW_BYTES}")
     if len(blob) < 1:
         raise PackError("empty frame")
     kind = blob[0]
