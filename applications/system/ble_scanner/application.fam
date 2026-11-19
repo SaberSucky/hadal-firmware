@@ -7,6 +7,7 @@ App(
     requires=["gui"],
     stack_size=2 * 1024,
     fap_category="Bluetooth",
+    fap_icon="ble_scanner_10px.png",
     fap_version="0.1",
     fap_description="List nearby Bluetooth LE devices using the Flipper's own radio (needs BLE Full radio stack)",
 )
