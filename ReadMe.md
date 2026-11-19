@@ -82,6 +82,16 @@ Hadal builds exactly like Unleashed and the official firmware. See [How to build
 
 Use release builds (`COMPACT=1 DEBUG=0`). Debug builds are larger and may not fit next to the BLE Full radio stack.
 
+### Bundled apps
+Hadal can bundle a large set of community apps (games, tools, GPIO, NFC, Sub-GHz and more), so a fresh install is not bare. They are other people's apps, fetched from a public collection at a pinned commit and compiled against Hadal's own SDK, never modified. Fetch them once before building, and they go into the update package like any app:
+
+```bash
+python3 scripts/bundle_apps.py fetch      # stage the apps listed in applications/bundled_apps.json
+./fbt COMPACT=1 DEBUG=0 updater_package   # the package now carries them (about 13 MB)
+```
+
+The list, its source and each app's author and licence file are in [THIRD_PARTY_APPS.md](THIRD_PARTY_APPS.md). Some of the apps ship no licence file; check that is acceptable to you before you redistribute a build.
+
 - **Developer documentation:** [developer.flipper.net](https://developer.flipper.net/flipperzero/doxygen)
 - **Writing apps:** [AppsOnSDCard](/documentation/AppsOnSDCard.md), [AppManifests](/documentation/AppManifests.md)
 

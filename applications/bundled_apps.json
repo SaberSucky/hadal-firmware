@@ -1,0 +1,1077 @@
+{
+ "comment": "Third-party apps Hadal bundles. Fetched from the source below at the pinned commit and built against Hadal's own SDK by scripts/bundle_apps.py. They are other people's apps under their own licences, see THIRD_PARTY_APPS.md.",
+ "source": {
+  "repo": "https://github.com/xMasterX/all-the-plugins",
+  "commit": "bd1b44f7a5fd4d5f94cf0c249c84bb77975c5e88"
+ },
+ "apps": [
+  {
+   "path": "apps_source_code/4inrow_game",
+   "appids": [
+    "4inrow"
+   ]
+  },
+  {
+   "path": "apps_source_code/Snake_2",
+   "appids": [
+    "snake20"
+   ]
+  },
+  {
+   "path": "apps_source_code/bluetooth-trigger",
+   "appids": [
+    "bt_trigger"
+   ]
+  },
+  {
+   "path": "apps_source_code/bpmtapper",
+   "appids": [
+    "bpm_tapper"
+   ]
+  },
+  {
+   "path": "apps_source_code/caesarcipher",
+   "appids": [
+    "caesar_cipher"
+   ]
+  },
+  {
+   "path": "apps_source_code/calculator",
+   "appids": [
+    "calculator"
+   ]
+  },
+  {
+   "path": "apps_source_code/color_guess",
+   "appids": [
+    "color_guess"
+   ]
+  },
+  {
+   "path": "apps_source_code/counter",
+   "appids": [
+    "counter"
+   ]
+  },
+  {
+   "path": "apps_source_code/esubghz_chat",
+   "appids": [
+    "esubghz_chat"
+   ]
+  },
+  {
+   "path": "apps_source_code/eth_troubleshooter",
+   "appids": [
+    "eth_troubleshooter"
+   ]
+  },
+  {
+   "path": "apps_source_code/flipp_pomodoro",
+   "appids": [
+    "flipp_pomodoro"
+   ]
+  },
+  {
+   "path": "apps_source_code/flipper-asteroids",
+   "appids": [
+    "asteroids"
+   ]
+  },
+  {
+   "path": "apps_source_code/flipper-flashlight",
+   "appids": [
+    "flashlight"
+   ]
+  },
+  {
+   "path": "apps_source_code/flipper-xbox-controller",
+   "appids": [
+    "xbox_controller"
+   ]
+  },
+  {
+   "path": "apps_source_code/flipper_geiger",
+   "appids": [
+    "flipper_geiger"
+   ]
+  },
+  {
+   "path": "apps_source_code/flipper_passgen",
+   "appids": [
+    "passgen"
+   ]
+  },
+  {
+   "path": "apps_source_code/flipper_pong",
+   "appids": [
+    "flipper_pong"
+   ]
+  },
+  {
+   "path": "apps_source_code/flipperzero-slots",
+   "appids": [
+    "slotmachine"
+   ]
+  },
+  {
+   "path": "apps_source_code/flipperzero-text2sam",
+   "appids": [
+    "text2sam"
+   ]
+  },
+  {
+   "path": "apps_source_code/flipperzero-tuning-fork",
+   "appids": [
+    "tuning_fork"
+   ]
+  },
+  {
+   "path": "apps_source_code/flipperzero-yatzee-main",
+   "appids": [
+    "yatzee"
+   ]
+  },
+  {
+   "path": "apps_source_code/fpz_cntdown_timer-main",
+   "appids": [
+    "cntdown_tim"
+   ]
+  },
+  {
+   "path": "apps_source_code/game_of_life",
+   "appids": [
+    "gameoflife"
+   ]
+  },
+  {
+   "path": "apps_source_code/gpio_controller",
+   "appids": [
+    "gpio_controller"
+   ]
+  },
+  {
+   "path": "apps_source_code/hex_editor",
+   "appids": [
+    "hex_editor"
+   ]
+  },
+  {
+   "path": "apps_source_code/ir_intervalometer",
+   "appids": [
+    "ir_intervalometer"
+   ]
+  },
+  {
+   "path": "apps_source_code/mifare_fuzzer",
+   "appids": [
+    "mifare_fuzzer"
+   ]
+  },
+  {
+   "path": "apps_source_code/nfc_apdu_runner",
+   "appids": [
+    "nfc_apdu_runner"
+   ]
+  },
+  {
+   "path": "apps_source_code/paint",
+   "appids": [
+    "paint"
+   ]
+  },
+  {
+   "path": "apps_source_code/resistors",
+   "appids": [
+    "resistors"
+   ]
+  },
+  {
+   "path": "apps_source_code/reversi",
+   "appids": [
+    "reversi"
+   ]
+  },
+  {
+   "path": "apps_source_code/rootoflife",
+   "appids": [
+    "roots_of_life"
+   ]
+  },
+  {
+   "path": "apps_source_code/rubiks_cube_scrambler",
+   "appids": [
+    "rubiks_cube_scrambler"
+   ]
+  },
+  {
+   "path": "apps_source_code/scorched_tanks",
+   "appids": [
+    "scorched_tanks"
+   ]
+  },
+  {
+   "path": "apps_source_code/sub_analyzer",
+   "appids": [
+    "sub_analyzer"
+   ]
+  },
+  {
+   "path": "apps_source_code/t-rex-runner",
+   "appids": [
+    "t_rex_runner"
+   ]
+  },
+  {
+   "path": "apps_source_code/t5577_multiwriter",
+   "appids": [
+    "t5577_multiwriter"
+   ]
+  },
+  {
+   "path": "apps_source_code/tpms_receiver",
+   "appids": [
+    "tpms"
+   ]
+  },
+  {
+   "path": "apps_source_code/uhf_rfid",
+   "appids": [
+    "uhf_rfid"
+   ]
+  },
+  {
+   "path": "apps_source_code/videopoker",
+   "appids": [
+    "videopoker"
+   ]
+  },
+  {
+   "path": "apps_source_code/wire_tester",
+   "appids": [
+    "wire_tester"
+   ]
+  },
+  {
+   "path": "base_pack/air_arkanoid",
+   "appids": [
+    "air_arkanoid"
+   ]
+  },
+  {
+   "path": "base_pack/air_mouse_ofw",
+   "appids": [
+    "vgm_air_mouse"
+   ]
+  },
+  {
+   "path": "base_pack/arkanoid",
+   "appids": [
+    "arkanoid"
+   ]
+  },
+  {
+   "path": "base_pack/avr_isp_programmer",
+   "appids": [
+    "avr_isp"
+   ]
+  },
+  {
+   "path": "base_pack/barcode_gen",
+   "appids": [
+    "barcode_app"
+   ]
+  },
+  {
+   "path": "base_pack/blackjack",
+   "appids": [
+    "blackjack"
+   ]
+  },
+  {
+   "path": "base_pack/ble_spam",
+   "appids": [
+    "ble_spam"
+   ]
+  },
+  {
+   "path": "base_pack/bomberduck",
+   "appids": [
+    "bomberduck"
+   ]
+  },
+  {
+   "path": "base_pack/camera_suite",
+   "appids": [
+    "camera_suite"
+   ]
+  },
+  {
+   "path": "base_pack/dap_link",
+   "appids": [
+    "dap_link"
+   ]
+  },
+  {
+   "path": "base_pack/doom",
+   "appids": [
+    "doom"
+   ]
+  },
+  {
+   "path": "base_pack/dtmf_dolphin",
+   "appids": [
+    "dtmf_dolphin"
+   ]
+  },
+  {
+   "path": "base_pack/esp8266_deauth",
+   "appids": [
+    "esp8266_deauther"
+   ]
+  },
+  {
+   "path": "base_pack/flappy_bird",
+   "appids": [
+    "flappy_bird"
+   ]
+  },
+  {
+   "path": "base_pack/flip_tdi",
+   "appids": [
+    "flip_tdi"
+   ]
+  },
+  {
+   "path": "base_pack/flipper_i2ctools",
+   "appids": [
+    "i2ctools"
+   ]
+  },
+  {
+   "path": "base_pack/flipper_share",
+   "appids": [
+    "flipper_share"
+   ]
+  },
+  {
+   "path": "base_pack/game15",
+   "appids": [
+    "game15"
+   ]
+  },
+  {
+   "path": "base_pack/game_2048",
+   "appids": [
+    "game_2048"
+   ]
+  },
+  {
+   "path": "base_pack/gps_nmea_uart",
+   "appids": [
+    "gps_nmea"
+   ]
+  },
+  {
+   "path": "base_pack/hc_sr04",
+   "appids": [
+    "hc_sr04"
+   ]
+  },
+  {
+   "path": "base_pack/heap_defence_game",
+   "appids": [
+    "heap_defence"
+   ]
+  },
+  {
+   "path": "base_pack/hex_viewer",
+   "appids": [
+    "hex_viewer"
+   ]
+  },
+  {
+   "path": "base_pack/ibutton_converter",
+   "appids": [
+    "ibutton_converter"
+   ]
+  },
+  {
+   "path": "base_pack/ir_scope",
+   "appids": [
+    "ir_scope"
+   ]
+  },
+  {
+   "path": "base_pack/jetpack_joyride",
+   "appids": [
+    "jetpack_joyride"
+   ]
+  },
+  {
+   "path": "base_pack/lightmeter",
+   "appids": [
+    "lightmeter"
+   ]
+  },
+  {
+   "path": "base_pack/mass_storage",
+   "appids": [
+    "mass_storage"
+   ]
+  },
+  {
+   "path": "base_pack/metronome",
+   "appids": [
+    "metronome"
+   ]
+  },
+  {
+   "path": "base_pack/mfc_editor",
+   "appids": [
+    "mfc_editor"
+   ]
+  },
+  {
+   "path": "base_pack/minesweeper",
+   "appids": [
+    "minesweeper_redux"
+   ]
+  },
+  {
+   "path": "base_pack/morse_code",
+   "appids": [
+    "morse_code"
+   ]
+  },
+  {
+   "path": "base_pack/multi_converter",
+   "appids": [
+    "multi_converter"
+   ]
+  },
+  {
+   "path": "base_pack/music_player",
+   "appids": [
+    "music_player"
+   ]
+  },
+  {
+   "path": "base_pack/nearby_files",
+   "appids": [
+    "nearby_files"
+   ]
+  },
+  {
+   "path": "base_pack/nfc_eink",
+   "appids": [
+    "nfc_eink"
+   ]
+  },
+  {
+   "path": "base_pack/nfc_magic",
+   "appids": [
+    "nfc_magic"
+   ]
+  },
+  {
+   "path": "base_pack/nfc_maker",
+   "appids": [
+    "nfc_maker"
+   ]
+  },
+  {
+   "path": "base_pack/nfc_rfid_detector",
+   "appids": [
+    "nfc_rfid_detector"
+   ]
+  },
+  {
+   "path": "base_pack/picopass",
+   "appids": [
+    "picopass"
+   ]
+  },
+  {
+   "path": "base_pack/playlist",
+   "appids": [
+    "subghz_playlist"
+   ]
+  },
+  {
+   "path": "base_pack/pocsag_pager",
+   "appids": [
+    "pocsag_pager"
+   ]
+  },
+  {
+   "path": "base_pack/protopirate",
+   "appids": [
+    "proto_pirate"
+   ]
+  },
+  {
+   "path": "base_pack/protoview",
+   "appids": [
+    "protoview"
+   ]
+  },
+  {
+   "path": "base_pack/quac",
+   "appids": [
+    "quac"
+   ]
+  },
+  {
+   "path": "base_pack/radio_scanner",
+   "appids": [
+    "radio_scanner"
+   ]
+  },
+  {
+   "path": "base_pack/rolling_flaws",
+   "appids": [
+    "rolling_flaws"
+   ]
+  },
+  {
+   "path": "base_pack/sentry_safe",
+   "appids": [
+    "gpio_sentry_safe"
+   ]
+  },
+  {
+   "path": "base_pack/signal_generator",
+   "appids": [
+    "signal_generator"
+   ]
+  },
+  {
+   "path": "base_pack/solitaire",
+   "appids": [
+    "solitaire"
+   ]
+  },
+  {
+   "path": "base_pack/spectrum_analyzer",
+   "appids": [
+    "spectrum_analyzer"
+   ]
+  },
+  {
+   "path": "base_pack/spi_mem_manager",
+   "appids": [
+    "spi_mem_manager"
+   ]
+  },
+  {
+   "path": "base_pack/subghz-scheduler",
+   "appids": [
+    "subghz_scheduler"
+   ]
+  },
+  {
+   "path": "base_pack/swd_probe",
+   "appids": [
+    "swd_probe"
+   ]
+  },
+  {
+   "path": "base_pack/tetris_game",
+   "appids": [
+    "tetris"
+   ]
+  },
+  {
+   "path": "base_pack/text_viewer",
+   "appids": [
+    "text_viewer"
+   ]
+  },
+  {
+   "path": "base_pack/tictactoe_game",
+   "appids": [
+    "tictactoe"
+   ]
+  },
+  {
+   "path": "base_pack/totp",
+   "appids": [
+    "totp"
+   ]
+  },
+  {
+   "path": "base_pack/uart_terminal",
+   "appids": [
+    "uart_terminal"
+   ]
+  },
+  {
+   "path": "base_pack/uni_temp",
+   "appids": [
+    "unitemp"
+   ]
+  },
+  {
+   "path": "base_pack/video_game_module_tool",
+   "appids": [
+    "video_game_module_tool"
+   ]
+  },
+  {
+   "path": "base_pack/wav_player",
+   "appids": [
+    "wav_player"
+   ]
+  },
+  {
+   "path": "base_pack/weather_station",
+   "appids": [
+    "weather_station"
+   ]
+  },
+  {
+   "path": "base_pack/wifi_marauder_companion",
+   "appids": [
+    "esp32_wifi_marauder"
+   ]
+  },
+  {
+   "path": "base_pack/wifi_scanner",
+   "appids": [
+    "wifi_scanner"
+   ]
+  },
+  {
+   "path": "base_pack/zombiez",
+   "appids": [
+    "zombiez"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/FlipBIP",
+   "appids": [
+    "flipbip"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/SimonSays",
+   "appids": [
+    "simon_says"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/air_labyrinth",
+   "appids": [
+    "air_labyrinth"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/airmouse",
+   "appids": [
+    "air_mouse"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/ami_tool",
+   "appids": [
+    "ami_tool"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/can_commander",
+   "appids": [
+    "can_commander"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/can_tools",
+   "appids": [
+    "can_tools"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/chess",
+   "appids": [
+    "chess"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/chief_cooker",
+   "appids": [
+    "chief_cooker"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/combocracker",
+   "appids": [
+    "combo_cracker"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/cross_remote",
+   "appids": [
+    "xremote"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/esp_flasher",
+   "appids": [
+    "esp_flasher"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/etch-a-sketch",
+   "appids": [
+    "etch"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/flame_rng",
+   "appids": [
+    "flame_rng"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/flipcrypt",
+   "appids": [
+    "flip_crypt"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/flipper-tina",
+   "appids": [
+    "ina_meter"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/flipper_atomicdiceroller",
+   "appids": [
+    "flipper_atomicdiceroller"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/flipper_evil_portal",
+   "appids": [
+    "evil_portal"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/flipper_longwave_clock",
+   "appids": [
+    "longwave_clock"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/flipper_wedge",
+   "appids": [
+    "flipper_wedge"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/flipperscope",
+   "appids": [
+    "flipperscope"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/flipperzero-qrcode",
+   "appids": [
+    "qrcode"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/flizzer_tracker",
+   "appids": [
+    "flizzer_tracker"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/fmf_to_sub",
+   "appids": [
+    "fmf_to_sub"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/gb-pokemon-trading",
+   "appids": [
+    "pokemon"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/ghost_esp_app",
+   "appids": [
+    "ghost_esp"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/hitachi_ac_remote",
+   "appids": [
+    "hitachi_ac_remote"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/iconedit",
+   "appids": [
+    "iconedit"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/ifttt",
+   "appids": [
+    "esp8266_ifttt_virtual_button"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/ir_remote",
+   "appids": [
+    "ir_remote"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/iso15693_nfc_writer",
+   "appids": [
+    "iso15693_nfc_writer"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/key_copier",
+   "appids": [
+    "key_copier"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/laser_tag_game",
+   "appids": [
+    "laser_tag"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/ld_toypad_emulator",
+   "appids": [
+    "ldtoypad"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/lidar_emulator",
+   "appids": [
+    "lidar_emulator"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/magspoof_flipper",
+   "appids": [
+    "magspoof"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/meal_pager",
+   "appids": [
+    "meal_pager"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/metroflip",
+   "appids": [
+    "metroflip"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/midea_ac_remote",
+   "appids": [
+    "midea_ac_remote"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/mitsubishi_ac_remote",
+   "appids": [
+    "mitsubishi_ac_remote"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/mp_flipper",
+   "appids": [
+    "upython"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/nfc_login",
+   "appids": [
+    "nfc_login"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/nfc_playlist",
+   "appids": [
+    "nfc_playlist"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/nrf24channelscanner",
+   "appids": [
+    "nrf24channelscanner"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/passy",
+   "appids": [
+    "passy"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/pc_monitor",
+   "appids": [
+    "pc_monitor"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/pinball0",
+   "appids": [
+    "pinball0"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/prog_calculator",
+   "appids": [
+    "programmercalc"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/quadrastic",
+   "appids": [
+    "quadrastic"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/rc2014_coleco",
+   "appids": [
+    "coleco"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/saflip",
+   "appids": [
+    "saflip"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/seader",
+   "appids": [
+    "seader"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/seos",
+   "appids": [
+    "seos"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/simultaneous_rfid_reader",
+   "appids": [
+    "simultaneous_rfid_reader"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/spi_terminal",
+   "appids": [
+    "flipper_spi_terminal"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/subghz_playlist_creator",
+   "appids": [
+    "subghz_playlist_creator"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/t5577_raw_writer",
+   "appids": [
+    "t5577_writer"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/tama_p1",
+   "appids": [
+    "tama_p1"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/tanksgame",
+   "appids": [
+    "tanks"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/tone_gen",
+   "appids": [
+    "tone_gen"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/ulc_brute",
+   "appids": [
+    "ulc_brute"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/ulc_relay",
+   "appids": [
+    "ulc_relay"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/ulcfkey",
+   "appids": [
+    "ulcfkey"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/usb_consumer_control",
+   "appids": [
+    "usb_ccb"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/usb_midi",
+   "appids": [
+    "usb_midi"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/video_player",
+   "appids": [
+    "video_player"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/weebo",
+   "appids": [
+    "weebo"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/wifi_deauther",
+   "appids": [
+    "esp8266_wifi_deauther_v2"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/wii_ec_anal",
+   "appids": [
+    "wii_ec_anal"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/xinput",
+   "appids": [
+    "xinput_controller"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/xremote",
+   "appids": [
+    "flipper_xremote"
+   ]
+  }
+ ]
+}

@@ -14,7 +14,8 @@ them out again from the files instead of trusting what the packager wrote:
   - the radio image is a real stack image, its version and flash address are what the manifest says
   - the option bytes the updater will compare and write are exactly what the named option-byte file
     makes, and the radio's flash address agrees with the secure flash start address (SFSA) in them
-  - the resources archive unpacks to plain relative paths
+  - the resources archive unpacks to plain relative paths, and every app in it was built for an API
+    the firmware provides (the Flipper refuses to load one that was not)
 
 --expect light also requires the standard configuration: the stock Light radio stack with the
 stock option bytes (scripts/ob.data), the one every Unleashed or official update uses. --expect
@@ -49,6 +50,8 @@ SFR_WORD = 14  # option byte word holding SFSA, see flipper/assets/obdata.py
 STACK_TYPES = {1: "BLE_FULL", 2: "BLE_HCI", 3: "BLE_LIGHT", 4: "BLE_BEACON", 5: "BLE_BASIC"}
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+API_CSV = os.path.join(REPO, "targets", "f7", "api_symbols.csv")
+FAP_MANIFEST_MAGIC = 0x52474448
 STANDARD = {
     "light": ("BLE_LIGHT", "scripts/ob.data"),
     "full": ("BLE_FULL", "scripts/ob_custradio.data"),
@@ -144,6 +147,34 @@ def vector_table_ok(image, limit, runs_from_ram=False):
     return True, f"stack pointer 0x{sp:08X}, reset 0x{reset:08X}"
 
 
+def firmware_api_version(csv_path=API_CSV):
+    """(major, minor) the firmware exports, from its API table."""
+    with open(csv_path) as f:
+        for line in f:
+            if line.startswith("Version,"):
+                major, minor = line.split(",")[2].strip().split(".")[:2]
+                return int(major), int(minor)
+    raise ValueError(f"no Version line in {csv_path}")
+
+
+def fap_manifest(data):
+    """(api_major, api_minor, hardware_target) from the .fapmeta section of an app, or None."""
+    if data[:4] != b"\x7fELF" or data[4] != 1:  # 32 bit ELF
+        return None
+    shoff, = struct.unpack_from("<I", data, 0x20)
+    shentsize, shnum, shstrndx = struct.unpack_from("<HHH", data, 0x2E)
+    if not shoff or shoff + shnum * shentsize > len(data):
+        return None
+    sections = [struct.unpack_from("<IIIIII", data, shoff + i * shentsize) for i in range(shnum)]
+    names_offset = sections[shstrndx][4]
+    for name_offset, _, _, _, offset, size in sections:
+        start = names_offset + name_offset
+        if data[start : data.index(b"\0", start)] == b".fapmeta" and size >= 14:
+            magic, _version, minor, major, target = struct.unpack_from("<IIHHH", data, offset)
+            return (major, minor, target) if magic == FAP_MANIFEST_MAGIC else None
+    return None
+
+
 def open_package(path, scratch):
     if os.path.isdir(path):
         return path
@@ -158,7 +189,7 @@ def open_package(path, scratch):
     return os.path.join(scratch, folders[0])
 
 
-def check_package(path, expect="any", ob_data=None, scratch=None):
+def check_package(path, expect="any", ob_data=None, scratch=None, api_csv=API_CSV):
     report = Report()
     folder = open_package(path, scratch)
     manifest_path = os.path.join(folder, "update.fuf")
@@ -333,13 +364,32 @@ def check_package(path, expect="any", ob_data=None, scratch=None):
                 tmp.flush()
                 with tarfile.open(tmp.name) as tar:
                     names = tar.getnames()
+                    apps = {m.name: tar.extractfile(m).read() for m in tar.getmembers() if m.isfile() and m.name.endswith(".fap")}
         except Exception as e:  # noqa: BLE001
             report.fail(f"resources do not unpack: {e}")
         else:
             unsafe = [n for n in names if n.startswith("/") or ".." in n.split("/")]
             report.check(not unsafe, f"resources unpack to {len(names)} relative paths", f"resources contain unsafe paths: {unsafe[:3]}")
-            apps = [n for n in names if n.endswith(".fap")]
-            report.info(f"resources hold {len(apps)} apps")
+            fw_major, fw_minor = firmware_api_version(api_csv)
+            bad = []
+            for name, data in sorted(apps.items()):
+                meta = fap_manifest(data)
+                if meta is None:
+                    bad.append(f"{name}: not an app (no valid manifest)")
+                    continue
+                major, minor, target = meta
+                if major != fw_major or minor > fw_minor:
+                    bad.append(f"{name}: built for API {major}.{minor}, the firmware has {fw_major}.{fw_minor}")
+                elif target not in (0, 7):
+                    bad.append(f"{name}: built for hardware target {target}")
+            if apps:
+                report.check(
+                    not bad,
+                    f"all {len(apps)} apps were built for API {fw_major}.x up to {fw_major}.{fw_minor}, which the firmware has",
+                    f"{len(bad)} apps would refuse to load: " + "; ".join(bad[:5]),
+                )
+            else:
+                report.info("resources hold no apps")
 
     summary = {
         "stack": stack_name,

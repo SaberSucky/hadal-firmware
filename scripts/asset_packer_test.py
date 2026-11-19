@@ -1553,6 +1553,58 @@ class UpdatePackageCheckTests(TempDirCase):
         report = self.run_check(self.make_package(updater_reset=0x0800_0101), "light")
         self.assertTrue(any("updater vector table" in f for f in self.failures(report)), self.failures(report))
 
+    def real_fap(self):
+        import glob
+
+        found = sorted(glob.glob(os.path.join(REPO_ROOT, "build", "f7-firmware-C", ".extapps", "*.fap")))
+        if not found:
+            self.skipTest("no built app to use (run a firmware build first)")
+        return found[0]
+
+    def package_with_app(self, fap_bytes):
+        import subprocess
+
+        resources = self.p("res_%d" % len(os.listdir(self.tmp)))
+        os.makedirs(os.path.join(resources, "apps", "Tools"))
+        with open(os.path.join(resources, "apps", "Tools", "x.fap"), "wb") as f:
+            f.write(fap_bytes)
+        package = self.make_package()
+        # a second package from the same pieces, now with resources
+        out = package + "_r"
+        subprocess.check_call(
+            [sys.executable, os.path.join(REPO_ROOT, "scripts", "update.py"), "generate", "-t", "f7", "-d", out,
+             "-v", "test", "--stage", os.path.join(package, "updater.bin"), "--dfu", os.path.join(package, "firmware.dfu"),
+             "--radio", os.path.join(package, "radio.bin"), "--radiotype", "ble_light",
+             "--obdata", os.path.join(REPO_ROOT, "scripts", "ob.data"), "-r", resources],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        return out
+
+    def test_a_bundled_app_the_firmware_would_load_passes(self):
+        with open(self.real_fap(), "rb") as f:
+            data = f.read()
+        report = self.run_check(self.package_with_app(data), "light")
+        self.assertEqual(self.failures(report), [])
+        self.assertTrue(any("apps were built for API" in t for _, t in report.lines))
+
+    def test_a_bundled_app_built_for_another_api_is_caught(self):
+        import struct
+
+        with open(self.real_fap(), "rb") as f:
+            data = bytearray(f.read())
+        meta = self.checker.fap_manifest(bytes(data))
+        self.assertIsNotNone(meta)
+        # find the manifest and change its API major version
+        shoff, = struct.unpack_from("<I", data, 0x20)
+        shentsize, shnum, shstrndx = struct.unpack_from("<HHH", data, 0x2E)
+        sections = [struct.unpack_from("<IIIIII", data, shoff + i * shentsize) for i in range(shnum)]
+        names = sections[shstrndx][4]
+        for name_offset, _, _, _, offset, size in sections:
+            if data[names + name_offset : data.index(b"\0", names + name_offset)] == b".fapmeta":
+                struct.pack_into("<H", data, offset + 10, meta[0] + 1)  # major
+        report = self.run_check(self.package_with_app(bytes(data)), "light")
+        self.assertTrue(any("refuse to load" in f for f in self.failures(report)), self.failures(report))
+
     def test_the_comparison_with_a_reference_package_reports_every_difference(self):
         light = self.make_package()
         full = self.make_package(stack="full", ob="scripts/ob_custradio.data")
@@ -1569,6 +1621,89 @@ class UpdatePackageCheckTests(TempDirCase):
             _, same = self.checker.check_package(light, "any", scratch=s2)
             self.checker.compare_with_reference(report, summary, same)
         self.assertEqual(self.failures(report), [])
+
+
+class BundleAppsTests(TempDirCase):
+    """scripts/bundle_apps.py and applications/bundled_apps.json."""
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+        import bundle_apps
+
+        cls.mod = bundle_apps
+        with open(bundle_apps.LOCK) as f:
+            import json
+
+            cls.lock = json.load(f)
+
+    def good_lock(self):
+        import copy
+
+        return copy.deepcopy(self.lock)
+
+    def test_the_real_lock_is_valid_and_pins_a_commit(self):
+        self.assertEqual(self.mod.check_lock(self.lock), [])
+        self.assertRegex(self.lock["source"]["commit"], r"^[0-9a-f]{40}$")
+        self.assertGreater(len(self.lock["apps"]), 100)
+
+    def test_a_branch_instead_of_a_commit_is_refused(self):
+        lock = self.good_lock()
+        lock["source"]["commit"] = "main"
+        self.assertTrue(any("commit" in p for p in self.mod.check_lock(lock)))
+
+    def test_duplicates_and_unsafe_paths_are_refused(self):
+        lock = self.good_lock()
+        lock["apps"].append(dict(lock["apps"][0]))
+        problems = " ".join(self.mod.check_lock(lock))
+        self.assertIn("twice", problems)
+        lock = self.good_lock()
+        lock["apps"].append({"path": "../escape/app", "appids": ["x"]})
+        lock["apps"].append({"path": "/abs/app", "appids": ["y"]})
+        lock["apps"].append({"path": "a/b", "appids": []})
+        problems = self.mod.check_lock(lock)
+        self.assertGreaterEqual(len(problems), 3)
+
+    def test_no_bundled_app_has_the_id_of_one_already_in_the_firmware(self):
+        # two apps with one id make the build fail: this catches it before a build
+        import re
+
+        in_tree = set()
+        for d, _, files in os.walk(os.path.join(REPO_ROOT, "applications")):
+            if "application.fam" in files:
+                with open(os.path.join(d, "application.fam"), errors="replace") as f:
+                    in_tree |= set(re.findall(r'appid\s*=\s*"([^"]+)"', f.read()))
+        bundled = {a for app in self.lock["apps"] for a in app["appids"]}
+        self.assertEqual(sorted(bundled & in_tree), [])
+
+    def test_clean_removes_only_what_fetch_put_there(self):
+        stage = self.p("stage")
+        os.makedirs(os.path.join(stage, "ours"))
+        os.makedirs(os.path.join(stage, "yours"))
+        with open(os.path.join(stage, "ours", self.mod.MARKER), "w") as f:
+            f.write("x\n")
+        saved = self.mod.STAGE
+        self.mod.STAGE = stage
+        try:
+            self.mod.clean()
+        finally:
+            self.mod.STAGE = saved
+        self.assertFalse(os.path.exists(os.path.join(stage, "ours")))
+        self.assertTrue(os.path.exists(os.path.join(stage, "yours")), "something that was not ours was removed")
+
+    def test_the_notice_reads_name_author_and_licence_from_the_app(self):
+        folder = self.p("app")
+        os.makedirs(folder)
+        with open(os.path.join(folder, "application.fam"), "w") as f:
+            f.write('App(\n    appid="demo",\n    name="Demo App",\n    apptype=FlipperAppType.EXTERNAL,\n'
+                    '    fap_author="Someone",\n    fap_weburl="https://example.com/demo",\n)\n')
+        with open(os.path.join(folder, "LICENSE"), "w") as f:
+            f.write("MIT\n")
+        info, licences = self.mod.manifest_info(folder)
+        self.assertEqual(info["names"], ["Demo App"])
+        self.assertEqual(info["authors"], {"Someone"})
+        self.assertEqual(info["urls"], {"https://example.com/demo"})
+        self.assertEqual(licences, ["LICENSE"])
 
 
 class SettingsMigrationTests(TempDirCase):
