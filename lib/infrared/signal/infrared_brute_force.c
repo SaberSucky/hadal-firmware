@@ -109,6 +109,14 @@ InfraredErrorCode infrared_brute_force_calculate_messages(InfraredBruteForce* br
         }
 
         while(infrared_signal_read_name(ff, signal_name) == InfraredErrorCodeNone) {
+            // A database holds many names no category asked for (e.g. ~600 of tv.ir's
+            // 613). Look the name up first and skip the body of the ones we will never
+            // send: read_name() scans past the unparsed body to the next entry, so only
+            // the handful of registered signals are parsed and validated here.
+            InfraredBruteForceRecord* record =
+                InfraredBruteForceRecordDict_get(brute_force->records, signal_name);
+            if(!record) continue;
+
             const size_t signal_start = flipper_format_tell(ff);
 
             error = infrared_signal_read_body(signal, ff);
@@ -121,10 +129,7 @@ InfraredErrorCode infrared_brute_force_calculate_messages(InfraredBruteForce* br
                 break;
             }
 
-            InfraredBruteForceRecord* record =
-                InfraredBruteForceRecordDict_get(brute_force->records, signal_name);
-            // A database holds names the caller never asked for; those are not ours to collect
-            if(record) SignalPositionArray_push_back(record->signals, signal_start);
+            SignalPositionArray_push_back(record->signals, signal_start);
         }
     } while(false);
 
