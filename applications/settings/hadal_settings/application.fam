@@ -1,0 +1,19 @@
+# Hadal's own settings: the things Hadal adds on top of Unleashed, in one place. Appears in
+# Settings. The first page is the asset pack manager; more pages come with the features
+# they control.
+App(
+    appid="hadal_settings",
+    name="Hadal",
+    apptype=FlipperAppType.EXTSETTINGS,
+    entry_point="hadal_settings_app",
+    requires=[
+        "desktop",
+        "gui",
+        "storage",
+    ],
+    stack_size=4 * 1024,
+    order=5,
+    fap_libs=["assets"],
+    fap_category="assets",
+    sources=["*.c"],
+)

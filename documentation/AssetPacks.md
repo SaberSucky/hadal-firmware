@@ -1,7 +1,7 @@
 # Asset packs
 
 An asset pack replaces Hadal's animations, icons and fonts with files from the SD card, without
-reflashing. Pick one in **Settings → Desktop → Asset Pack**. With no pack selected nothing changes,
+reflashing. Pick one in **Settings → Hadal → Asset Pack**, which lists the packs on the card, says what is in each (how many animations, icons and fonts) and applies the one you choose at once; **Settings → Desktop → Asset Pack** does the same in a plainer list. With no pack selected nothing changes,
 and anything a pack does not provide (or provides incorrectly) falls back to the built-in asset.
 
 Packs live in `/ext/asset_packs/<Name>/`:

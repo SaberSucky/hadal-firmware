@@ -8,5 +8,6 @@ App(
         "clock_settings",
         "input_settings",
         "about",
+        "hadal_settings",
     ],
 )

@@ -1734,6 +1734,131 @@ class BundleAppsTests(TempDirCase):
         self.assertEqual(licences, ["LICENSE"])
 
 
+class PackInfoTests(TempDirCase):
+    """applications/settings/hadal_settings/pack_info.c, the code behind the asset pack manager:
+    the real file compiled on the host against host storage, under AddressSanitizer."""
+
+    @classmethod
+    def setUpClass(cls):
+        import subprocess
+
+        if not _have_sanitizer("address,undefined"):
+            raise unittest.SkipTest("gcc with AddressSanitizer is not available")
+        cls.build_dir = tempfile.mkdtemp(prefix="api_")
+        cls.exe = os.path.join(cls.build_dir, "pack_info_host")
+        host = os.path.join(REPO_ROOT, "scripts", "host_tests")
+        subprocess.check_call(
+            [
+                "gcc", "-std=gnu11", "-g", "-O1", "-fsanitize=address,undefined", "-Wall", "-Wextra", "-Werror",
+                "-I", os.path.join(host, "stubs"),
+                "-I", os.path.join(REPO_ROOT, "applications", "services"),
+                "-I", os.path.join(REPO_ROOT, "furi"),
+                "-I", os.path.join(REPO_ROOT, "lib"),
+                "-I", REPO_ROOT,
+                "-o", cls.exe,
+                os.path.join(host, "pack_info_host.c"),
+                os.path.join(host, "stubs", "storage_host.c"),
+                "-lpthread",
+            ],
+            stderr=subprocess.DEVNULL,
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.build_dir, True)
+
+    def run_host(self, *args):
+        import subprocess
+
+        r = subprocess.run([self.exe, self.p("root"), *args], capture_output=True, text=True, errors="replace")
+        self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+        return r.stdout
+
+    def packs(self):
+        path = self.p("root", "ext", "asset_packs")
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    def write(self, *parts, data=b"x"):
+        path = os.path.join(*parts)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(data)
+
+    def scan(self, name):
+        return tuple(int(v) for v in self.run_host("scan", name).split())
+
+    def test_the_hadal_pack_is_counted_as_the_packer_counts_it(self):
+        shutil.copytree(HADAL_PACK_DIR, os.path.join(self.packs(), "Hadal"))
+        icons = len(list(pack.iter_pack_icons(HADAL_PACK_DIR)))
+        with open(os.path.join(HADAL_PACK_DIR, "Anims", "manifest.txt")) as f:
+            animations = sum(1 for line in f if line.startswith("Name:"))
+        fonts = len([n for n in os.listdir(os.path.join(HADAL_PACK_DIR, "Fonts")) if n.endswith(".u8f")])
+        self.assertEqual(self.scan("Hadal"), (animations, icons, fonts))
+        self.assertEqual(self.scan("Hadal"), (4, 28, 2))
+
+    def test_the_list_is_sorted_without_regard_to_case_and_leaves_out_what_is_not_a_pack(self):
+        root = self.packs()
+        for name in ("zeta", "Alpha", "beta", "Gamma", ".hidden"):
+            os.makedirs(os.path.join(root, name))
+        self.write(root, "a_file.txt")
+        os.makedirs(os.path.join(root, "x" * 40))  # a name the firmware refuses
+        self.assertEqual(self.run_host("list").split(), ["Alpha", "beta", "Gamma", "zeta"])
+
+    def test_no_asset_packs_folder_is_an_empty_list(self):
+        os.makedirs(self.p("root", "ext"))
+        self.assertEqual(self.run_host("list"), "")
+
+    def test_nested_and_animated_icons_are_counted_once_each(self):
+        root = os.path.join(self.packs(), "P")
+        self.write(root, "Icons", "StatusBar", "A_5x5.bmx")
+        self.write(root, "Icons", "StatusBar", "B_5x5.bmx")
+        self.write(root, "Icons", "BLE", "BLE_HID", "Ok_9x9.bmx")  # nested two deep
+        self.write(root, "Icons", "MainMenu", "NFC_14", "meta")  # an animated icon: a folder
+        self.write(root, "Icons", "MainMenu", "NFC_14", "frame_01.bm")
+        self.write(root, "Icons", "MainMenu", "NFC_14", "frame_02.bm")
+        self.write(root, "Icons", "StatusBar", "readme.txt")  # not an icon
+        self.assertEqual(self.scan("P"), (0, 4, 0))
+
+    def test_the_manifest_counts_names_with_or_without_a_final_newline(self):
+        root = os.path.join(self.packs(), "P")
+        text = "Filetype: Flipper Animation Manifest\nVersion: 1\n\nName: one\nWeight: 3\n\nName: two\nWeight: 3\n\nName: three"
+        self.write(root, "Anims", "manifest.txt", data=text.encode())
+        self.assertEqual(self.scan("P"), (3, 0, 0))
+        self.write(root, "Anims", "manifest.txt", data=(text + "\n").encode())
+        self.assertEqual(self.scan("P"), (3, 0, 0))
+
+    def test_only_u8f_files_are_fonts(self):
+        root = os.path.join(self.packs(), "P")
+        for n in ("Primary.u8f", "Secondary.u8f", "notes.txt", "Keyboard.c"):
+            self.write(root, "Fonts", n)
+        self.assertEqual(self.scan("P"), (0, 0, 2))
+
+    def test_a_missing_or_bad_name_counts_nothing_and_does_not_escape_the_folder(self):
+        self.packs()
+        self.write(self.p("root"), "Icons", "x.bmx")  # outside the packs folder
+        for name in ("Nope", "..", ".", "a/b", "../..", "x" * 50):
+            self.assertEqual(self.scan(name), (0, 0, 0), name)
+
+    def test_an_enormous_manifest_and_a_deep_tree_are_survived(self):
+        root = os.path.join(self.packs(), "P")
+        self.write(root, "Anims", "manifest.txt", data=b"Name: x\n" * 50000)  # far over what is read
+        deep = os.path.join(root, "Icons", *["d"] * 12)
+        self.write(deep, "Deep_5x5.bmx")
+        animations, icons, fonts = self.scan("P")
+        self.assertGreater(animations, 100)  # counted what it read, and stopped
+        self.assertLess(animations, 50000)
+        self.assertEqual((icons, fonts), (0, 0))  # beyond the depth limit: not counted, not followed
+
+    def test_random_garbage_never_crashes_it(self):
+        rng = random.Random(7)
+        root = os.path.join(self.packs(), "P")
+        for i in range(30):
+            self.write(root, "Anims", "manifest.txt", data=bytes(rng.randrange(256) for _ in range(rng.randrange(0, 600))))
+            self.write(root, "Icons", "".join(rng.choice("abc_-.12") for _ in range(rng.randrange(1, 40))), "meta")
+            self.scan("P")
+
+
 class SettingsMigrationTests(TempDirCase):
     """applications/services/desktop/desktop_settings.c: every older settings file must still
     load, with the asset pack setting empty, and a damaged one must fall back to defaults."""
