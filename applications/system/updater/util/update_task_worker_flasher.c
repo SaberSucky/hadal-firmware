@@ -10,6 +10,8 @@
 #include <toolbox/tar/tar_archive.h>
 #include <toolbox/crc32_calc.h>
 
+#include "update_log.h"
+
 #define TAG "UpdWorkerRam"
 
 #define STM_DFU_VENDOR_ID            0x0483
@@ -98,9 +100,19 @@ static bool update_task_write_stack_data(UpdateTask* update_task) {
 
     if(!check_address_boundaries(update_task->manifest->radio_address) ||
        !check_address_boundaries(update_task->manifest->radio_address + stack_size)) {
+        update_log(
+            "stack: 0x%08lX..0x%08lX is outside the writable flash (ends at 0x%08lX)",
+            (unsigned long)update_task->manifest->radio_address,
+            (unsigned long)(update_task->manifest->radio_address + stack_size),
+            (unsigned long)furi_hal_flash_get_free_end_address());
         return false;
     }
 
+    update_log(
+        "stack: writing %lu bytes at 0x%08lX, writable flash ends at 0x%08lX",
+        (unsigned long)stack_size,
+        (unsigned long)update_task->manifest->radio_address,
+        (unsigned long)furi_hal_flash_get_free_end_address());
     update_task_set_progress(update_task, UpdateTaskStageRadioWrite, 0);
     uint8_t* fw_block = malloc(FLASH_PAGE_SIZE);
     size_t bytes_read = 0;
@@ -119,6 +131,13 @@ static bool update_task_write_stack_data(UpdateTask* update_task) {
             furi_hal_flash_get_page_number(update_task->manifest->radio_address + element_offs);
         CHECK_RESULT(i_page >= 0);
 
+        if((element_offs / FLASH_PAGE_SIZE) % 8 == 0) {
+            update_log(
+                "stack: writing page %d (offset %lu of %lu)",
+                i_page,
+                (unsigned long)element_offs,
+                (unsigned long)stack_size);
+        }
         furi_hal_flash_program_page(i_page, fw_block, bytes_read);
 
         element_offs += bytes_read;
@@ -132,14 +151,16 @@ static bool update_task_write_stack_data(UpdateTask* update_task) {
 
 static void update_task_wait_for_restart(UpdateTask* update_task) {
     update_task_set_progress(update_task, UpdateTaskStageRadioBusy, 70);
+    update_log("waiting up to %d ms for the radio chip to restart the system", C2_MODE_SWITCH_TIMEOUT);
     furi_delay_ms(C2_MODE_SWITCH_TIMEOUT);
+    update_log("C2 timeout: the system was not restarted, crashing on purpose");
     furi_crash("C2 timeout");
 }
 
 static bool update_task_write_stack(UpdateTask* update_task) {
     UpdateManifest* manifest = update_task->manifest;
     do {
-        FURI_LOG_W(TAG, "Writing stack");
+        UPDATE_LOG_W(TAG, "Writing stack");
         update_task_set_progress(update_task, UpdateTaskStageRadioImageValidate, 0);
         CHECK_RESULT(update_task_open_file(update_task, manifest->radio_image));
         CHECK_RESULT(
@@ -148,10 +169,16 @@ static bool update_task_write_stack(UpdateTask* update_task) {
 
         CHECK_RESULT(update_task_write_stack_data(update_task));
         update_task_set_progress(update_task, UpdateTaskStageRadioInstall, 10);
-        CHECK_RESULT(
-            ble_glue_fus_stack_install(manifest->radio_address, 0) != BleGlueCommandResultError);
+        update_log("fus: install stack at 0x%08lX", (unsigned long)manifest->radio_address);
+        BleGlueCommandResult install_result =
+            ble_glue_fus_stack_install(manifest->radio_address, 0);
+        update_log("fus: install returned %d", (int)install_result);
+        CHECK_RESULT(install_result != BleGlueCommandResultError);
         update_task_set_progress(update_task, UpdateTaskStageProgress, 80);
-        CHECK_RESULT(ble_glue_fus_wait_operation() == BleGlueCommandResultOK);
+        update_log("fus: waiting for the install to finish");
+        BleGlueCommandResult install_wait = ble_glue_fus_wait_operation();
+        update_log("fus: install finished with %d", (int)install_wait);
+        CHECK_RESULT(install_wait == BleGlueCommandResultOK);
         update_task_set_progress(update_task, UpdateTaskStageProgress, 100);
         /* ...system will restart here. */
         update_task_wait_for_restart(update_task);
@@ -161,11 +188,17 @@ static bool update_task_write_stack(UpdateTask* update_task) {
 
 static bool update_task_remove_stack(UpdateTask* update_task) {
     do {
-        FURI_LOG_W(TAG, "Removing stack");
+        UPDATE_LOG_W(TAG, "Removing stack");
         update_task_set_progress(update_task, UpdateTaskStageRadioErase, 30);
-        CHECK_RESULT(ble_glue_fus_stack_delete() != BleGlueCommandResultError);
+        update_log("fus: delete stack");
+        BleGlueCommandResult delete_result = ble_glue_fus_stack_delete();
+        update_log("fus: delete returned %d", (int)delete_result);
+        CHECK_RESULT(delete_result != BleGlueCommandResultError);
         update_task_set_progress(update_task, UpdateTaskStageProgress, 80);
-        CHECK_RESULT(ble_glue_fus_wait_operation() == BleGlueCommandResultOK);
+        update_log("fus: waiting for the delete to finish");
+        BleGlueCommandResult delete_wait = ble_glue_fus_wait_operation();
+        update_log("fus: delete finished with %d", (int)delete_wait);
+        CHECK_RESULT(delete_wait == BleGlueCommandResultOK);
         update_task_set_progress(update_task, UpdateTaskStageProgress, 100);
         /* ...system will restart here. */
         update_task_wait_for_restart(update_task);
@@ -177,9 +210,30 @@ static bool update_task_manage_radiostack(UpdateTask* update_task) {
     update_task_set_progress(update_task, UpdateTaskStageRadioBusy, 10);
     bool success = false;
     do {
-        CHECK_RESULT(ble_glue_wait_for_c2_start(FURI_HAL_BT_C2_START_TIMEOUT));
+        update_log("radio: waiting for the radio chip to start");
+        bool c2_started = ble_glue_wait_for_c2_start(FURI_HAL_BT_C2_START_TIMEOUT);
+        update_log("radio: chip started: %d", (int)c2_started);
+        CHECK_RESULT(c2_started);
 
         const BleGlueC2Info* c2_state = ble_glue_get_c2_info();
+        update_log(
+            "radio: mode %d, version %d.%d.%d.%d type %d release %d, writable flash ends at 0x%08lX",
+            (int)c2_state->mode,
+            c2_state->VersionMajor,
+            c2_state->VersionMinor,
+            c2_state->VersionSub,
+            c2_state->VersionBranch,
+            c2_state->StackType,
+            c2_state->VersionReleaseType,
+            (unsigned long)furi_hal_flash_get_free_end_address());
+        {
+            const FuriHalFlashRawOptionByteData* ob = furi_hal_flash_ob_get_raw_ptr();
+            char dump[16 * 9 + 1];
+            for(size_t i = 0; i < 16; i++) {
+                snprintf(dump + i * 9, 10, "%08lX ", (unsigned long)ob->obs[i].values.base);
+            }
+            update_log("option bytes: %s", dump);
+        }
 
         const UpdateManifestRadioVersion* radio_ver = &update_task->manifest->radio_version;
         bool stack_version_match = (c2_state->VersionMajor == radio_ver->version.major) &&
@@ -195,13 +249,13 @@ static bool update_task_manage_radiostack(UpdateTask* update_task) {
                                      (c2_state->StackType == radio_ver->version.type);
             if(total_stack_match) {
                 /* Nothing to do. */
-                FURI_LOG_W(TAG, "Stack version is up2date");
+                UPDATE_LOG_W(TAG, "Stack version is up2date");
                 furi_hal_rtc_reset_flag(FuriHalRtcFlagC2Update);
                 success = true;
                 break;
             } else {
                 /* Version or type mismatch. Let's boot to FUS and start updating. */
-                FURI_LOG_W(TAG, "Restarting to FUS");
+                UPDATE_LOG_W(TAG, "Restarting to FUS");
                 furi_hal_rtc_set_flag(FuriHalRtcFlagC2Update);
                 update_task_set_progress(update_task, UpdateTaskStageProgress, 20);
 
@@ -211,9 +265,11 @@ static bool update_task_manage_radiostack(UpdateTask* update_task) {
             }
         } else if(c2_state->mode == BleGlueC2ModeFUS) {
             /* OK, we're in FUS mode. */
-            FURI_LOG_W(TAG, "Waiting for FUS to settle");
+            UPDATE_LOG_W(TAG, "Waiting for FUS to settle");
             update_task_set_progress(update_task, UpdateTaskStageProgress, 30);
-            CHECK_RESULT(ble_glue_fus_wait_operation() == BleGlueCommandResultOK);
+            BleGlueCommandResult settle_result = ble_glue_fus_wait_operation();
+            update_log("fus: settled with %d", (int)settle_result);
+            CHECK_RESULT(settle_result == BleGlueCommandResultOK);
             if(stack_version_match) {
                 /* We can't check StackType with FUS, but partial version matches */
                 if(furi_hal_rtc_is_flag_set(FuriHalRtcFlagC2Update)) {
@@ -221,12 +277,12 @@ static bool update_task_manage_radiostack(UpdateTask* update_task) {
                      * And something in versions of the stack didn't match.
                      * So, clear the flag and drop the stack. */
                     furi_hal_rtc_reset_flag(FuriHalRtcFlagC2Update);
-                    FURI_LOG_W(TAG, "Forcing stack removal (match)");
+                    UPDATE_LOG_W(TAG, "Forcing stack removal (match)");
                     CHECK_RESULT(update_task_remove_stack(update_task));
                 } else {
                     /* We might just had the stack installed.
                      * Let's start it up to check its version */
-                    FURI_LOG_W(TAG, "Starting stack to check full version");
+                    UPDATE_LOG_W(TAG, "Starting stack to check full version");
                     update_task_set_progress(update_task, UpdateTaskStageProgress, 50);
                     CHECK_RESULT(furi_hal_bt_ensure_c2_mode(BleGlueC2ModeStack));
                     /* ...system will restart here. */
@@ -262,7 +318,7 @@ bool update_task_validate_optionbytes(UpdateTask* update_task) {
                                                 manifest->ob_compare_mask.obs[idx].values.base;
         if(ref_value != device_ob_value_masked) {
             match = false;
-            FURI_LOG_E(
+            UPDATE_LOG_E(
                 TAG,
                 "OB MISMATCH: #%d: real %08lX != %08lX (exp.), full %08lX",
                 idx,
@@ -282,7 +338,7 @@ bool update_task_validate_optionbytes(UpdateTask* update_task) {
                     (manifest->ob_reference.obs[idx].values.base &
                      manifest->ob_write_mask.obs[idx].values.base);
 
-                FURI_LOG_W(TAG, "Fixing up OB byte #%d to %08lX", idx, patched_value);
+                UPDATE_LOG_W(TAG, "Fixing up OB byte #%d to %08lX", idx, patched_value);
                 ob_dirty = true;
 
                 bool is_fixed = furi_hal_flash_ob_set_word(idx, patched_value) &&
@@ -292,7 +348,7 @@ bool update_task_validate_optionbytes(UpdateTask* update_task) {
                 if(!is_fixed) {
                     /* Things are so bad that fixing what we are allowed to still doesn't match
                      * reference value */
-                    FURI_LOG_W(
+                    UPDATE_LOG_W(
                         TAG,
                         "OB #%d is FUBAR (fixed&masked %08lX, not %08lX)",
                         idx,
@@ -314,7 +370,7 @@ bool update_task_validate_optionbytes(UpdateTask* update_task) {
     }
 
     if(ob_dirty) {
-        FURI_LOG_W(TAG, "OBs were changed, applying");
+        UPDATE_LOG_W(TAG, "OBs were changed, applying");
         furi_hal_flash_ob_apply();
     }
     return match;

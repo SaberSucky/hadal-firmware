@@ -1,5 +1,6 @@
 #include "update_task.h"
 #include "update_task_i.h"
+#include "update_log.h"
 
 #include <furi.h>
 #include <furi_hal.h>
@@ -309,6 +310,7 @@ static void update_task_calc_completed_stages(UpdateTask* update_task) {
 void update_task_set_progress(UpdateTask* update_task, UpdateTaskStage stage, uint8_t progress) {
     if(stage != UpdateTaskStageProgress) {
         FURI_LOG_I(TAG, "Stage %d, progress %d", stage, progress);
+        update_log("stage %d, progress %d", stage, progress);
         /* do not override more specific error states */
         if((stage >= UpdateTaskStageError) && (update_task->state.stage >= UpdateTaskStageError)) {
             return;
@@ -422,6 +424,7 @@ UpdateTask* update_task_alloc(void) {
     update_task->file = storage_file_alloc(update_task->storage);
     update_task->status_change_cb = NULL;
     update_task->boot_mode = furi_hal_rtc_get_boot_mode();
+    update_log("--- updater started, boot mode %d", update_task->boot_mode);
     update_task->update_path = furi_string_alloc();
 
     FuriThread* thread = update_task->thread =

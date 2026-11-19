@@ -1859,6 +1859,107 @@ class PackInfoTests(TempDirCase):
             self.scan("P")
 
 
+class UpdateLogTests(TempDirCase):
+    """applications/system/updater/util/update_log.c: the trail the updater leaves on the SD card.
+    The real file, on host storage, under AddressSanitizer."""
+
+    @classmethod
+    def setUpClass(cls):
+        import subprocess
+
+        if not _have_sanitizer("address,undefined"):
+            raise unittest.SkipTest("gcc with AddressSanitizer is not available")
+        cls.build_dir = tempfile.mkdtemp(prefix="aul_")
+        cls.exe = os.path.join(cls.build_dir, "update_log_host")
+        host = os.path.join(REPO_ROOT, "scripts", "host_tests")
+        subprocess.check_call(
+            [
+                "gcc", "-std=gnu11", "-g", "-O1", "-fsanitize=address,undefined", "-Wall", "-Wextra", "-Werror",
+                "-I", os.path.join(host, "stubs"),
+                "-I", os.path.join(REPO_ROOT, "applications", "services"),
+                "-I", os.path.join(REPO_ROOT, "furi"),
+                "-I", os.path.join(REPO_ROOT, "lib"),
+                "-I", REPO_ROOT,
+                "-o", cls.exe,
+                os.path.join(host, "update_log_host.c"),
+                os.path.join(host, "stubs", "storage_host.c"),
+                "-lpthread",
+            ],
+            stderr=subprocess.DEVNULL,
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.build_dir, True)
+
+    def run_host(self, *args, root=None):
+        import subprocess
+
+        r = subprocess.run([self.exe, root or self.p("root"), *args], capture_output=True, text=True, errors="replace")
+        self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+
+    def log_path(self):
+        return self.p("root", "ext", "update", "hadal_update.log")
+
+    def make_card(self):
+        os.makedirs(os.path.dirname(self.log_path()))
+
+    def read_lines(self):
+        with open(self.log_path(), errors="replace") as f:
+            return f.read().splitlines()
+
+    def test_lines_are_appended_in_order_with_a_time(self):
+        import re
+
+        self.make_card()
+        self.run_host("lines", "5")
+        self.run_host("lines", "3")  # a later run (the updater restarts) appends, it does not replace
+        lines = self.read_lines()
+        self.assertEqual(len(lines), 8)
+        for line in lines:
+            self.assertRegex(line, r"^\[ *\d+\] line \d+$")
+        self.assertEqual([l.split("] ", 1)[1] for l in lines], [f"line {i}" for i in (0, 1, 2, 3, 4, 0, 1, 2)])
+
+    def test_over_long_and_odd_lines_are_cut_not_overrun(self):
+        self.make_card()
+        self.run_host("long")
+        lines = self.read_lines()
+        self.assertEqual(len(lines), 4)
+        for line in lines:
+            self.assertLessEqual(len(line), 191)
+        self.assertIn("percent signs % and numbers -5 DEADBEEF and a string ok", lines[2])
+
+    def test_a_card_that_cannot_be_written_changes_nothing_and_does_not_crash(self):
+        # no ext/update folder at all: the update must go on exactly as it would without a log
+        self.run_host("lines", "3")
+        self.assertFalse(os.path.exists(self.log_path()))
+
+    def test_the_file_is_started_again_when_it_grows_past_its_limit(self):
+        self.make_card()
+        for _ in range(12):
+            self.run_host("long")  # about 750 bytes each
+            self.run_host("lines", "2000")  # about 24 KB each
+        size = os.path.getsize(self.log_path())
+        self.assertLess(size, 64 * 1024 + 4096)
+        self.assertGreater(size, 0)
+
+    def test_the_updater_source_routes_every_radio_call_through_the_log(self):
+        # Guard: a radio chip call whose result is not logged would leave a gap in the trail
+        with open(os.path.join(REPO_ROOT, "applications", "system", "updater", "util", "update_task_worker_flasher.c")) as f:
+            text = f.read()
+        for call in ("ble_glue_fus_stack_install", "ble_glue_fus_stack_delete", "ble_glue_fus_wait_operation"):
+            for m in re.finditer(call + r"\(", text):
+                before = text[max(0, m.start() - 400) : m.start()]
+                self.assertTrue(
+                    "update_log(" in before or "UPDATE_LOG_" in before,
+                    f"{call} is called with no log line just before it",
+                )
+                after = text[m.start() : m.start() + 400]
+                self.assertIn("update_log(", after, f"the result of {call} is not logged")
+        self.assertIn("C2 timeout", text)
+        self.assertNotIn("FURI_LOG_W(TAG", text)  # every warning also goes to the card
+
+
 class SettingsMigrationTests(TempDirCase):
     """applications/services/desktop/desktop_settings.c: every older settings file must still
     load, with the asset pack setting empty, and a damaged one must fall back to defaults."""

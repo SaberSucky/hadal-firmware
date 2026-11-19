@@ -34,7 +34,9 @@ bool storage_file_open(File* file, const char* path, FS_AccessMode access, FS_Op
     char p[512];
     host_path(p, sizeof(p), path);
     const char* m = "rb";
-    if(access & FSAM_WRITE) m = (mode == FSOM_CREATE_ALWAYS) ? "wb" : "r+b";
+    if(access & FSAM_WRITE) {
+        m = (mode == FSOM_CREATE_ALWAYS) ? "wb" : (mode == FSOM_OPEN_APPEND) ? "ab" : "r+b";
+    }
     file->file = fopen(p, m);
     return file->file != NULL;
 }
