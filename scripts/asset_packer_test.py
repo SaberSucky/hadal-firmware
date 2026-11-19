@@ -266,6 +266,37 @@ class PackTreeTests(TempDirCase):
         self.assertTrue(any("would be rejected" in e for e in report["errors"]))
 
 
+class NestedTests(TempDirCase):
+    def test_nested_category_roundtrip_and_index(self):
+        icons = self.p("src", "Icons")
+        os.makedirs(os.path.join(icons, "BLE", "BLE_HID"))
+        os.makedirs(os.path.join(icons, "BLE", "Anim_8", ""), exist_ok=True)
+        make_png(os.path.join(icons, "BLE", "BLE_HID", "Ok_btn_9x9.png"), 9, 9, 3)
+        make_png(os.path.join(icons, "BLE", "Top_5x5.png"), 5, 5, 4)
+        for i in (1, 2):
+            make_png(os.path.join(icons, "BLE", "Anim_8", f"frame_{i:02d}.png"), 8, 8, 20 + i)
+        with open(os.path.join(icons, "BLE", "Anim_8", "frame_rate"), "w") as f:
+            f.write("2")
+        out = self.p("pack")
+        self.assertEqual(pack.pack_tree(self.p("src"), out)["icons"], 3)
+        got = {path: (w, h, len(b)) for path, w, h, b, _ in pack.iter_pack_icons(out)}
+        self.assertEqual(
+            got,
+            {"BLE/BLE_HID/Ok_btn_9x9": (9, 9, 1), "BLE/Top_5x5": (5, 5, 1), "BLE/Anim_8": (8, 8, 2)},
+        )
+        # the validator's view of the built-in icons agrees with the packer's view of paths
+        self.assertEqual(pack.source_icon_index(icons), got)
+        self.assertEqual(pack.validate_pack(out, got)["errors"], [])
+
+    def test_png_at_icons_root_is_skipped_not_fatal(self):
+        icons = self.p("src", "Icons")
+        os.makedirs(icons)
+        make_png(os.path.join(icons, "Loose_8x8.png"), 8, 8, 1)
+        messages = []
+        self.assertEqual(pack.pack_icons(icons, self.p("o"), messages.append), 0)
+        self.assertTrue(any("category folder" in m for m in messages))
+
+
 class AnimTests(TempDirCase):
     def make_anim_source(self, frames=4):
         src = self.p("src", "Anims")
@@ -352,6 +383,16 @@ class RealAssetsTests(TempDirCase):
                     _, _, want = reference_raw(png)
                     self.assertEqual(pack.decode_blob(blob, w, h), want, f"{path} frame {i}")
         self.assertEqual(seen, result["icons"])
+
+    def test_real_source_index_covers_every_icon(self):
+        base = os.path.join(REPO_ROOT, "assets", "icons")
+        index = pack.source_icon_index(base)
+        # 245 static + 19 animated; nested folders such as BLE/BLE_HID must be included
+        self.assertEqual(len(index), 264)
+        self.assertIn("BLE/BLE_HID/Ok_btn_9x9", index)
+        self.assertEqual(index["BLE/BLE_HID/Ok_btn_9x9"], (9, 9, 1))
+        hashes = {pack.icon_path_hash(p) for p in index}
+        self.assertEqual(len(hashes), len(index), "path hashes must be unique")
 
 
 if __name__ == "__main__":

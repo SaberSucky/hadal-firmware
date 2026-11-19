@@ -295,36 +295,41 @@ def _log(log, msg):
 
 
 def pack_icons(src_dir: str, out_dir: str, log=None) -> int:
-    """Pack a tree laid out like assets/icons: Category/Name.png and
-    Category/<AnimName>/{frame_rate, frame_*.png}. Returns the icon count."""
+    """Pack a tree laid out like assets/icons: <folders>/Name.png, and folders holding
+    frame_rate and frame_*.png for animated icons. Folders may nest (e.g.
+    BLE/BLE_HID/Ok_btn_9x9). Returns the icon count."""
     count = 0
-    for category in sorted(os.listdir(src_dir)):
-        cat_src = os.path.join(src_dir, category)
-        if not os.path.isdir(cat_src):
+    for dirpath, dirnames, filenames in os.walk(src_dir):
+        dirnames.sort()
+        filenames.sort()
+        rel = os.path.relpath(dirpath, src_dir)
+        if rel == ".":
+            for f in filenames:
+                if f.lower().endswith(PNG_EXT):
+                    _log(log, f"skip  {f}: icons must be inside a category folder")
             continue
-        cat_out = os.path.join(out_dir, category)
-        for entry in sorted(os.listdir(cat_src)):
-            path = os.path.join(cat_src, entry)
-            if os.path.isdir(path):
-                if _pack_animated_icon(path, os.path.join(cat_out, entry), log):
-                    count += 1
-            elif entry.lower().endswith(PNG_EXT):
-                width, height, blob = encode_png(path)
-                _check_dims(width, height, path)
-                os.makedirs(cat_out, exist_ok=True)
-                name = entry[: -len(PNG_EXT)] + BMX_EXT
-                with open(os.path.join(cat_out, name), "wb") as f:
-                    f.write(bmx_pack(width, height, blob))
-                _log(log, f"icon  {category}/{name} {width}x{height} {len(blob)}B")
-                count += 1
+        if "frame_rate" in filenames:
+            dirnames[:] = []  # an animated icon's folder only holds its frames
+            _pack_animated_icon(dirpath, os.path.join(out_dir, rel), log)
+            count += 1
+            continue
+        for entry in filenames:
+            if not entry.lower().endswith(PNG_EXT):
+                continue
+            width, height, blob = encode_png(os.path.join(dirpath, entry))
+            _check_dims(width, height, os.path.join(dirpath, entry))
+            dest = os.path.join(out_dir, rel)
+            os.makedirs(dest, exist_ok=True)
+            name = entry[: -len(PNG_EXT)] + BMX_EXT
+            with open(os.path.join(dest, name), "wb") as f:
+                f.write(bmx_pack(width, height, blob))
+            _log(log, f"icon  {rel}/{name} {width}x{height} {len(blob)}B")
+            count += 1
     return count
 
 
-def _pack_animated_icon(src: str, out: str, log) -> bool:
-    rate_file = os.path.join(src, "frame_rate")
-    if not os.path.isfile(rate_file):
-        return False
-    frame_rate = int(_read(rate_file, "r").strip())
+def _pack_animated_icon(src: str, out: str, log) -> None:
+    frame_rate = int(_read(os.path.join(src, "frame_rate"), "r").strip())
     frames = sorted(f for f in os.listdir(src) if f.lower().endswith(PNG_EXT))
     if frame_rate <= 0 or not frames:
         raise PackError(f"{src}: needs a positive frame_rate and at least one frame")
@@ -344,7 +349,6 @@ def _pack_animated_icon(src: str, out: str, log) -> bool:
     with open(os.path.join(out, ANIM_META_NAME), "wb") as f:
         f.write(anim_meta_pack(width, height, frame_rate, len(frames)))
     _log(log, f"anim  {os.path.basename(out)} {width}x{height} x{len(frames)} @{frame_rate}")
-    return True
 
 
 def pack_anims(src_dir: str, out_dir: str, log=None) -> int:
@@ -407,34 +411,63 @@ def pack_tree(src: str, out: str, log=None) -> dict:
 
 
 def iter_pack_icons(pack_dir: str):
-    """Yield (path, width, height, [frame blobs], frame_rate) for every icon in a pack.
-    Raises PackError for a malformed one."""
+    """Yield (path, width, height, [frame blobs], frame_rate) for every icon in a pack;
+    path is relative to Icons/ without the extension, e.g. "StatusBar/Battery_26x8".
+    A folder holding a `meta` file is an animated icon, any other folder is a category.
+    Raises PackError for a malformed icon."""
     icons = os.path.join(pack_dir, "Icons")
     if not os.path.isdir(icons):
         return
-    for category in sorted(os.listdir(icons)):
-        cat = os.path.join(icons, category)
-        if not os.path.isdir(cat):
+    for dirpath, dirnames, filenames in os.walk(icons):
+        dirnames.sort()
+        filenames.sort()
+        rel = os.path.relpath(dirpath, icons).replace(os.sep, "/")
+        if rel == ".":
             continue
-        for entry in sorted(os.listdir(cat)):
-            full = os.path.join(cat, entry)
-            if os.path.isdir(full):
-                meta = os.path.join(full, ANIM_META_NAME)
-                if not os.path.isfile(meta):
-                    raise PackError(f"{category}/{entry}: missing meta")
-                width, height, rate, count = anim_meta_parse(_read(meta))
-                if not (1 <= count <= MAX_ICON_FRAMES):
-                    raise PackError(f"{category}/{entry}: frame count {count} out of range")
-                blobs = []
-                for i in range(count):
-                    fp = os.path.join(full, FRAME_NAME % i)
-                    if not os.path.isfile(fp):
-                        raise PackError(f"{category}/{entry}: missing {FRAME_NAME % i}")
-                    blobs.append(_read(fp))
-                yield f"{category}/{entry}", width, height, blobs, rate
-            elif entry.endswith(BMX_EXT):
-                width, height, blob = bmx_parse(_read(full))
-                yield f"{category}/{entry[:-len(BMX_EXT)]}", width, height, [blob], 0
+        if ANIM_META_NAME in filenames:
+            dirnames[:] = []
+            width, height, rate, count = anim_meta_parse(
+                _read(os.path.join(dirpath, ANIM_META_NAME))
+            )
+            if not (1 <= count <= MAX_ICON_FRAMES):
+                raise PackError(f"{rel}: frame count {count} out of range")
+            blobs = []
+            for i in range(count):
+                fp = os.path.join(dirpath, FRAME_NAME % i)
+                if not os.path.isfile(fp):
+                    raise PackError(f"{rel}: missing {FRAME_NAME % i}")
+                blobs.append(_read(fp))
+            yield rel, width, height, blobs, rate
+            continue
+        for entry in filenames:
+            if entry.endswith(BMX_EXT):
+                width, height, blob = bmx_parse(_read(os.path.join(dirpath, entry)))
+                yield f"{rel}/{entry[: -len(BMX_EXT)]}", width, height, [blob], 0
+
+
+def source_icon_index(icons_dir: str) -> dict:
+    """Built-in icons as {"Category/Name": (width, height, frame_count)} derived from the
+    source tree the firmware icons are compiled from (same walk and naming as packing)."""
+    from PIL import Image
+
+    index = {}
+    for dirpath, dirnames, filenames in os.walk(icons_dir):
+        dirnames.sort()
+        filenames.sort()
+        rel = os.path.relpath(dirpath, icons_dir).replace(os.sep, "/")
+        if rel == ".":
+            continue
+        if "frame_rate" in filenames:
+            dirnames[:] = []
+            frames = sorted(f for f in filenames if f.endswith(PNG_EXT))
+            with Image.open(os.path.join(dirpath, frames[0])) as im:
+                index[rel] = (im.width, im.height, len(frames))
+            continue
+        for entry in filenames:
+            if entry.endswith(PNG_EXT):
+                with Image.open(os.path.join(dirpath, entry)) as im:
+                    index[f"{rel}/{entry[: -len(PNG_EXT)]}"] = (im.width, im.height, 1)
+    return index
 
 
 def _read_keys(path: str) -> dict:

@@ -11,30 +11,6 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_ICONS = os.path.join(REPO_ROOT, "assets", "icons")
 
 
-def source_icon_index(icons_dir: str) -> dict:
-    """Built-in icons as {"Category/Name": (width, height, frame_count)}, derived from
-    the source tree the firmware icons are compiled from."""
-    from PIL import Image
-
-    index = {}
-    for category in sorted(os.listdir(icons_dir)):
-        cat = os.path.join(icons_dir, category)
-        if not os.path.isdir(cat):
-            continue
-        for entry in sorted(os.listdir(cat)):
-            path = os.path.join(cat, entry)
-            if os.path.isdir(path):
-                if not os.path.isfile(os.path.join(path, "frame_rate")):
-                    continue
-                frames = sorted(f for f in os.listdir(path) if f.endswith(".png"))
-                with Image.open(os.path.join(path, frames[0])) as im:
-                    index[f"{category}/{entry}"] = (im.width, im.height, len(frames))
-            elif entry.endswith(".png"):
-                with Image.open(path) as im:
-                    index[f"{category}/{entry[:-4]}"] = (im.width, im.height, 1)
-    return index
-
-
 class Main(App):
     def init(self):
         self.subparsers = self.parser.add_subparsers(help="sub-command help")
@@ -63,7 +39,7 @@ class Main(App):
         return 0
 
     def validate(self):
-        index = source_icon_index(self.args.icons) if self.args.icons else None
+        index = pack.source_icon_index(self.args.icons) if self.args.icons else None
         report = pack.validate_pack(self.args.pack, index, REPO_ROOT)
         for w in report["warnings"]:
             self.logger.warning(w)
