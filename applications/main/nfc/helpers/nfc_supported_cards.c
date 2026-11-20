@@ -47,11 +47,15 @@ struct NfcSupportedCards {
     NfcSupportedCardsPluginCache_t plugins_cache_arr;
     NfcSupportedCardsLoadState load_state;
     NfcSupportedCardsLoadContext* load_context;
+    /** The plugin that parsed the last card, tried first next time (Info on the same card loaded
+     * every parser of its protocol again); SIZE_MAX for none */
+    size_t last_parsed;
 };
 
 NfcSupportedCards* nfc_supported_cards_alloc(CompositeApiResolver* api_resolver) {
     NfcSupportedCards* instance = malloc(sizeof(NfcSupportedCards));
     instance->api_resolver = api_resolver;
+    instance->last_parsed = SIZE_MAX;
 
     NfcSupportedCardsPluginCache_init(instance->plugins_cache_arr);
 
@@ -255,6 +259,26 @@ bool nfc_supported_cards_read(NfcSupportedCards* instance, NfcDevice* device, Nf
     return card_read;
 }
 
+// One plugin's parse of the card: false if it is not its protocol, cannot parse, or declines
+static bool nfc_supported_cards_try_parse(
+    NfcSupportedCards* instance,
+    NfcSupportedCardsPluginCache* plugin_cache,
+    NfcProtocol protocol,
+    NfcDevice* device,
+    FuriString* parsed_data) {
+    if(plugin_cache->protocol != protocol) return false;
+    if((plugin_cache->feature & NfcSupportedCardsPluginFeatureHasParse) == 0) return false;
+
+    const ElfApiInterface* api_interface = composite_api_resolver_get(instance->api_resolver);
+    const NfcSupportedCardsPlugin* plugin = nfc_supported_cards_get_plugin(
+        instance->load_context, furi_string_get_cstr(plugin_cache->name), api_interface);
+    if(plugin == NULL || !plugin->parse) return false;
+
+    // a plugin may write before it decides the card is not its own, so start clean
+    furi_string_reset(parsed_data);
+    return plugin->parse(device, parsed_data);
+}
+
 bool nfc_supported_cards_parse(
     NfcSupportedCards* instance,
     NfcDevice* device,
@@ -271,27 +295,27 @@ bool nfc_supported_cards_parse(
 
         instance->load_context = nfc_supported_cards_load_context_alloc();
 
-        NfcSupportedCardsPluginCache_it_t iter;
-        for(NfcSupportedCardsPluginCache_it(iter, instance->plugins_cache_arr);
-            !NfcSupportedCardsPluginCache_end_p(iter);
-            NfcSupportedCardsPluginCache_next(iter)) {
-            NfcSupportedCardsPluginCache* plugin_cache = NfcSupportedCardsPluginCache_ref(iter);
-            if(plugin_cache->protocol != protocol) continue;
-            if((plugin_cache->feature & NfcSupportedCardsPluginFeatureHasParse) == 0) continue;
-
-            const ElfApiInterface* api_interface =
-                composite_api_resolver_get(instance->api_resolver);
-            const NfcSupportedCardsPlugin* plugin = nfc_supported_cards_get_plugin(
-                instance->load_context, furi_string_get_cstr(plugin_cache->name), api_interface);
-            if(plugin == NULL) continue;
-
-            if(plugin->parse) {
-                // a plugin may write before it decides the card is not its own, so start clean
-                furi_string_reset(parsed_data);
-                if(plugin->parse(device, parsed_data)) {
-                    card_parsed = true;
-                    break;
-                }
+        const size_t count = NfcSupportedCardsPluginCache_size(instance->plugins_cache_arr);
+        // the plugin that knew the last card first: most often the same card again
+        if(instance->last_parsed < count &&
+           nfc_supported_cards_try_parse(
+               instance,
+               NfcSupportedCardsPluginCache_get(instance->plugins_cache_arr, instance->last_parsed),
+               protocol,
+               device,
+               parsed_data)) {
+            card_parsed = true;
+        }
+        for(size_t i = 0; !card_parsed && i < count; i++) {
+            if(i == instance->last_parsed) continue;
+            if(nfc_supported_cards_try_parse(
+                   instance,
+                   NfcSupportedCardsPluginCache_get(instance->plugins_cache_arr, i),
+                   protocol,
+                   device,
+                   parsed_data)) {
+                card_parsed = true;
+                instance->last_parsed = i;
             }
         }
 

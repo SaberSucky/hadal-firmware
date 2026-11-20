@@ -64,6 +64,8 @@ typedef struct {
     // a dropdown's list of choices, while it is open, over the item at position
     bool dropdown_open;
     uint8_t dropdown_index;
+    // the selected item's label or value is too long and scrolls: the timer redraws only then
+    bool selected_scrolls;
     uint8_t dropdown_window;
 } VariableItemListModel;
 
@@ -322,6 +324,18 @@ static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
             } else if(control == VariableItemControlSegments) {
                 segments = variable_item_segments_width(canvas, item, SEGMENTS_WIDTH_MAX);
                 temp_w_default = CONTROL_RIGHT + 1 - segments - 4 - 6;
+            }
+
+            if(position == model->position) {
+                const size_t value_room =
+                    control == VariableItemControlDropdown ? (size_t)(CONTROL_RIGHT - 9 - temp_x_default) :
+                    (control == VariableItemControlArrows || control == VariableItemControlMeter) ?
+                                                             37 :
+                                                             SIZE_MAX;
+                model->selected_scrolls =
+                    canvas_string_width(canvas, item->label) > temp_w_default ||
+                    canvas_string_width(canvas, furi_string_get_cstr(item->current_value_text)) >
+                        value_room;
             }
 
             if(item->current_value_index == 0 && furi_string_empty(item->current_value_text)) {
@@ -727,11 +741,16 @@ void variable_item_list_process_ok(VariableItemList* variable_item_list) {
 
 static void variable_item_list_scroll_timer_callback(void* context) {
     VariableItemList* variable_item_list = context;
+    // three times a second: drawn again only when something on screen moves
+    bool redraw = false;
     with_view_model(
         variable_item_list->view,
         VariableItemListModel * model,
-        { model->scroll_counter++; },
-        true);
+        {
+            model->scroll_counter++;
+            redraw = model->selected_scrolls;
+        },
+        redraw);
 }
 
 static void variable_item_list_enter_callback(void* context) {

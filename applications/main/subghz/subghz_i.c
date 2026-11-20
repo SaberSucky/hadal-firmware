@@ -348,14 +348,12 @@ bool subghz_save_protocol_to_file(
             break;
         }
 
-        if(!storage_simply_remove(storage, dev_file_name)) {
-            break;
-        }
-
+        // written over in place (CREATE_ALWAYS truncates), and checked by what was written:
+        // removing it first, and stat-ing it after, each walked the folder again
         stream_seek(flipper_format_stream, 0, StreamOffsetFromStart);
-        stream_save_to_file(flipper_format_stream, storage, dev_file_name, FSOM_CREATE_ALWAYS);
-
-        if(storage_common_stat(storage, dev_file_name, NULL) != FSE_OK) {
+        const size_t size = stream_size(flipper_format_stream);
+        if(stream_save_to_file(flipper_format_stream, storage, dev_file_name, FSOM_CREATE_ALWAYS) !=
+           size) {
             break;
         }
 

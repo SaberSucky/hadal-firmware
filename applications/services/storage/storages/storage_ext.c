@@ -40,7 +40,10 @@ static bool sd_mount_card_internal(StorageData* storage, bool notify) {
             furi_record_close(RECORD_NOTIFICATION);
         }
 
-        if((counter % 2) == 0) {
+        // The card is already powered at start: the first try goes without the power cycle
+        // (350 ms of fixed waits before anything could use the card, on every boot); a card a
+        // warm restart left busy fails it in moments, and the next try power-cycles it
+        if((counter % 2) == 1) {
             // power reset sd card
             bsp_result = furi_hal_sd_init(true);
         } else {
@@ -53,14 +56,10 @@ static bool sd_mount_card_internal(StorageData* storage, bool notify) {
         } else {
             SDError status = f_mount(sd_data->fs, sd_data->path, 1);
 
+            // No free-space count here: on exFAT (cards of 64 GB and more) it reads the whole
+            // allocation bitmap, and on FAT32 without a stored count the whole FAT, before
+            // anything can use the card. It is worked out when something asks for it.
             if(status == FR_OK || status == FR_NO_FILESYSTEM) {
-#ifndef FURI_RAM_EXEC
-                FATFS* fs;
-                uint32_t free_clusters;
-
-                status = f_getfree(sd_data->path, &free_clusters, &fs);
-#endif
-
                 if(status == FR_OK || status == FR_NO_FILESYSTEM) {
                     result = true;
                 }
@@ -84,7 +83,8 @@ static bool sd_mount_card_internal(StorageData* storage, bool notify) {
         }
 
         if(!result) {
-            furi_delay_ms(1000);
+            // a moment to settle after a power cycle; straight on after a try without one
+            if(counter % 2) furi_delay_ms(1000);
             FURI_LOG_E(
                 TAG, "init cycle %d, error: %s", counter, storage_data_status_text(storage));
             counter--;
@@ -565,6 +565,7 @@ static bool storage_ext_dir_read(
     if(fileinfo != NULL) {
         fileinfo->size = _fileinfo.fsize;
         fileinfo->flags = 0;
+        fileinfo->modified = (uint32_t)_fileinfo.fdate << 16 | _fileinfo.ftime;
 
         if(_fileinfo.fattrib & AM_DIR) fileinfo->flags |= FSF_DIRECTORY;
     }
@@ -598,6 +599,7 @@ static FS_Error storage_ext_common_stat(void* ctx, const char* path, FileInfo* f
     if(fileinfo != NULL) {
         fileinfo->size = _fileinfo.fsize;
         fileinfo->flags = 0;
+        fileinfo->modified = (uint32_t)_fileinfo.fdate << 16 | _fileinfo.ftime;
 
         if(_fileinfo.fattrib & AM_DIR) fileinfo->flags |= FSF_DIRECTORY;
     }

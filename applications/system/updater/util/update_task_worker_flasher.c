@@ -502,8 +502,13 @@ int32_t update_task_worker_flash_writer(void* context) {
         }
 #ifdef FURI_NDEBUG
         // Production. The log level, Debug and the sleep method are the user's System settings
-        // and stay as they were set (resetting them was why they never survived an update);
-        // heap tracking is a developer's tool that slows everything down, and goes
+        // and stay as they were set (resetting them was why they never survived an update). A
+        // log level never chosen (Default, which is Info) goes quiet, as it always did: every
+        // line costs milliseconds on the log port. Heap tracking is a developer's tool that
+        // slows everything down, and goes.
+        if(furi_hal_rtc_get_log_level() == FuriLogLevelDefault) {
+            furi_hal_rtc_set_log_level(FuriLogLevelNone);
+        }
         furi_hal_rtc_set_heap_track_mode(FuriHalRtcHeapTrackModeNone);
 #endif
         update_task_set_progress(update_task, UpdateTaskStageCompleted, 100);

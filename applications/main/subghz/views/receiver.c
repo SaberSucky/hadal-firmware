@@ -96,17 +96,19 @@ void subghz_view_receiver_set_mode(
 
 void subghz_receiver_rssi(SubGhzViewReceiver* instance, float rssi) {
     furi_assert(instance);
+    // ten times a second: drawn again only when the level moved (in quiet air it stays at 0,
+    // and each frame of the empty list cost a picture's worth of drawing)
+    bool changed = false;
     with_view_model(
         instance->view,
         SubGhzViewReceiverModel * model,
         {
-            if(rssi < SUBGHZ_RAW_THRESHOLD_MIN) {
-                model->u_rssi = 0;
-            } else {
-                model->u_rssi = (uint8_t)(rssi - SUBGHZ_RAW_THRESHOLD_MIN);
-            }
+            const uint8_t u_rssi =
+                rssi < SUBGHZ_RAW_THRESHOLD_MIN ? 0 : (uint8_t)(rssi - SUBGHZ_RAW_THRESHOLD_MIN);
+            changed = model->u_rssi != u_rssi;
+            model->u_rssi = u_rssi;
         },
-        true);
+        changed);
 }
 
 void subghz_view_receiver_set_lock(SubGhzViewReceiver* subghz_receiver, bool lock) {

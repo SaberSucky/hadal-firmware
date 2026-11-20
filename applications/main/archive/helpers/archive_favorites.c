@@ -173,12 +173,12 @@ bool archive_favorites_read(void* context) {
                     need_refresh = true;
                 }
             } else {
-                if(storage_common_exists(storage, furi_string_get_cstr(buffer))) {
-                    const bool is_dir =
-                        (storage_common_stat(storage, furi_string_get_cstr(buffer), &file_info) ==
-                         FSE_OK) &&
-                        file_info_is_dir(&file_info);
-                    archive_add_file_item(browser, is_dir, furi_string_get_cstr(buffer));
+                // one stat says both whether it is there and whether it is a folder (each one
+                // walks the folder again)
+                if(storage_common_stat(storage, furi_string_get_cstr(buffer), &file_info) ==
+                   FSE_OK) {
+                    const bool is_dir = file_info_is_dir(&file_info);
+                    archive_add_file_item(browser, is_dir, furi_string_get_cstr(buffer), 0);
                     file_count++;
                 } else {
                     need_refresh = true;

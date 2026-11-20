@@ -19,17 +19,8 @@ void file_browser_sort_prefs_load(void) {
     }
 }
 
-uint32_t file_browser_sort_key(const char* path) {
-    Storage* storage = furi_record_open(RECORD_STORAGE);
-    uint32_t key = 0;
-    if(file_browser_sort_prefs.sort_by == FileBrowserSortNewest) {
-        if(storage_common_timestamp(storage, path, &key) != FSE_OK) key = 0;
-    } else {
-        FileInfo info;
-        if(storage_common_stat(storage, path, &info) == FSE_OK) {
-            key = info.size > UINT32_MAX ? UINT32_MAX : (uint32_t)info.size;
-        }
-    }
-    furi_record_close(RECORD_STORAGE);
-    return key;
+uint32_t file_browser_sort_key_of(uint64_t size, uint32_t modified) {
+    // (storage_common_timestamp() gave the card's last write, the same for every file)
+    if(file_browser_sort_prefs.sort_by == FileBrowserSortNewest) return modified;
+    return size > UINT32_MAX ? UINT32_MAX : (uint32_t)size;
 }

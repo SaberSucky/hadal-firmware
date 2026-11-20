@@ -556,8 +556,9 @@ static LoaderMessageLoaderStatusResult loader_start_external_app(
     do {
         loader->app.fap = flipper_application_alloc(storage, firmware_api_interface);
         size_t start = furi_get_tick();
+        UNUSED(start); // in debug logs only
 
-        FURI_LOG_I(TAG, "Loading %s", path);
+        FURI_LOG_D(TAG, "Loading %s", path);
 
         //An app that bundles assets writes them all out on its first run after an
         //update, which is seconds of SD writes behind an animation that says nothing
@@ -631,7 +632,7 @@ static LoaderMessageLoaderStatusResult loader_start_external_app(
             break;
         }
 
-        FURI_LOG_I(TAG, "Loaded in %zums", (size_t)(furi_get_tick() - start));
+        FURI_LOG_D(TAG, "Loaded in %zums", (size_t)(furi_get_tick() - start));
 
         if(flipper_application_is_plugin(loader->app.fap)) {
             result.value = loader_make_status_error(
@@ -959,7 +960,7 @@ static void loader_do_unlock(Loader* loader) {
 
 static void loader_do_emit_queue_empty_event(Loader* loader) {
     if(loader_do_is_locked(loader)) return;
-    FURI_LOG_I(TAG, "Launch queue empty");
+    FURI_LOG_D(TAG, "Launch queue empty");
     LoaderEvent event;
     event.type = LoaderEventTypeNoMoreAppsInQueue;
     furi_pubsub_publish(loader->pubsub, &event);
@@ -1015,7 +1016,7 @@ static void loader_do_app_closed(Loader* loader) {
     loader_do_drop_loading(loader);
 
     furi_thread_join(loader->app.thread);
-    FURI_LOG_I(TAG, "App returned: %li", furi_thread_get_return_code(loader->app.thread));
+    FURI_LOG_D(TAG, "App returned: %li", furi_thread_get_return_code(loader->app.thread));
 
     if(loader->app.args) {
         free(loader->app.args);
@@ -1038,7 +1039,7 @@ static void loader_do_app_closed(Loader* loader) {
 
     furi_string_free(loader->app.launch_path);
 
-    FURI_LOG_I(TAG, "Application stopped. Free heap: %zu", memmgr_get_free_heap());
+    FURI_LOG_D(TAG, "Application stopped. Free heap: %zu", memmgr_get_free_heap());
 
     LoaderEvent event;
     event.type = LoaderEventTypeApplicationStopped;

@@ -43,8 +43,9 @@ void file_browser_sort_prefs_load(void);
 /** Whether the order needs each file's size or time (file_browser_sort_key) */
 bool file_browser_sort_needs_key(void);
 
-/** A file's size or time, whichever the order needs; 0 when it cannot be read */
-uint32_t file_browser_sort_key(const char* path);
+/** A file's size or time, whichever the order needs, from what its folder listed (a stat per
+ * file walked the folder again for each one) */
+uint32_t file_browser_sort_key_of(uint64_t size, uint32_t modified);
 
 /**
  * Two entries of one folder, in the order the preferences give: negative if a comes first.

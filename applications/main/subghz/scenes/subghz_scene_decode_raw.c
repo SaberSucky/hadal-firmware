@@ -2,7 +2,11 @@
 
 #define TAG "SubGhzDecodeRaw"
 
-#define SAMPLES_TO_READ_PER_TICK 400
+/* Decoding runs on the 100 ms tick. A fixed 400 samples a tick took about 16 ms and left the
+ * rest idle (a long capture took ten seconds): now it decodes for up to this long, checking the
+ * clock every SAMPLES_PER_CLOCK_CHECK samples, which still leaves the app free between ticks */
+#define DECODE_TICK_BUDGET_MS   40
+#define SAMPLES_PER_CLOCK_CHECK 64
 
 static void subghz_scene_receiver_update_statusbar(void* context) {
     SubGhz* subghz = context;
@@ -122,7 +126,12 @@ bool subghz_scene_decode_raw_start(SubGhz* subghz) {
 
 bool subghz_scene_decode_raw_next(SubGhz* subghz) {
     LevelDuration level_duration;
-    for(uint32_t read = SAMPLES_TO_READ_PER_TICK; read > 0; --read) {
+    const uint32_t started = furi_get_tick();
+    for(uint32_t read = 1;; read++) {
+        if(read % SAMPLES_PER_CLOCK_CHECK == 0 &&
+           furi_get_tick() - started >= furi_ms_to_ticks(DECODE_TICK_BUDGET_MS)) {
+            break; // the rest next tick
+        }
         level_duration =
             subghz_file_encoder_worker_get_level_duration(subghz->decode_raw_file_worker_encoder);
         if(!level_duration_is_reset(level_duration)) {

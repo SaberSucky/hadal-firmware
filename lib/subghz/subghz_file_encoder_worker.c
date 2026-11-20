@@ -131,7 +131,7 @@ static int32_t subghz_file_encoder_worker_thread(void* context) {
     instance->is_storage_slow = false;
     Stream* stream = flipper_format_get_raw_stream(instance->flipper_format);
     do {
-        if(!flipper_format_file_open_existing(
+        if(!flipper_format_buffered_file_open_existing(
                instance->flipper_format, furi_string_get_cstr(instance->file_path))) {
             FURI_LOG_E(
                 TAG,
@@ -189,7 +189,7 @@ static int32_t subghz_file_encoder_worker_thread(void* context) {
         }
         furi_delay_ms(50);
     }
-    flipper_format_file_close(instance->flipper_format);
+    flipper_format_buffered_file_close(instance->flipper_format);
 
     FURI_LOG_I(TAG, "Worker stop");
     return 0;
@@ -203,7 +203,8 @@ SubGhzFileEncoderWorker* subghz_file_encoder_worker_alloc(void) {
     instance->stream = furi_stream_buffer_alloc(sizeof(int32_t) * 2048, sizeof(int32_t));
 
     instance->storage = furi_record_open(RECORD_STORAGE);
-    instance->flipper_format = flipper_format_file_alloc(instance->storage);
+    // buffered: a RAW_Data line is read 32 bytes at a time, one storage call each otherwise
+    instance->flipper_format = flipper_format_buffered_file_alloc(instance->storage);
 
     instance->str_data = furi_string_alloc();
     instance->file_path = furi_string_alloc();

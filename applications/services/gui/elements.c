@@ -637,11 +637,19 @@ void elements_string_fit_width(Canvas* canvas, FuriString* string, size_t width)
 
     size_t len_px = canvas_string_width(canvas, furi_string_get_cstr(string));
     if(len_px > width) {
-        width -= canvas_string_width(canvas, "...");
-        do {
-            furi_string_left(string, furi_string_size(string) - 1);
-            len_px = canvas_string_width(canvas, furi_string_get_cstr(string));
-        } while(len_px > width);
+        const size_t dots = canvas_string_width(canvas, "...");
+        const size_t room = width > dots ? width - dots : 0;
+        // what fits before the "...", in one pass (it measured the whole string again after
+        // dropping each character: a long label cut short cost a millisecond every frame)
+        size_t fit = 0;
+        size_t used = 0;
+        const size_t length = furi_string_size(string);
+        for(size_t i = 0; i < length; i++) {
+            used += canvas_glyph_width(canvas, furi_string_get_char(string, i));
+            if(used > room) break;
+            fit = i + 1;
+        }
+        furi_string_left(string, fit);
         furi_string_cat(string, "...");
     }
 }

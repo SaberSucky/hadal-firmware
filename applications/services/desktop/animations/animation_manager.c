@@ -497,7 +497,7 @@ void animation_manager_unload_and_stall_animation(AnimationManager* animation_ma
         furi_crash();
     }
 
-    FURI_LOG_I(
+    FURI_LOG_D(
         TAG,
         "Unload animation \'%s\'",
         animation_storage_get_meta(animation_manager->current_animation)->name);
@@ -574,7 +574,7 @@ void animation_manager_load_and_continue_animation(AnimationManager* animation_m
     if(!animation_manager->current_animation) {
         animation_manager_start_new_idle(animation_manager);
     }
-    FURI_LOG_I(
+    FURI_LOG_D(
         TAG,
         "Load animation \'%s\'",
         animation_storage_get_meta(animation_manager->current_animation)->name);

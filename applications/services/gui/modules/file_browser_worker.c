@@ -56,6 +56,7 @@ struct BrowserWorker {
     BrowserWorkerListLoadCallback list_load_cb;
     BrowserWorkerListItemCallback list_item_cb;
     BrowserWorkerLongLoadCallback long_load_cb;
+    FileInfo item_info; /**< the entry being passed to list_item_cb, as the folder listed it */
 };
 
 static bool browser_path_is_file(FuriString* path) {
@@ -369,6 +370,7 @@ static bool browser_folder_load_chunked(
                 furi_string_set(name_str, name_temp);
                 if(browser_filter_by_name(browser, name_str, file_info_is_dir(&file_info))) {
                     furi_string_printf(name_str, "%s/%s", furi_string_get_cstr(path), name_temp);
+                    browser->item_info = file_info;
                     if(browser->list_item_cb) {
                         browser->list_item_cb(
                             browser->cb_ctx,
@@ -428,6 +430,7 @@ static bool browser_folder_load_full(BrowserWorker* browser, FuriString* path) {
             furi_string_set(name_str, name_temp);
             if(browser_filter_by_name(browser, name_str, file_info_is_dir(&file_info))) {
                 furi_string_printf(name_str, "%s/%s", furi_string_get_cstr(path), name_temp);
+                browser->item_info = file_info;
                 if(browser->list_item_cb) {
                     browser->list_item_cb(
                         browser->cb_ctx, name_str, items_cnt, file_info_is_dir(&file_info), false);
@@ -704,4 +707,9 @@ void file_browser_worker_load(BrowserWorker* browser, uint32_t offset, uint32_t 
     browser->load_offset = offset;
     browser->load_count = count;
     furi_thread_flags_set(furi_thread_get_id(browser->thread), WorkerEvtLoad);
+}
+
+const FileInfo* file_browser_worker_get_item_info(BrowserWorker* browser) {
+    furi_check(browser);
+    return &browser->item_info;
 }

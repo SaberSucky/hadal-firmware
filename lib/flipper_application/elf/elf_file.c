@@ -59,11 +59,24 @@ static void address_cache_put(AddressCache_t cache, int symEntry, Elf32_Addr sym
 /********************************************** ELF ***********************************************/
 /**************************************************************************************************/
 
+// the most kept in RAM while an app loads: 51 section headers, and their names
+#define ELF_SECTION_CACHE_HEADERS_MAX (2048U)
+#define ELF_SECTION_CACHE_NAMES_MAX   (1024U)
+
+static void elf_file_free_section_cache(ELFFile* elf) {
+    free(elf->section_headers);
+    free(elf->section_names);
+    elf->section_headers = NULL;
+    elf->section_names = NULL;
+    elf->section_names_size = 0;
+}
+
 static void elf_file_maybe_release_fd(ELFFile* elf) {
     if(elf->fd) {
         storage_file_free(elf->fd);
         elf->fd = NULL;
     }
+    elf_file_free_section_cache(elf);
 }
 
 static ELFSection* elf_file_get_section(ELFFile* elf, const char* name) {
@@ -90,10 +103,10 @@ static ELFSection* elf_file_get_or_put_section(ELFFile* elf, const char* name) {
     return section_p;
 }
 
+// Leaves the file where the string ends: every caller seeks before its next read (and
+// elf_read_symbol() puts the position back for the relocation loop)
 static bool elf_read_string_from_offset(ELFFile* elf, off_t offset, FuriString* name) {
     bool result = false;
-
-    off_t old = storage_file_tell(elf->fd);
 
     do {
         if(!storage_file_seek(elf->fd, offset, true)) break;
@@ -113,12 +126,16 @@ static bool elf_read_string_from_offset(ELFFile* elf, off_t offset, FuriString* 
         }
 
     } while(false);
-    storage_file_seek(elf->fd, old, true);
 
     return result;
 }
 
 static bool elf_read_section_name(ELFFile* elf, off_t offset, FuriString* name) {
+    if(elf->section_names) {
+        if((size_t)offset >= elf->section_names_size) return false;
+        furi_string_cat_str(name, elf->section_names + offset); // the copy ends in a 0
+        return true;
+    }
     return elf_read_string_from_offset(elf, elf->section_table_strings + offset, name);
 }
 
@@ -127,6 +144,11 @@ static bool elf_read_symbol_name(ELFFile* elf, off_t offset, FuriString* name) {
 }
 
 static bool elf_read_section_header(ELFFile* elf, size_t section_idx, Elf32_Shdr* section_header) {
+    if(elf->section_headers) {
+        if(section_idx >= elf->sections_count) return false;
+        *section_header = elf->section_headers[section_idx];
+        return true;
+    }
     off_t offset = SECTION_OFFSET(elf, section_idx);
     return storage_file_seek(elf->fd, offset, true) &&
            storage_file_read(elf->fd, section_header, sizeof(Elf32_Shdr)) == sizeof(Elf32_Shdr);
@@ -622,6 +644,7 @@ static SectionTypeInfo elf_preload_section(
         FURI_LOG_D(TAG, "Found .symtab section");
         elf->symbol_table = section_header->sh_offset;
         elf->symbol_count = section_header->sh_size / sizeof(Elf32_Sym);
+        elf->symbol_first_global = MIN((size_t)section_header->sh_info, elf->symbol_count);
 
         info.type = SectionTypeSymTab;
         info.result = ELFLoadSectionResultSuccess;
@@ -811,6 +834,10 @@ ELFFile* elf_file_alloc(Storage* storage, const ElfApiInterface* api_interface) 
     ELFFile* elf = malloc(sizeof(ELFFile));
     elf->fd = storage_file_alloc(storage);
     elf->api_interface = api_interface;
+    elf->section_headers = NULL;
+    elf->section_names = NULL;
+    elf->section_names_size = 0;
+    elf->symbol_first_global = 0;
     ELFSectionDict_init(elf->sections);
     AddressCache_init(elf->trampoline_cache);
     elf->init_array_called = false;
@@ -867,8 +894,8 @@ bool elf_file_open(ELFFile* elf, const char* path) {
     Elf32_Ehdr h;
     Elf32_Shdr sH;
 
+    // a file just opened reads from its start
     if(!storage_file_open(elf->fd, path, FSAM_READ, FSOM_OPEN_EXISTING) ||
-       !storage_file_seek(elf->fd, 0, true) ||
        storage_file_read(elf->fd, &h, sizeof(h)) != sizeof(h) ||
        !storage_file_seek(elf->fd, h.e_shoff + h.e_shstrndx * sizeof(sH), true) ||
        storage_file_read(elf->fd, &sH, sizeof(Elf32_Shdr)) != sizeof(Elf32_Shdr)) {
@@ -879,6 +906,26 @@ bool elf_file_open(ELFFile* elf, const char* path) {
     elf->sections_count = h.e_shnum;
     elf->section_table = h.e_shoff;
     elf->section_table_strings = sH.sh_offset;
+
+    /* Loading reads every section's header and name three times over (the table, then the
+     * assets and the manifest are looked up): one read each for the lot instead of six storage
+     * calls per section and pass. Apps with very many sections keep reading from the file. */
+    elf_file_free_section_cache(elf);
+    const size_t table_size = (size_t)h.e_shnum * sizeof(Elf32_Shdr);
+    if(h.e_shnum && table_size <= ELF_SECTION_CACHE_HEADERS_MAX &&
+       sH.sh_size <= ELF_SECTION_CACHE_NAMES_MAX) {
+        elf->section_headers = malloc(table_size);
+        elf->section_names = malloc(sH.sh_size + 1);
+        elf->section_names_size = sH.sh_size;
+        if(!storage_file_seek(elf->fd, h.e_shoff, true) ||
+           storage_file_read(elf->fd, elf->section_headers, table_size) != table_size ||
+           !storage_file_seek(elf->fd, sH.sh_offset, true) ||
+           storage_file_read(elf->fd, elf->section_names, sH.sh_size) != sH.sh_size) {
+            elf_file_free_section_cache(elf);
+        } else {
+            elf->section_names[sH.sh_size] = '\0';
+        }
+    }
     return true;
 }
 
@@ -1002,16 +1049,6 @@ ELFFileLoadStatus elf_file_load_sections(ELFFile* elf) {
     FURI_LOG_D(TAG, "Trampoline cache size: %u", AddressCache_size(elf->trampoline_cache));
     AddressCache_clear(elf->relocation_cache);
 
-    {
-        size_t total_size = 0;
-        for(ELFSectionDict_it(it, elf->sections); !ELFSectionDict_end_p(it);
-            ELFSectionDict_next(it)) {
-            ELFSectionDict_itref_t* itref = ELFSectionDict_ref(it);
-            total_size += itref->value.size;
-        }
-        FURI_LOG_I(TAG, "Total size of loaded sections: %zu", total_size);
-    }
-
     elf_file_maybe_release_fd(elf);
     return status;
 }
@@ -1052,7 +1089,10 @@ void elf_file_for_each_object(
 
     Elf32_Sym* symbols = malloc(ELF_SYMBOL_BLOCK * sizeof(Elf32_Sym));
     FuriString* name = furi_string_alloc();
-    for(size_t first = 0; first < elf->symbol_count; first += ELF_SYMBOL_BLOCK) {
+    // only the global symbols, which an app's icons are: the locals before them are about half
+    // the table
+    for(size_t first = elf->symbol_first_global; first < elf->symbol_count;
+        first += ELF_SYMBOL_BLOCK) {
         const size_t count = MIN((size_t)ELF_SYMBOL_BLOCK, elf->symbol_count - first);
         const size_t bytes = count * sizeof(Elf32_Sym);
         if(!storage_file_seek(elf->fd, elf->symbol_table + first * sizeof(Elf32_Sym), true) ||

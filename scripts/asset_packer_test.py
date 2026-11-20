@@ -873,8 +873,10 @@ class HostLoaderTests(TempDirCase):
         self.assertEqual(report["after load"], 1)
         # ... gone once the firmware has run with it for a while ...
         self.assertEqual(report["after stable"], 0)
-        # ... back for the reload after an app, and gone when the pack is dropped
-        self.assertEqual(report["after reload"], 1)
+        # ... not written again by the reloads after each app (the same files, proved stable),
+        # back when the pack is chosen again, and gone when the pack is dropped
+        self.assertEqual(report["after reload"], 0)
+        self.assertEqual(report["after reselect"], 1)
         self.assertEqual(report["after deselect"], 0)
 
     def test_no_marker_for_a_load_that_installs_nothing(self):

@@ -1055,8 +1055,10 @@ static bool
 
     if(event.type == SceneManagerEventTypeCustom) {
         if(event.event == NfcCustomEventListenerUpdate) {
-            // Add data button to widget if data is received for the first time
-            if(furi_string_size(instance->text_box_store)) {
+            // Add data button to widget if data is received for the first time (once: every
+            // update after that added another button, up to dozens, each drawn every frame)
+            if(furi_string_size(instance->text_box_store) &&
+               state == NfcSceneEmulateStateWidget) {
                 widget_add_button_element(
                     instance->widget,
                     GuiButtonTypeCenter,

@@ -76,6 +76,10 @@ void file_browser_worker_folder_refresh(BrowserWorker* browser, int32_t item_idx
 
 void file_browser_worker_load(BrowserWorker* browser, uint32_t offset, uint32_t count);
 
+/** In the list item callback: the entry's size and time, as the folder listed it (no stat
+ * needed) */
+const FileInfo* file_browser_worker_get_item_info(BrowserWorker* browser);
+
 #ifdef __cplusplus
 }
 #endif

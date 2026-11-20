@@ -47,6 +47,10 @@ typedef struct File File;
 /** Structure that hold file info */
 typedef struct {
     uint8_t flags; /**< flags from FS_Flags enum */
+    uint8_t reserved[3];
+    /** when it was last written, as FAT stores it: date << 16 | time (later is greater); 0 when
+     * unknown. In what was padding, so the layout is unchanged */
+    uint32_t modified;
     uint64_t size; /**< file size */
 } FileInfo;
 

@@ -92,7 +92,13 @@ bool archive_is_home(ArchiveBrowserView* browser);
 const char* archive_get_name(ArchiveBrowserView* browser);
 
 void archive_add_app_item(ArchiveBrowserView* browser, const char* name);
-void archive_add_file_item(ArchiveBrowserView* browser, bool is_folder, const char* name);
+/** sort_key: file_browser_sort_key_of() its listing, 0 when the order needs none (favourites
+ * are never sorted) */
+void archive_add_file_item(
+    ArchiveBrowserView* browser,
+    bool is_folder,
+    const char* name,
+    uint32_t sort_key);
 void archive_show_file_menu(ArchiveBrowserView* browser, bool show);
 void archive_favorites_move_mode(ArchiveBrowserView* browser, bool active);
 

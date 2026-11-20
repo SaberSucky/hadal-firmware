@@ -231,7 +231,7 @@ static AssetsSignatureResult flipper_application_assets_process_signature(
         if(!storage_file_open(
                signature_file,
                furi_string_get_cstr(signature_file_path),
-               FSAM_READ_WRITE,
+               FSAM_READ, // only compared
                FSOM_OPEN_EXISTING)) {
             FURI_LOG_E(TAG, "Can't open signature file");
             break;

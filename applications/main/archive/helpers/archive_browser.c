@@ -66,7 +66,13 @@ static void archive_list_item_cb(
     ArchiveBrowserView* browser = (ArchiveBrowserView*)context;
 
     if(!is_last) {
-        archive_add_file_item(browser, is_folder, furi_string_get_cstr(item_path));
+        const FileInfo* info = file_browser_worker_get_item_info(browser->worker);
+        archive_add_file_item(
+            browser,
+            is_folder,
+            furi_string_get_cstr(item_path),
+            file_browser_sort_needs_key() ? file_browser_sort_key_of(info->size, info->modified) :
+                                            0);
     } else {
         with_view_model(
             browser->view,
@@ -397,7 +403,11 @@ static bool archive_get_fap_meta(FuriString* file_path, FuriString* fap_name, ui
     return success;
 }
 
-void archive_add_file_item(ArchiveBrowserView* browser, bool is_folder, const char* name) {
+void archive_add_file_item(
+    ArchiveBrowserView* browser,
+    bool is_folder,
+    const char* name,
+    uint32_t sort_key) {
     furi_assert(browser);
     furi_assert(name);
 
@@ -406,7 +416,7 @@ void archive_add_file_item(ArchiveBrowserView* browser, bool is_folder, const ch
 
     furi_string_set(item.path, name);
     archive_set_file_type(&item, furi_string_get_cstr(browser->path), is_folder, false);
-    if(!is_folder && file_browser_sort_needs_key()) item.sort_key = file_browser_sort_key(name);
+    if(!is_folder) item.sort_key = sort_key;
     if(item.type == ArchiveFileTypeApplication) {
         item.custom_icon_data = malloc(FAP_MANIFEST_MAX_ICON_SIZE);
         if(!archive_get_fap_meta(item.path, item.custom_name, &item.custom_icon_data)) {

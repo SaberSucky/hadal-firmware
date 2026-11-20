@@ -487,7 +487,8 @@ static void browser_list_item_cb(
         } else {
             item.type = BrowserItemTypeFile;
             if(file_browser_sort_needs_key()) {
-                item.sort_key = file_browser_sort_key(furi_string_get_cstr(item_path));
+                const FileInfo* info = file_browser_worker_get_item_info(browser->worker);
+                item.sort_key = file_browser_sort_key_of(info->size, info->modified);
             }
             if(browser->item_callback) {
                 item.custom_icon_data = malloc(CUSTOM_ICON_MAX_SIZE);

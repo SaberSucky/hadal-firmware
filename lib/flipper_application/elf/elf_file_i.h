@@ -33,7 +33,15 @@ struct ELFFile {
     off_t section_table;
     off_t section_table_strings;
 
+    /* The section headers and their names, read whole when the app is opened (when small, as
+     * nearly all are), so that finding a section reads no more from the card; freed with the
+     * file, once the sections are loaded. NULL: read from the file */
+    Elf32_Shdr* section_headers;
+    char* section_names;
+    size_t section_names_size;
+
     size_t symbol_count;
+    size_t symbol_first_global; /**< .symtab's locals come first: this many */
     off_t symbol_table;
     off_t symbol_table_strings;
     off_t entry;

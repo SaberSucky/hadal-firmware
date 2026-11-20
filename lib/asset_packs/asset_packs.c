@@ -70,6 +70,9 @@ typedef struct {
     FuriTimer* graveyard_timer;
     char name[ASSET_PACK_NAME_SIZE]; /**< active pack, empty for none */
     bool icons_unloaded;
+    /** The pack has loaded and run long enough to be trusted (asset_packs_mark_stable()): its
+     * reloads after each app no longer write the crash marker. Cleared when the pack changes. */
+    atomic_bool stable;
     FuriThread* loader;
     /** A loader thread is running. Set when it is started, cleared by it just before it ends. */
     atomic_bool loading;
@@ -645,8 +648,10 @@ static int32_t loader_thread(void* context) {
     bool path_ok = join_path(state.pack_path, sizeof(state.pack_path), ASSET_PACKS_PATH, loader->name);
 
     // Present for the whole load: if the firmware dies in here, the next boot sees it and
-    // skips the pack instead of crashing again.
-    write_marker(state.storage);
+    // skips the pack instead of crashing again. A pack already proved stable this session is
+    // the same files loaded again: no marker, no two writes to the card after every app.
+    const bool guarded = !atomic_load(&asset_packs.stable);
+    if(guarded) write_marker(state.storage);
 
     char icons_path[PATH_SIZE];
     if(path_ok && join_path(icons_path, sizeof(icons_path), state.pack_path, "Icons") &&
@@ -707,7 +712,7 @@ static int32_t loader_thread(void* context) {
 
     // A pack that was installed keeps the marker until it has proved stable in use. One that
     // was not (nothing to load, or cancelled) has nothing that could crash, so no marker.
-    if(!installed) storage_simply_remove(state.storage, ASSET_PACKS_LOADING_MARKER);
+    if(guarded && !installed) storage_simply_remove(state.storage, ASSET_PACKS_LOADING_MARKER);
     furi_record_close(RECORD_STORAGE);
 
     FURI_LOG_I(
@@ -762,6 +767,7 @@ void asset_packs_set_active(const char* name) {
     asset_packs.name[0] = '\0';
     if(name_is_valid(name)) strlcpy(asset_packs.name, name, sizeof(asset_packs.name));
     asset_packs.icons_unloaded = false;
+    atomic_store(&asset_packs.stable, false); // another pack proves itself afresh
     discard_icons_locked(); // also cancels a load that is still running
     discard_fonts_locked();
     furi_mutex_release(asset_packs.mutex);
@@ -856,6 +862,7 @@ void asset_packs_app_loaded(FlipperApplication* app) {
     if(!atomic_load_explicit(&asset_packs.active, memory_order_relaxed)) return;
 
     const uint32_t started = furi_get_tick();
+    UNUSED(started); // in debug logs only
     AppScan scan = {
         .generation = atomic_load_explicit(&asset_packs.generation, memory_order_relaxed),
     };
@@ -874,7 +881,7 @@ void asset_packs_app_loaded(FlipperApplication* app) {
     }
     furi_mutex_release(asset_packs.mutex);
 
-    FURI_LOG_I(
+    FURI_LOG_D(
         TAG,
         "%u of the app's icons from the pack, %lu ms",
         (unsigned)scan.count,
@@ -911,7 +918,9 @@ void asset_packs_mark_stable(void) {
     ensure_init();
     // A load still running will notify when it is done, which is the next chance to ask
     if(atomic_load(&asset_packs.loading)) return;
+    if(atomic_load(&asset_packs.stable)) return; // nothing was written
     clear_marker();
+    atomic_store(&asset_packs.stable, true);
 }
 
 bool asset_packs_previous_load_crashed(void) {

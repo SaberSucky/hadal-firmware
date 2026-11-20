@@ -362,6 +362,10 @@ int main(int argc, char** argv) {
         asset_packs_reload_icons();
         wait_for_loader();
         printf("after reload %d\n", marker_exists());
+        // chosen again, it proves itself again
+        asset_packs_set_active(argv[3]);
+        wait_for_loader();
+        printf("after reselect %d\n", marker_exists());
         asset_packs_set_active(NULL);
         printf("after deselect %d\n", marker_exists());
     } else if(!strcmp(command, "crash")) {
