@@ -77,6 +77,8 @@ static void contex_menu_filemanager_init(ArchiveBrowserViewModel* model) {
             menu_array_push_raw(model->context_menu), "Rename", ArchiveBrowserEventFileMenuRename);
         archive_menu_add_item(
             menu_array_push_raw(model->context_menu), "Delete", ArchiveBrowserEventFileMenuDelete);
+        archive_menu_add_item(
+            menu_array_push_raw(model->context_menu), "Search", ArchiveBrowserEventFileMenuSearch);
     } else {
         if(model->clipboard_mode == CLIPBOARD_MODE_CUT) {
             archive_menu_add_item(

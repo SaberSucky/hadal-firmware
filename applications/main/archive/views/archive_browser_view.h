@@ -55,6 +55,7 @@ typedef enum {
     ArchiveBrowserEventFileMenuDelete,
     ArchiveBrowserEventFileMenuInfo,
     ArchiveBrowserEventFileMenuShow,
+    ArchiveBrowserEventFileMenuSearch,
     ArchiveBrowserEventFileMenuClose,
 
     ArchiveBrowserEventEnterDir,

@@ -190,6 +190,11 @@ bool archive_scene_browser_on_event(void* context, SceneManagerEvent event) {
             }
             consumed = true;
             break;
+        case ArchiveBrowserEventFileMenuSearch:
+            archive_show_file_menu(browser, false);
+            scene_manager_next_scene(archive->scene_manager, ArchiveAppSceneSearch);
+            consumed = true;
+            break;
         case ArchiveBrowserEventFileMenuNewDir:
             archive_show_file_menu(browser, false);
             if(!favorites) {

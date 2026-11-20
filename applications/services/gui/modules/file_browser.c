@@ -1,4 +1,5 @@
 #include "file_browser.h"
+#include "file_browser_sort.h"
 #include "file_browser_worker.h"
 #include "file_browser_worker_i.h"
 
@@ -40,10 +41,12 @@ typedef struct {
     BrowserItemType type;
     uint8_t* custom_icon_data;
     FuriString* display_name;
+    uint32_t sort_key; /**< size or time, when the order needs it (file_browser_sort.h) */
 } BrowserItem_t;
 
 static void BrowserItem_t_init(BrowserItem_t* obj) {
     obj->unsorted_idx = 0;
+    obj->sort_key = 0;
     obj->type = BrowserItemTypeLoading;
     obj->name = furi_string_alloc();
     obj->display_name = furi_string_alloc();
@@ -52,6 +55,7 @@ static void BrowserItem_t_init(BrowserItem_t* obj) {
 
 static void BrowserItem_t_init_set(BrowserItem_t* obj, const BrowserItem_t* src) {
     obj->unsorted_idx = src->unsorted_idx;
+    obj->sort_key = src->sort_key;
     obj->type = src->type;
     obj->name = furi_string_alloc_set(src->name);
     obj->display_name = furi_string_alloc_set(src->display_name);
@@ -65,6 +69,7 @@ static void BrowserItem_t_init_set(BrowserItem_t* obj, const BrowserItem_t* src)
 
 static void BrowserItem_t_set(BrowserItem_t* obj, const BrowserItem_t* src) {
     obj->unsorted_idx = src->unsorted_idx;
+    obj->sort_key = src->sort_key;
     obj->type = src->type;
     furi_string_set(obj->name, src->name);
     furi_string_set(obj->display_name, src->display_name);
@@ -86,34 +91,21 @@ static void BrowserItem_t_clear(BrowserItem_t* obj) {
     }
 }
 
-// ASCII case-fold compare, same order as furi_string_cmpi without its 4 libc calls per char
-static int browser_item_cmpi(const char* a, const char* b) {
-    unsigned char ca, cb;
-    do {
-        ca = (unsigned char)*a++;
-        cb = (unsigned char)*b++;
-        if((ca >= 'A') && (ca <= 'Z')) ca += 'a' - 'A';
-        if((cb >= 'A') && (cb <= 'Z')) cb += 'a' - 'A';
-    } while((ca == cb) && (ca != '\0'));
-    return (int)ca - (int)cb;
-}
-
 static int BrowserItem_t_cmp(const BrowserItem_t* a, const BrowserItem_t* b) {
-    // Back indicator comes before everything, then folders, then all other files.
+    // Back indicator comes before everything, then the order the user chose
     if(a->type == BrowserItemTypeBack) {
         return -1;
     }
     if(b->type == BrowserItemTypeBack) {
         return 1;
     }
-    if(a->type == BrowserItemTypeFolder && b->type != BrowserItemTypeFolder) {
-        return -1;
-    }
-    if(a->type != BrowserItemTypeFolder && b->type == BrowserItemTypeFolder) {
-        return 1;
-    }
-
-    return browser_item_cmpi(furi_string_get_cstr(a->name), furi_string_get_cstr(b->name));
+    return file_browser_sort_compare(
+        furi_string_get_cstr(a->name),
+        a->type == BrowserItemTypeFolder,
+        a->sort_key,
+        furi_string_get_cstr(b->name),
+        b->type == BrowserItemTypeFolder,
+        b->sort_key);
 }
 
 #define M_OPL_BrowserItem_t()                 \
@@ -276,6 +268,7 @@ void file_browser_configure(
 
 void file_browser_start(FileBrowser* browser, FuriString* path) {
     furi_check(browser);
+    file_browser_sort_prefs_load();
 
     // The worker queues its own first scan, so raise this before the callbacks go in:
     // until the folder callback lands, the list on screen is stale and takes input
@@ -483,6 +476,7 @@ static void browser_list_item_cb(
     BrowserItem_t item;
     item.custom_icon_data = NULL;
     item.unsorted_idx = idx;
+    item.sort_key = 0;
 
     if(!is_last) {
         item.name = furi_string_alloc();
@@ -492,6 +486,9 @@ static void browser_list_item_cb(
             item.type = BrowserItemTypeFolder;
         } else {
             item.type = BrowserItemTypeFile;
+            if(file_browser_sort_needs_key()) {
+                item.sort_key = file_browser_sort_key(furi_string_get_cstr(item_path));
+            }
             if(browser->item_callback) {
                 item.custom_icon_data = malloc(CUSTOM_ICON_MAX_SIZE);
                 if(!browser->item_callback(

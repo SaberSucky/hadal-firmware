@@ -1,5 +1,6 @@
 #pragma once
 
+#include <gui/modules/file_browser_sort.h>
 #include <m-array.h>
 #include <furi.h>
 #include <m-algo.h>
@@ -44,6 +45,7 @@ typedef struct {
     bool fav;
     bool is_app;
     bool is_text_file;
+    uint32_t sort_key; /**< size or time, when the order needs it (file_browser_sort.h) */
 } ArchiveFile_t;
 
 static void ArchiveFile_t_init(ArchiveFile_t* obj) {
@@ -54,6 +56,7 @@ static void ArchiveFile_t_init(ArchiveFile_t* obj) {
     obj->fav = false;
     obj->is_app = false;
     obj->is_text_file = false;
+    obj->sort_key = 0;
 }
 
 static void ArchiveFile_t_init_set(ArchiveFile_t* obj, const ArchiveFile_t* src) {
@@ -69,6 +72,7 @@ static void ArchiveFile_t_init_set(ArchiveFile_t* obj, const ArchiveFile_t* src)
     obj->fav = src->fav;
     obj->is_app = src->is_app;
     obj->is_text_file = src->is_text_file;
+    obj->sort_key = src->sort_key;
 }
 
 static void ArchiveFile_t_set(ArchiveFile_t* obj, const ArchiveFile_t* src) {
@@ -87,6 +91,7 @@ static void ArchiveFile_t_set(ArchiveFile_t* obj, const ArchiveFile_t* src) {
     obj->fav = src->fav;
     obj->is_app = src->is_app;
     obj->is_text_file = src->is_text_file;
+    obj->sort_key = src->sort_key;
 }
 
 static void ArchiveFile_t_clear(ArchiveFile_t* obj) {
@@ -98,27 +103,15 @@ static void ArchiveFile_t_clear(ArchiveFile_t* obj) {
     furi_string_free(obj->custom_name);
 }
 
-// ASCII case-fold compare, same order as furi_string_cmpi without its 4 libc calls per char
-static inline int archive_file_cmpi(const char* a, const char* b) {
-    unsigned char ca, cb;
-    do {
-        ca = (unsigned char)*a++;
-        cb = (unsigned char)*b++;
-        if((ca >= 'A') && (ca <= 'Z')) ca += 'a' - 'A';
-        if((cb >= 'A') && (cb <= 'Z')) cb += 'a' - 'A';
-    } while((ca == cb) && (ca != '\0'));
-    return (int)ca - (int)cb;
-}
-
+// In the order the user chose (Settings > Hadal > Interface > File Browser)
 static int ArchiveFile_t_cmp(const ArchiveFile_t* a, const ArchiveFile_t* b) {
-    if(a->type == ArchiveFileTypeFolder && b->type != ArchiveFileTypeFolder) {
-        return -1;
-    }
-    if(a->type != ArchiveFileTypeFolder && b->type == ArchiveFileTypeFolder) {
-        return 1;
-    }
-
-    return archive_file_cmpi(furi_string_get_cstr(a->path), furi_string_get_cstr(b->path));
+    return file_browser_sort_compare(
+        furi_string_get_cstr(a->path),
+        a->type == ArchiveFileTypeFolder,
+        a->sort_key,
+        furi_string_get_cstr(b->path),
+        b->type == ArchiveFileTypeFolder,
+        b->sort_key);
 }
 
 #define M_OPL_ArchiveFile_t()                 \

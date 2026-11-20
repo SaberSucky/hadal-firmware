@@ -406,6 +406,7 @@ void archive_add_file_item(ArchiveBrowserView* browser, bool is_folder, const ch
 
     furi_string_set(item.path, name);
     archive_set_file_type(&item, furi_string_get_cstr(browser->path), is_folder, false);
+    if(!is_folder && file_browser_sort_needs_key()) item.sort_key = file_browser_sort_key(name);
     if(item.type == ArchiveFileTypeApplication) {
         item.custom_icon_data = malloc(FAP_MANIFEST_MAX_ICON_SIZE);
         if(!archive_get_fap_meta(item.path, item.custom_name, &item.custom_icon_data)) {
@@ -509,9 +510,13 @@ void archive_switch_tab(ArchiveBrowserView* browser, InputKey key) {
     } else {
         tab = archive_get_tab(browser);
         if(archive_is_dir_exists(browser->path)) {
+            // the user's order and whether they want hidden files, as they are now
+            file_browser_sort_prefs_load();
             bool skip_assets = (strcmp(archive_get_tab_ext(tab), "*") == 0) ? false : true;
-            // Hide dot files everywhere except Browser
-            bool hide_dot_files = (strcmp(archive_get_tab_ext(tab), "*") == 0) ? false : true;
+            // Hide dot files everywhere except Browser, and there too if the user says so
+            bool hide_dot_files = (strcmp(archive_get_tab_ext(tab), "*") == 0) ?
+                                      file_browser_sort_prefs.hide_hidden :
+                                      true;
             archive_file_browser_set_path(
                 browser, browser->path, archive_get_tab_ext(tab), skip_assets, hide_dot_files);
             tab_empty = false; // Empty check will be performed later
@@ -532,6 +537,27 @@ void archive_switch_tab(ArchiveBrowserView* browser, InputKey key) {
         archive_get_items(browser, furi_string_get_cstr(browser->path));
         archive_update_offset(browser);
     }
+}
+
+void archive_show_file(ArchiveBrowserView* browser, const char* path) {
+    furi_assert(browser);
+    furi_assert(path);
+    // the Browser tab, in the file's folder, on the file
+    archive_set_tab(browser, ArchiveTabBrowser);
+    furi_string_set_str(browser->path, path);
+    furi_string_left(browser->path, furi_string_search_rchar(browser->path, '/'));
+    with_view_model(
+        browser->view,
+        ArchiveBrowserViewModel * model,
+        {
+            model->item_idx = 0;
+            model->array_offset = 0;
+        },
+        false);
+    file_browser_sort_prefs_load();
+    FuriString* file = furi_string_alloc_set_str(path);
+    archive_file_browser_set_path(browser, file, "*", false, file_browser_sort_prefs.hide_hidden);
+    furi_string_free(file);
 }
 
 void archive_enter_dir(ArchiveBrowserView* browser, FuriString* path) {

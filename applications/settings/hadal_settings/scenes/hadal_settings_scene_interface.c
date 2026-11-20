@@ -6,6 +6,7 @@ enum {
     InterfaceAssetPack,
     InterfaceDesktopKeys,
     InterfaceLockScreen,
+    InterfaceFileBrowser,
 };
 
 void hadal_settings_scene_interface_on_enter(void* context) {
@@ -22,6 +23,8 @@ void hadal_settings_scene_interface_on_enter(void* context) {
         app->submenu, "Desktop Keys", InterfaceDesktopKeys, hadal_settings_submenu_callback, app);
     submenu_add_item(
         app->submenu, "Lock Screen", InterfaceLockScreen, hadal_settings_submenu_callback, app);
+    submenu_add_item(
+        app->submenu, "File Browser", InterfaceFileBrowser, hadal_settings_submenu_callback, app);
     submenu_set_selected_item(
         app->submenu,
         scene_manager_get_scene_state(app->scene_manager, HadalSettingsSceneInterface));
@@ -49,6 +52,9 @@ bool hadal_settings_scene_interface_on_event(void* context, SceneManagerEvent ev
         break;
     case InterfaceLockScreen:
         scene_manager_next_scene(app->scene_manager, HadalSettingsSceneLockScreen);
+        break;
+    case InterfaceFileBrowser:
+        scene_manager_next_scene(app->scene_manager, HadalSettingsSceneFileBrowser);
         break;
     }
     return true;

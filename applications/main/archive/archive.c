@@ -45,6 +45,10 @@ ArchiveApp* archive_alloc(void) {
     view_dispatcher_add_view(
         archive->view_dispatcher, ArchiveViewWidget, widget_get_view(archive->widget));
 
+    archive->submenu = submenu_alloc();
+    view_dispatcher_add_view(
+        archive->view_dispatcher, ArchiveViewSubmenu, submenu_get_view(archive->submenu));
+
     archive->view_stack = view_stack_alloc();
     view_dispatcher_add_view(
         view_dispatcher, ArchiveViewStack, view_stack_get_view(archive->view_stack));
@@ -71,6 +75,11 @@ void archive_free(ArchiveApp* archive) {
 
     view_dispatcher_remove_view(view_dispatcher, ArchiveViewWidget);
     widget_free(archive->widget);
+    view_dispatcher_remove_view(view_dispatcher, ArchiveViewSubmenu);
+    submenu_free(archive->submenu);
+    for(size_t i = 0; i < archive->search_count; i++) {
+        furi_string_free(archive->search_results[i]);
+    }
 
     view_dispatcher_remove_view(view_dispatcher, ArchiveViewStack);
     view_stack_free(archive->view_stack);

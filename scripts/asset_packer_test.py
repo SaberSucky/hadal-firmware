@@ -3215,6 +3215,86 @@ class KeybindTests(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stderr[-1500:])
 
 
+class FileSortTests(unittest.TestCase):
+    """File list order (gui/modules/file_browser_sort.c) and Archive's search name match"""
+
+    @classmethod
+    def setUpClass(cls):
+        import subprocess
+
+        if not _have_sanitizer("address,undefined"):
+            raise unittest.SkipTest("gcc with AddressSanitizer is not available")
+        cls.build_dir = tempfile.mkdtemp(prefix="fs_")
+        cls.exe = os.path.join(cls.build_dir, "file_sort_host")
+        modules = os.path.join(REPO_ROOT, "applications", "services", "gui", "modules")
+        search = os.path.join(REPO_ROOT, "applications", "main", "archive", "helpers", "archive_search.c")
+        # only the match function of the search: the walk needs storage
+        with open(search) as f:
+            src = f.read()
+        start = src.index("static char lower(")
+        end = src.index("size_t archive_search(")
+        match = os.path.join(cls.build_dir, "match.c")
+        with open(match, "w") as f:
+            f.write("#include <stdbool.h>\n#include <stddef.h>\n" + src[start:end])
+        subprocess.check_call(
+            [
+                "gcc", "-std=gnu11", "-g", "-O1", "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
+                "-Wall", "-Wextra", "-Werror", "-I", modules, "-o", cls.exe,
+                os.path.join(REPO_ROOT, "scripts", "host_tests", "file_sort_host.c"),
+                os.path.join(modules, "file_browser_sort.c"),
+                match,
+            ]
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.build_dir, True)
+
+    ENTRIES = [
+        ("zeta.sub", 0, 300), ("Alpha.ir", 0, 100), ("music", 1, 0), ("beta.nfc", 0, 900),
+        ("Apps", 1, 0), (".hidden", 0, 50), ("gamma.sub", 0, 900), ("readme", 0, 10),
+    ]
+
+    def order(self, sort_by, mixed=0):
+        import subprocess
+
+        text = "".join(f"{n} {f} {k}\n" for n, f, k in self.ENTRIES)
+        r = subprocess.run([self.exe, "sort", str(sort_by), str(mixed)], input=text, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+        return r.stdout.split()
+
+    def test_name_is_the_old_order(self):
+        self.assertEqual(self.order(0), ["Apps", "music", ".hidden", "Alpha.ir", "beta.nfc", "gamma.sub", "readme", "zeta.sub"])
+
+    def test_name_reversed(self):
+        self.assertEqual(self.order(1), ["music", "Apps", "zeta.sub", "readme", "gamma.sub", "beta.nfc", "Alpha.ir", ".hidden"])
+
+    def test_newest_and_largest_by_key_then_name(self):
+        expected = ["Apps", "music", "beta.nfc", "gamma.sub", "zeta.sub", "Alpha.ir", ".hidden", "readme"]
+        self.assertEqual(self.order(2), expected)
+        self.assertEqual(self.order(3), expected)
+
+    def test_type_then_name(self):
+        # no extension first (".hidden" has none: its only dot starts it), then .ir, .nfc, .sub
+        self.assertEqual(self.order(4), ["Apps", "music", ".hidden", "readme", "Alpha.ir", "beta.nfc", "gamma.sub", "zeta.sub"])
+
+    def test_folders_mixed_in(self):
+        self.assertEqual(self.order(0, 1), [".hidden", "Alpha.ir", "Apps", "beta.nfc", "gamma.sub", "music", "readme", "zeta.sub"])
+
+    def test_search_match(self):
+        import subprocess
+
+        def match(name, needle):
+            return subprocess.run([self.exe, "match", name, needle], capture_output=True, text=True).stdout.strip()
+
+        self.assertEqual(match("Garage_Door.sub", "door"), "1")
+        self.assertEqual(match("Garage_Door.sub", "GARAGE_d"), "1")
+        self.assertEqual(match("Garage_Door.sub", ".sub"), "1")
+        self.assertEqual(match("Garage_Door.sub", "doors"), "0")
+        self.assertEqual(match("ab", "abc"), "0")
+        self.assertEqual(match("anything", ""), "0")
+
+
 class ScreenPreviewTests(TempDirCase):
     """The app screens drawn by the firmware's own canvas on the host, under sanitizers"""
 
