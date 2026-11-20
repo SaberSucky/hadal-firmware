@@ -100,6 +100,15 @@ SECTIONS {
         __bss_end__ = _ebss;
     } >RAM1
 
+    /* Kept as it is across a software reset (the startup code clears only .bss): the report of
+     * the last crash waits here until the next start writes it to the SD card */
+    . = ALIGN(4);
+    .noinit (NOLOAD) : {
+        *(.noinit)
+        *(.noinit.*)
+        . = ALIGN(4);
+    } >RAM1
+
     /* User_heap_stack section, used to check that there is enough RAM left */
     /* DSECT: https://software-dl.ti.com/ccs/esd/documents/sdto_cgt_linker_special_section_types.html */
     ._user_heap_stack(DSECT) : {

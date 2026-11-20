@@ -1,3 +1,4 @@
+#include "crash_report.h"
 #include "check.h"
 #include "common_defines.h"
 
@@ -172,6 +173,8 @@ FURI_NORETURN void __furi_crash_implementation(void) {
         RESTORE_REGISTERS_AND_HALT_MCU(debug);
 #ifdef FURI_NDEBUG
     } else {
+        // The details (where, which thread, the call chain) for the SD card, after the restart
+        furi_crash_report_capture(__furi_check_message, __furi_check_registers);
         uint32_t ptr = (uint32_t)__furi_check_message;
         if(ptr < FLASH_BASE || ptr > (FLASH_BASE + FLASH_SIZE)) {
             ptr = (uint32_t) "Check serial logs";

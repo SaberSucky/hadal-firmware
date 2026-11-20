@@ -82,6 +82,8 @@ struct Desktop {
     FuriTimer* asset_pack_stable_timer;
     /** Tells the boot guard that this firmware starts and runs: see update_util/boot_guard.h */
     FuriTimer* boot_stable_timer;
+    /** Writes the last crash's report once the SD card is ready (helpers/crash_report_save.h) */
+    FuriTimer* crash_report_timer;
 
     AnimationManager* animation_manager;
     FuriSemaphore* animation_semaphore;

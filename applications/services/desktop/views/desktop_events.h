@@ -72,4 +72,5 @@ typedef enum {
     DesktopGlobalAssetPacksChanged,
     DesktopGlobalAssetPackStable,
     DesktopGlobalBootStable,
+    DesktopGlobalSaveCrashReport,
 } DesktopEvent;

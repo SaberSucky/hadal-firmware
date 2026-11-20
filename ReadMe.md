@@ -31,6 +31,13 @@ The Flipper ships with ST's "BLE Light" radio stack, which can only advertise an
 - **Interface → Asset Pack:** see below
 - **Protocols → Extended Sub-GHz:** the range beyond the radio chip's specification, which used to need a file edited by hand. It asks first, and applies after a restart
 
+### Updates and crashes
+- **Only what changed:** an update writes only the SD files that differ (each file's real size and MD5 are checked against the new package), instead of all ~1,700
+- **Checked first:** before changing anything, the updater checks the battery, both images, that the firmware fits beside the radio stack, and that the option bytes cannot lock the chip. If something is wrong it stops with the reason, and the Flipper keeps its firmware
+- **Rollback:** a firmware that fails to start four times in a row is replaced by the last one that ran steadily (kept in `/ext/update/.hadal_rollback`), with your settings and files left as they are
+- **Crash reports:** after a crash, `/ext/crash/` gets a report: the thread, the message, where it happened and the call chain. `python3 scripts/crash_report.py <report>` names the functions
+- `update/hadal_update.log` on the SD card records every update
+
 ### Asset packs
 **Settings → Hadal → Interface → Asset Pack** (also Settings → Desktop) switches the animations, icons and fonts to those of a pack on the SD card (`/ext/asset_packs/<Name>/`), without reflashing. The folder layout is compatible with the one other custom firmwares use, and everything that loads it is written for Hadal. A pack that is missing or broken changes nothing, and one that crashes the firmware is turned off at the next start. See [documentation/AssetPacks.md](documentation/AssetPacks.md).
 

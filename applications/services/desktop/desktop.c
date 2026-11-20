@@ -1,3 +1,5 @@
+#include <core/crash_report.h>
+#include "helpers/crash_report_save.h"
 #include <update_util/boot_guard.h>
 #include <update_util/update_rollback.h>
 #include "desktop_i.h"
@@ -53,6 +55,11 @@ static void desktop_loader_callback(const void* message, void* context) {
 static void desktop_asset_packs_changed_callback(void* context) {
     Desktop* desktop = context;
     view_dispatcher_send_custom_event(desktop->view_dispatcher, DesktopGlobalAssetPacksChanged);
+}
+
+static void desktop_crash_report_timer_callback(void* context) {
+    Desktop* desktop = context;
+    view_dispatcher_send_custom_event(desktop->view_dispatcher, DesktopGlobalSaveCrashReport);
 }
 
 static void desktop_boot_stable_timer_callback(void* context) {
@@ -206,6 +213,9 @@ static bool desktop_custom_event_callback(void* context, uint32_t event) {
 
     } else if(event == DesktopGlobalAssetPackStable) {
         asset_packs_mark_stable();
+
+    } else if(event == DesktopGlobalSaveCrashReport) {
+        if(crash_report_save(desktop->storage)) furi_timer_stop(desktop->crash_report_timer);
 
     } else if(event == DesktopGlobalBootStable) {
         // This firmware works: it becomes the one to roll back to
@@ -498,6 +508,8 @@ static Desktop* desktop_alloc(void) {
         furi_timer_alloc(desktop_asset_pack_stable_timer_callback, FuriTimerTypeOnce, desktop);
     desktop->boot_stable_timer =
         furi_timer_alloc(desktop_boot_stable_timer_callback, FuriTimerTypeOnce, desktop);
+    desktop->crash_report_timer =
+        furi_timer_alloc(desktop_crash_report_timer_callback, FuriTimerTypePeriodic, desktop);
     asset_packs_set_changed_callback(desktop_asset_packs_changed_callback, desktop);
 
     desktop->update_clock_timer =
@@ -688,6 +700,10 @@ int32_t desktop_srv(void* p) {
 
     boot_profile_mark("desktop ready");
     furi_timer_start(desktop->boot_stable_timer, furi_ms_to_ticks(BOOT_STABLE_MS));
+    if(furi_crash_report_get()) {
+        // tried until the SD card is mounted
+        furi_timer_start(desktop->crash_report_timer, furi_ms_to_ticks(500));
+    }
     view_dispatcher_run(desktop->view_dispatcher);
 
     // Should never get here (a service thread will crash automatically if it returns)

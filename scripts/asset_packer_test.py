@@ -2829,5 +2829,29 @@ class BootGuardTests(TempDirCase):
         self.assertTrue(all(line == "0 0 0 0 -" for line in out), out)
 
 
+class CrashReportScriptTests(unittest.TestCase):
+    """scripts/crash_report.py reads the addresses out of a report as the firmware writes it
+    (applications/services/desktop/helpers/crash_report_save.c)."""
+
+    def test_addresses(self):
+        sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+        import crash_report
+
+        text = (
+            "Hadal crash report\nIn: the thread \"NFC\"\nMessage: furi_check failed\n"
+            "Fault at: 0x0801ABCD (in a function called from 0x08020001)\n"
+            "Raised from: 0x08001000\nCall chain: 0x08002001 0x08003003\n"
+            "Registers:\n r0=00000001 r1=08001234\n"
+        )
+        self.assertEqual(
+            crash_report.report_addresses(text),
+            [("fault", 0x0801ABCD), ("raised", 0x08001000), ("fault caller", 0x08020001),
+             ("stack #0", 0x08002001), ("stack #1", 0x08003003)],
+        )
+        # without a fault (a furi_check in a thread)
+        plain = "Raised from: 0x08001000\nCall chain:\n"
+        self.assertEqual(crash_report.report_addresses(plain), [("raised", 0x08001000)])
+
+
 if __name__ == "__main__":
     unittest.main()
