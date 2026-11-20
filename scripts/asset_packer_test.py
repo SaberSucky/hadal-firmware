@@ -3040,6 +3040,88 @@ class IrLearnedTests(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stderr[-1500:])
 
 
+class BatteryStatsTests(unittest.TestCase):
+    """Battery History's graph and time-left estimate (applications/system/battery_history)"""
+
+    @classmethod
+    def setUpClass(cls):
+        import subprocess
+
+        if not _have_sanitizer("address,undefined"):
+            raise unittest.SkipTest("gcc with AddressSanitizer is not available")
+        cls.build_dir = tempfile.mkdtemp(prefix="bat_")
+        cls.exe = os.path.join(cls.build_dir, "battery_stats_host")
+        app = os.path.join(REPO_ROOT, "applications", "system", "battery_history")
+        subprocess.check_call(
+            [
+                "gcc", "-std=gnu11", "-g", "-O1", "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
+                "-Wall", "-Wextra", "-Werror", "-I", app, "-o", cls.exe,
+                os.path.join(REPO_ROOT, "scripts", "host_tests", "battery_stats_host.c"),
+                os.path.join(app, "battery_stats.c"),
+            ]
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.build_dir, True)
+
+    def run_host(self, records, *args):
+        import subprocess
+
+        text = "".join(f"{t} {c} {f}\n" for t, c, f in records)
+        r = subprocess.run([self.exe, *args], input=text, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+        return r.stdout.split("\n")[:-1]
+
+    @staticmethod
+    def drain(start, hours, charge, per_hour, flags_first=2):
+        # a record every 10 minutes, the charge falling per_hour % an hour, in whole percents
+        records = []
+        for i in range(hours * 6 + 1):
+            records.append((start + i * 600, round(charge - per_hour * i / 6), flags_first if i == 0 else 0))
+        return records
+
+    def test_estimate_from_a_steady_drain(self):
+        records = self.drain(1_000_000, 10, 90, 1.25)        # 30% a day, from 90% to 77.5%
+        seconds, per_day_x10 = map(int, self.run_host(records, "estimate")[0].split())
+        self.assertAlmostEqual(per_day_x10, 300, delta=8)
+        self.assertAlmostEqual(seconds / 3600, records[-1][1] / 1.25, delta=1.5)
+
+    def test_no_estimate_when_charging_short_or_flat(self):
+        records = self.drain(1_000_000, 10, 90, 1.25)
+        self.assertEqual(self.run_host(records + [(records[-1][0] + 600, 78, 1)], "estimate"), ["none"])
+        self.assertEqual(self.run_host(self.drain(1_000_000, 1, 90, 3), "estimate"), ["none"])   # one hour
+        self.assertEqual(self.run_host(self.drain(1_000_000, 10, 90, 0.1), "estimate"), ["none"])  # 1% drop
+        self.assertEqual(self.run_host([], "estimate"), ["none"])
+
+    def test_the_estimate_starts_after_charging_and_restarts(self):
+        # fast drain, a charge, then a slow drain: only the slow one counts
+        fast = self.drain(1_000_000, 6, 100, 5)
+        charge = [(fast[-1][0] + 600 * (i + 1), 70 + i * 5, 1) for i in range(6)]
+        slow = self.drain(charge[-1][0] + 600, 8, 100, 1, 0)
+        seconds, per_day_x10 = map(int, self.run_host(fast + charge + slow, "estimate")[0].split())
+        self.assertAlmostEqual(per_day_x10, 240, delta=10)
+        # a start record (the Flipper was off) begins a new stretch: too short after it
+        restart = self.drain(slow[-1][0] + 600, 1, 90, 1)
+        self.assertEqual(self.run_host(fast + charge + slow + restart, "estimate"), ["none"])
+
+    def test_columns_fill_between_records_but_not_across_gaps(self):
+        records = [(0, 90, 2), (600, 89, 0), (1200, 88, 0), (9000, 80, 2), (9600, 79, 1)]
+        out = self.run_host(records, "columns", "12000", "12000", "20")    # 600 s a column
+        self.assertEqual(out[0:3], ["90", "89", "88"])
+        self.assertEqual(out[3:15], ["-"] * 12)                          # off: not filled
+        self.assertEqual(out[15:17], ["80", "79c"])
+        self.assertEqual(out[17:], ["-"] * 3)
+        # two columns a record apart are filled with the earlier charge
+        out = self.run_host([(0, 50, 2), (1200, 49, 0)], "columns", "1200", "1200", "4")
+        self.assertEqual(out, ["50", "50", "50", "49"])
+
+    def test_duration(self):
+        for seconds, text in [(35 * 60, "35 min"), (5 * 3600 + 20 * 60, "5 h 20 min"),
+                              (30 * 3600, "1 day 6 h"), (52 * 3600, "2 days 4 h")]:
+            self.assertEqual(self.run_host([], "duration", str(seconds)), [text])
+
+
 class ScreenPreviewTests(TempDirCase):
     """The app screens drawn by the firmware's own canvas on the host, under sanitizers"""
 

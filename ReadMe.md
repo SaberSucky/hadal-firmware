@@ -55,6 +55,9 @@ The Flipper ships with ST's "BLE Light" radio stack, which can only advertise an
 - **Remote Finder:** when a code works, pause and *save all* to keep that device's whole remote
 - The pause screen fits all its options
 
+### Battery history
+The Flipper writes its charge to the SD card every 10 minutes and whenever the charger is plugged in or out (8 bytes each, about two weeks a file, the two newest files kept in `/ext/apps_data/battery/`). **Battery History** (Apps → Tools) draws it over a day, three days, a week or two weeks, marks when it was charging and when it was off, and says how long the charge will last at the rate it has been going down since you last unplugged it.
+
 ### Making room for it
 The Full radio stack needs 36 KB more of the Flipper's internal flash. To make it fit, some parts of the firmware were moved onto the SD card (877,964 → 796,776 bytes):
 

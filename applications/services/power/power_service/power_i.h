@@ -8,6 +8,7 @@
 #include <toolbox/api_lock.h>
 #include <assets_icons.h>
 
+#include "battery_log.h"
 #include "views/power_off.h"
 #include "views/power_unplug_usb.h"
 
@@ -43,7 +44,11 @@ struct Power {
     FuriPubSub* input_events_pubsub;
     FuriPubSubSubscription* input_events_subscription;
     bool charge_is_supressed;
+    BatteryLog battery_log;
 };
+
+/** Called every second: writes a battery history record when one is due */
+void battery_log_tick(BatteryLog* log, const PowerInfo* info);
 
 typedef enum {
     PowerViewOff,

@@ -608,6 +608,8 @@ static void power_tick_callback(void* context) {
     power_check_battery_level_change(power);
     // charge supress arm/disarm
     power_charge_supress(power);
+    // Battery history
+    battery_log_tick(&power->battery_log, &power->info);
     // Update battery view port
     if(need_refresh) {
         view_port_update(power->battery_view_port);
@@ -665,6 +667,7 @@ static Power* power_alloc(void) {
     // State initialization
     power->power_off_timeout = POWER_OFF_TIMEOUT_S;
     power->show_battery_low_warning = true;
+    power->battery_log = (BatteryLog){0};
 
     // Load UI settings
     DesktopSettings* settings = malloc(sizeof(DesktopSettings));
