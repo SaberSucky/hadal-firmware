@@ -501,10 +501,9 @@ int32_t update_task_worker_flash_writer(void* context) {
             furi_hal_rtc_set_flag(FuriHalRtcFlagStorageFormatInternal);
         }
 #ifdef FURI_NDEBUG
-        // Production
-        furi_hal_rtc_set_log_level(FuriLogLevelNone);
-        furi_hal_rtc_reset_flag(FuriHalRtcFlagDebug);
-        furi_hal_rtc_reset_flag(FuriHalRtcFlagLegacySleep);
+        // Production. The log level, Debug and the sleep method are the user's System settings
+        // and stay as they were set (resetting them was why they never survived an update);
+        // heap tracking is a developer's tool that slows everything down, and goes
         furi_hal_rtc_set_heap_track_mode(FuriHalRtcHeapTrackModeNone);
 #endif
         update_task_set_progress(update_task, UpdateTaskStageCompleted, 100);

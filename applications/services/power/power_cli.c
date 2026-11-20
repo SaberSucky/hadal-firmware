@@ -1,4 +1,5 @@
 #include "power_cli.h"
+#include "power_service/system_settings_keeper.h"
 
 #include <furi_hal.h>
 #include <toolbox/cli/cli_command.h>
@@ -114,6 +115,7 @@ void power_cli(PipeSide* pipe, FuriString* args, void* context) {
 }
 
 void power_on_system_start(void) {
+    system_settings_keeper_start();
 #ifdef SRV_CLI
     CliRegistry* registry = furi_record_open(RECORD_CLI);
     cli_registry_add_command(registry, "power", CliCommandFlagParallelSafe, power_cli, NULL);

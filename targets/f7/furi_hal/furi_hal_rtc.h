@@ -57,6 +57,9 @@ typedef enum {
     FuriHalRtcRegisterUpdateTraceStart, /**< Current update: RTC time of its first step */
     FuriHalRtcRegisterUpdateTracePrevious, /**< An earlier update that did not finish */
     FuriHalRtcRegisterBootGuard, /**< Starts since an update that did not settle; rollback */
+    /* Set once the System settings these registers hold are also kept in a file; zero again
+     * when the registers are wiped (a flat battery), so they are put back from the file */
+    FuriHalRtcRegisterSettingsKept,
 
     FuriHalRtcRegisterMAX, /**< Service value, do not use */
 } FuriHalRtcRegister;

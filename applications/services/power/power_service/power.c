@@ -1,5 +1,6 @@
 #include "desktop/desktop_settings.h"
 #include "power_i.h"
+#include "system_settings_keeper.h"
 
 #include <furi.h>
 #include <furi_hal.h>
@@ -360,6 +361,7 @@ void power_trigger_ui_update(Power* power) {
 }
 
 static void power_handle_shutdown(Power* power) {
+    system_settings_keeper_save();
     furi_hal_power_off();
     // Notify user if USB is plugged
     view_holder_send_to_front(power->view_holder);
@@ -370,6 +372,7 @@ static void power_handle_shutdown(Power* power) {
 }
 
 static void power_handle_reboot(PowerBootMode mode) {
+    system_settings_keeper_save(); // before the boot mode changes
     if(mode == PowerBootModeNormal) {
         update_operation_disarm();
     } else if(mode == PowerBootModeDfu) {
