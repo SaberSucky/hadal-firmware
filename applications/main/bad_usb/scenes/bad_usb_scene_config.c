@@ -23,6 +23,9 @@ enum ConfigIndexUsb {
     ConfigIndexUsbRestoreDefaults,
 };
 
+static const char* const connection_text[] = {"USB", "BLE"};
+static const char* const on_off_text[] = {"OFF", "ON"};
+
 void bad_usb_scene_config_connection_callback(VariableItem* item) {
     BadUsbApp* bad_usb = variable_item_get_context(item);
     bad_usb_set_interface(
@@ -79,6 +82,7 @@ static void draw_menu(BadUsbApp* bad_usb) {
 
     item = variable_item_list_add(
         var_item_list, "Connection", 2, bad_usb_scene_config_connection_callback, bad_usb);
+    variable_item_set_values_text(item, connection_text);
     variable_item_set_current_value_index(item, bad_usb->interface == BadUsbHidInterfaceBle);
     variable_item_set_current_value_text(
         item, bad_usb->interface == BadUsbHidInterfaceBle ? "BLE" : "USB");
@@ -92,6 +96,7 @@ static void draw_menu(BadUsbApp* bad_usb) {
             2,
             bad_usb_scene_config_ble_persist_pairing_callback,
             bad_usb);
+        variable_item_set_values_text(item, on_off_text);
         variable_item_set_current_value_index(item, ble_hid_cfg->bonding);
         variable_item_set_current_value_text(item, ble_hid_cfg->bonding ? "ON" : "OFF");
 
@@ -101,6 +106,7 @@ static void draw_menu(BadUsbApp* bad_usb) {
             GapPairingCount,
             bad_usb_scene_config_ble_pairing_mode_callback,
             bad_usb);
+        variable_item_set_values_text(item, ble_pairing_mode_names);
         variable_item_set_current_value_index(item, ble_hid_cfg->pairing);
         variable_item_set_current_value_text(item, ble_pairing_mode_names[ble_hid_cfg->pairing]);
 

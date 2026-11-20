@@ -54,8 +54,49 @@ static const float trigger_value[RA_TRIGGER_COUNT] = {
     -40.0f,
 };
 
-/** Hopping takes the frequency out of the user's hands, so the item says so instead. */
+#define RA_FREQUENCY_TEXT_SIZE 10
+
+/* The frequencies' and modulations' texts, for the list to show every value: made on enter,
+ * freed on exit after the list that points at them is reset */
+static char* ra_frequency_text_buffer;
+static const char** ra_frequency_texts;
+static const char** ra_preset_texts;
+
+static void ra_scene_read_config_make_texts(SubGhzSetting* setting) {
+    const size_t frequencies = subghz_setting_get_frequency_count(setting);
+    const size_t presets = subghz_setting_get_preset_count(setting);
+    ra_frequency_text_buffer = malloc(MAX(frequencies, 1U) * RA_FREQUENCY_TEXT_SIZE);
+    ra_frequency_texts = malloc(MAX(frequencies, 1U) * sizeof(const char*));
+    for(size_t i = 0; i < frequencies; i++) {
+        char* text = ra_frequency_text_buffer + i * RA_FREQUENCY_TEXT_SIZE;
+        const uint32_t frequency = subghz_setting_get_frequency(setting, i);
+        snprintf(
+            text,
+            RA_FREQUENCY_TEXT_SIZE,
+            "%lu.%02lu",
+            frequency / 1000000,
+            (frequency % 1000000) / 10000);
+        ra_frequency_texts[i] = text;
+    }
+    ra_preset_texts = malloc(MAX(presets, 1U) * sizeof(const char*));
+    for(size_t i = 0; i < presets; i++) {
+        ra_preset_texts[i] = subghz_setting_get_preset_name(setting, i);
+    }
+}
+
+static void ra_scene_read_config_free_texts(void) {
+    free(ra_frequency_text_buffer);
+    free(ra_frequency_texts);
+    free(ra_preset_texts);
+    ra_frequency_text_buffer = NULL;
+    ra_frequency_texts = NULL;
+    ra_preset_texts = NULL;
+}
+
+/** Hopping takes the frequency out of the user's hands, so the item says so instead: locked,
+ * and OK on it tells why. */
 static void ra_scene_read_config_frequency_text(RemoteAnalyzer* app, VariableItem* item) {
+    variable_item_set_locked(item, app->settings.hopping, "Hopping picks\nthe frequency");
     if(app->settings.hopping) {
         variable_item_set_current_value_text(item, "-----");
         return;
@@ -165,6 +206,7 @@ void ra_scene_read_config_on_enter(void* context) {
     SubGhzSetting* setting = ra_radio_get_setting(app->radio);
     VariableItem* item;
     uint8_t value_index;
+    ra_scene_read_config_make_texts(setting);
 
     item = variable_item_list_add(
         app->var_item_list,
@@ -173,6 +215,7 @@ void ra_scene_read_config_on_enter(void* context) {
         ra_scene_read_config_set_frequency,
         app);
     value_index = ra_scene_read_config_frequency_index(app, app->settings.frequency);
+    variable_item_set_values_text(item, ra_frequency_texts);
     variable_item_set_current_value_index(item, value_index);
     ra_scene_read_config_frequency_text(app, item);
 
@@ -183,6 +226,7 @@ void ra_scene_read_config_on_enter(void* context) {
         ra_scene_read_config_set_modulation,
         app);
     value_index = app->settings.preset_index;
+    variable_item_set_values_text(item, ra_preset_texts);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(
         item, subghz_setting_get_preset_name(setting, value_index));
@@ -195,6 +239,7 @@ void ra_scene_read_config_on_enter(void* context) {
     value_index = app->settings.hopping ?
                       ra_scene_read_config_trigger_index(app->settings.rssi_trigger) + 1 :
                       0;
+    variable_item_set_values_text(item, hopping_text);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, hopping_text[value_index]);
 
@@ -202,6 +247,7 @@ void ra_scene_read_config_on_enter(void* context) {
     item = variable_item_list_add(
         app->var_item_list, "Sound", COMBO_BOX_COUNT, ra_scene_read_config_set_sound, app);
     value_index = app->settings.sound ? 1 : 0;
+    variable_item_set_values_text(item, combobox_text);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, combobox_text[value_index]);
 
@@ -210,6 +256,7 @@ void ra_scene_read_config_on_enter(void* context) {
     item = variable_item_list_add(
         app->var_item_list, "Mod. sweep", COMBO_BOX_COUNT, ra_scene_read_config_set_sweep, app);
     value_index = app->settings.sweep ? 1 : 0;
+    variable_item_set_values_text(item, combobox_text);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, combobox_text[value_index]);
 
@@ -218,6 +265,7 @@ void ra_scene_read_config_on_enter(void* context) {
     item = variable_item_list_add(
         app->var_item_list, "Notify", COMBO_BOX_COUNT, ra_scene_read_config_set_alert, app);
     value_index = app->settings.alert ? 1 : 0;
+    variable_item_set_values_text(item, combobox_text);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, combobox_text[value_index]);
 
@@ -250,5 +298,6 @@ void ra_scene_read_config_on_exit(void* context) {
     RemoteAnalyzer* app = context;
     variable_item_list_set_selected_item(app->var_item_list, 0);
     variable_item_list_reset(app->var_item_list);
+    ra_scene_read_config_free_texts();
     ra_settings_save(&app->settings);
 }

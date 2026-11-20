@@ -33,6 +33,28 @@ static const char* const t5577_app_bitrates[] = {
 
 static const char* const t5577_app_switch[] = {"Off", "On"};
 
+// The pickers' texts, for the list to show every value (the modulations' names as above)
+static const char* const t5577_app_modulation_names[] = {
+    "Direct",
+    "PSK1",
+    "PSK2",
+    "PSK3",
+    "FSK1",
+    "FSK2",
+    "FSK1a",
+    "FSK2a",
+    "ASK/MC",
+    "Biphase",
+    "Diphase",
+};
+static const char* const t5577_app_block_counts[] = {"0", "1", "2", "3", "4", "5", "6", "7"};
+_Static_assert(
+    COUNT_OF(t5577_app_modulation_names) == COUNT_OF(t5577_app_modulations),
+    "a name for every modulation");
+_Static_assert(
+    COUNT_OF(t5577_app_block_counts) == LFRFID_T5577_BLOCKS_IN_PAGE_0,
+    "a text for every block count");
+
 // A modulation this screen has no name for, shown rather than silently called Direct: the field
 // is five bits and only eleven of its thirty-two values are named.
 #define T5577_APP_CONFIG_UNNAMED "?"
@@ -185,6 +207,12 @@ void t5577_app_scene_edit_config_on_enter(void* context) {
     // One value rather than none: a row with no values takes no text, and this one is the word.
     app->config_item[ConfigItemWord] =
         variable_item_list_add(app->config_list, "Word", 1, NULL, app);
+
+    variable_item_set_values_text(
+        app->config_item[ConfigItemModulation], t5577_app_modulation_names);
+    variable_item_set_values_text(app->config_item[ConfigItemBitrate], t5577_app_bitrates);
+    variable_item_set_values_text(app->config_item[ConfigItemBlocks], t5577_app_block_counts);
+    variable_item_set_values_text(app->config_item[ConfigItemPassword], t5577_app_switch);
 
     const bool named = t5577_app_modulation_index(t5577_config_modulation(block0), &modulation);
     variable_item_set_current_value_index(app->config_item[ConfigItemModulation], modulation);

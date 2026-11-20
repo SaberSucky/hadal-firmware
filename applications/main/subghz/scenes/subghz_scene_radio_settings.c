@@ -168,6 +168,7 @@ void subghz_scene_radio_settings_on_enter(void* context) {
     value_index = value_index_uint32(
         subghz_txrx_radio_device_get(subghz->txrx), radio_device_value, value_count_device);
     variable_item_set_current_value_index(item, value_index);
+    variable_item_set_values_text(item, radio_device_text);
     variable_item_set_current_value_text(item, radio_device_text[value_index]);
 
     //Add TX Power
@@ -180,6 +181,7 @@ void subghz_scene_radio_settings_on_enter(void* context) {
 
     value_index = subghz->tx_power;
     variable_item_set_current_value_index(item, value_index);
+    variable_item_set_values_text(item, tx_power_text);
     variable_item_set_current_value_text(item, tx_power_text[value_index]);
 
     item = variable_item_list_add(
@@ -190,6 +192,7 @@ void subghz_scene_radio_settings_on_enter(void* context) {
         subghz);
     value_index = subghz->last_settings->protocol_file_names;
     variable_item_set_current_value_index(item, value_index);
+    variable_item_set_values_text(item, on_off_text);
     variable_item_set_current_value_text(item, on_off_text[value_index]);
 
     item = variable_item_list_add(
@@ -205,6 +208,7 @@ void subghz_scene_radio_settings_on_enter(void* context) {
     furi_hal_subghz_set_rolling_counter_mult(debug_counter_val[value_index]);
 
     variable_item_set_current_value_index(item, value_index);
+    variable_item_set_values_text(item, debug_counter_text);
     variable_item_set_current_value_text(item, debug_counter_text[value_index]);
 
     if(furi_hal_rtc_is_flag_set(FuriHalRtcFlagDebug)) {
@@ -216,6 +220,7 @@ void subghz_scene_radio_settings_on_enter(void* context) {
             subghz);
         value_index = subghz->last_settings->leds_and_amp ? 1 : 0;
         variable_item_set_current_value_index(item, value_index);
+        variable_item_set_values_text(item, on_off_text);
         variable_item_set_current_value_text(item, on_off_text[value_index]);
 
         item = variable_item_list_add(
@@ -226,6 +231,7 @@ void subghz_scene_radio_settings_on_enter(void* context) {
             subghz);
         value_index = subghz_txrx_get_debug_pin_state(subghz->txrx);
         variable_item_set_current_value_index(item, value_index);
+        variable_item_set_values_text(item, debug_pin_text);
         variable_item_set_current_value_text(item, debug_pin_text[value_index]);
     }
 

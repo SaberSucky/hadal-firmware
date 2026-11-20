@@ -26,7 +26,7 @@ enum SubGhzSettingIndex {
 
 #define RAW_THRESHOLD_RSSI_COUNT 11
 const char* const raw_threshold_rssi_text[RAW_THRESHOLD_RSSI_COUNT] = {
-    "-----",
+    "Off", // records everything
     "-85.0",
     "-80.0",
     "-75.0",
@@ -106,6 +106,52 @@ const char* const combobox_text[COMBO_BOX_COUNT] = {
     "ON",
 };
 
+#define HOPPING_LOCKED_TEXT "Hopping picks\nthe frequency"
+
+/* The texts of the frequencies and modulations the setting file gives, for the list to show them
+ * all (a meter and a list of every frequency, a dropdown of the modulations): made on enter,
+ * freed on exit, after the list that points at them is reset */
+static char* frequency_text_buffer;
+static const char** frequency_texts;
+static const char** preset_texts;
+
+#define FREQUENCY_TEXT_SIZE 10
+
+static void subghz_scene_receiver_config_format_frequency(char* text, uint32_t frequency) {
+    snprintf(
+        text,
+        FREQUENCY_TEXT_SIZE,
+        "%lu.%02lu",
+        frequency / 1000000,
+        (frequency % 1000000) / 10000);
+}
+
+static void subghz_scene_receiver_config_make_texts(SubGhzSetting* setting) {
+    const size_t frequencies = subghz_setting_get_frequency_count(setting);
+    const size_t presets = subghz_setting_get_preset_count(setting);
+    frequency_text_buffer = malloc(MAX(frequencies, 1U) * FREQUENCY_TEXT_SIZE);
+    frequency_texts = malloc(MAX(frequencies, 1U) * sizeof(const char*));
+    for(size_t i = 0; i < frequencies; i++) {
+        char* text = frequency_text_buffer + i * FREQUENCY_TEXT_SIZE;
+        subghz_scene_receiver_config_format_frequency(
+            text, subghz_setting_get_frequency(setting, i));
+        frequency_texts[i] = text;
+    }
+    preset_texts = malloc(MAX(presets, 1U) * sizeof(const char*));
+    for(size_t i = 0; i < presets; i++) {
+        preset_texts[i] = subghz_setting_get_preset_name(setting, i);
+    }
+}
+
+static void subghz_scene_receiver_config_free_texts(void) {
+    free(frequency_text_buffer);
+    free(frequency_texts);
+    free(preset_texts);
+    frequency_text_buffer = NULL;
+    frequency_texts = NULL;
+    preset_texts = NULL;
+}
+
 static void
     subghz_scene_receiver_config_set_ignore_filter(VariableItem* item, SubGhzProtocolFlag filter) {
     SubGhz* subghz = variable_item_get_context(item);
@@ -178,16 +224,11 @@ static void subghz_scene_receiver_config_set_frequency(VariableItem* item) {
     SubGhzSetting* setting = subghz_txrx_get_setting(subghz->txrx);
 
     if(subghz_txrx_hopper_get_state(subghz->txrx) == SubGhzHopperStateOFF) {
-        char text_buf[10] = {0};
+        char text_buf[FREQUENCY_TEXT_SIZE] = {0};
         uint32_t frequency = subghz_setting_get_frequency(setting, index);
         SubGhzRadioPreset preset = subghz_txrx_get_preset(subghz->txrx);
 
-        snprintf(
-            text_buf,
-            sizeof(text_buf),
-            "%lu.%02lu",
-            frequency / 1000000,
-            (frequency % 1000000) / 10000);
+        subghz_scene_receiver_config_format_frequency(text_buf, frequency);
         variable_item_set_current_value_text(item, text_buf);
 
         //Set TX Power
@@ -240,17 +281,15 @@ static void subghz_scene_receiver_config_set_hopping(VariableItem* item) {
 
     variable_item_set_current_value_text(item, hopping_mode_text[index]);
 
+    // while hopping, the hopper picks the frequency: the item says so instead of seeming to
+    // change and jumping back
+    variable_item_set_locked(frequency_item, index != 0, HOPPING_LOCKED_TEXT);
     if(index == 0) {
-        char text_buf[10] = {0};
+        char text_buf[FREQUENCY_TEXT_SIZE] = {0};
         uint32_t frequency = subghz_setting_get_default_frequency(setting);
         SubGhzRadioPreset preset = subghz_txrx_get_preset(subghz->txrx);
 
-        snprintf(
-            text_buf,
-            sizeof(text_buf),
-            "%lu.%02lu",
-            frequency / 1000000,
-            (frequency % 1000000) / 10000);
+        subghz_scene_receiver_config_format_frequency(text_buf, frequency);
         variable_item_set_current_value_text(frequency_item, text_buf);
 
         //Edit TX power, if necessary.
@@ -447,6 +486,7 @@ void subghz_scene_receiver_config_on_enter(void* context) {
     uint8_t value_index;
     SubGhzSetting* setting = subghz_txrx_get_setting(subghz->txrx);
     SubGhzRadioPreset preset = subghz_txrx_get_preset(subghz->txrx);
+    subghz_scene_receiver_config_make_texts(setting);
 
     item = variable_item_list_add(
         subghz->variable_item_list,
@@ -458,14 +498,10 @@ void subghz_scene_receiver_config_on_enter(void* context) {
     scene_manager_set_scene_state(
         subghz->scene_manager, SubGhzSceneReceiverConfig, (uint32_t)item);
     variable_item_set_current_value_index(item, value_index);
-    char text_buf[10] = {0};
+    variable_item_set_values_text(item, frequency_texts);
+    char text_buf[FREQUENCY_TEXT_SIZE] = {0};
     uint32_t frequency = subghz_setting_get_frequency(setting, value_index);
-    snprintf(
-        text_buf,
-        sizeof(text_buf),
-        "%lu.%02lu",
-        frequency / 1000000,
-        (frequency % 1000000) / 10000);
+    subghz_scene_receiver_config_format_frequency(text_buf, frequency);
     variable_item_set_current_value_text(item, text_buf);
 
     item = variable_item_list_add(
@@ -477,6 +513,7 @@ void subghz_scene_receiver_config_on_enter(void* context) {
     value_index =
         subghz_scene_receiver_config_next_preset(furi_string_get_cstr(preset.name), subghz);
     variable_item_set_current_value_index(item, value_index);
+    variable_item_set_values_text(item, preset_texts);
     variable_item_set_current_value_text(
         item, subghz_setting_get_preset_name(setting, value_index));
 
@@ -492,7 +529,12 @@ void subghz_scene_receiver_config_on_enter(void* context) {
             subghz);
 
         variable_item_set_current_value_index(item, value_index);
+        variable_item_set_values_text(item, hopping_mode_text);
         variable_item_set_current_value_text(item, hopping_mode_text[value_index]);
+        variable_item_set_locked(
+            variable_item_list_get(subghz->variable_item_list, SubGhzSettingIndexFrequency),
+            value_index != 0,
+            HOPPING_LOCKED_TEXT);
     }
 
     if(scene_manager_get_scene_state(subghz->scene_manager, SubGhzSceneReadRAW) !=
@@ -506,6 +548,7 @@ void subghz_scene_receiver_config_on_enter(void* context) {
 
         value_index = value_index_uint32(subghz->filter, bin_raw_value, COMBO_BOX_COUNT);
         variable_item_set_current_value_index(item, value_index);
+        variable_item_set_values_text(item, combobox_text);
         variable_item_set_current_value_text(item, combobox_text[value_index]);
     }
 
@@ -521,6 +564,7 @@ void subghz_scene_receiver_config_on_enter(void* context) {
         value_index = subghz_scene_receiver_config_ignore_filter_get_index(
             subghz->ignore_filter, SubGhzProtocolFlag_ReversRB2);
         variable_item_set_current_value_index(item, value_index);
+        variable_item_set_values_text(item, combobox_text);
         variable_item_set_current_value_text(item, combobox_text[value_index]);
 
         item = variable_item_list_add(
@@ -533,6 +577,7 @@ void subghz_scene_receiver_config_on_enter(void* context) {
         value_index = subghz_scene_receiver_config_ignore_filter_get_index(
             subghz->ignore_filter, SubGhzProtocolFlag_Alarms);
         variable_item_set_current_value_index(item, value_index);
+        variable_item_set_values_text(item, combobox_text);
         variable_item_set_current_value_text(item, combobox_text[value_index]);
 
         item = variable_item_list_add(
@@ -545,6 +590,7 @@ void subghz_scene_receiver_config_on_enter(void* context) {
         value_index = subghz_scene_receiver_config_ignore_filter_get_index(
             subghz->ignore_filter, SubGhzProtocolFlag_Sensors);
         variable_item_set_current_value_index(item, value_index);
+        variable_item_set_values_text(item, combobox_text);
         variable_item_set_current_value_text(item, combobox_text[value_index]);
 
         item = variable_item_list_add(
@@ -557,6 +603,7 @@ void subghz_scene_receiver_config_on_enter(void* context) {
         value_index = subghz_scene_receiver_config_ignore_filter_get_index(
             subghz->ignore_filter, SubGhzProtocolFlag_Princeton);
         variable_item_set_current_value_index(item, value_index);
+        variable_item_set_values_text(item, combobox_text);
         variable_item_set_current_value_text(item, combobox_text[value_index]);
 
         item = variable_item_list_add(
@@ -569,6 +616,7 @@ void subghz_scene_receiver_config_on_enter(void* context) {
         value_index = subghz_scene_receiver_config_ignore_filter_get_index(
             subghz->ignore_filter, SubGhzProtocolFlag_NiceFlorS);
         variable_item_set_current_value_index(item, value_index);
+        variable_item_set_values_text(item, combobox_text);
         variable_item_set_current_value_text(item, combobox_text[value_index]);
 
         item = variable_item_list_add(
@@ -580,6 +628,7 @@ void subghz_scene_receiver_config_on_enter(void* context) {
 
         value_index = subghz->last_settings->delete_old_signals;
         variable_item_set_current_value_index(item, value_index);
+        variable_item_set_values_text(item, combobox_text);
         variable_item_set_current_value_text(item, combobox_text[value_index]);
 
         // a signal already anywhere in the list: shown again, or not
@@ -591,6 +640,7 @@ void subghz_scene_receiver_config_on_enter(void* context) {
             subghz);
         value_index = subghz->last_settings->skip_duplicates;
         variable_item_set_current_value_index(item, value_index);
+        variable_item_set_values_text(item, duplicates_text);
         variable_item_set_current_value_text(item, duplicates_text[value_index]);
 
         // every new signal saved to /ext/subghz/autosave
@@ -602,6 +652,7 @@ void subghz_scene_receiver_config_on_enter(void* context) {
             subghz);
         value_index = subghz->last_settings->autosave;
         variable_item_set_current_value_index(item, value_index);
+        variable_item_set_values_text(item, combobox_text);
         variable_item_set_current_value_text(item, combobox_text[value_index]);
 
         // where each signal was received, from the Flipper app on a paired phone
@@ -613,6 +664,7 @@ void subghz_scene_receiver_config_on_enter(void* context) {
             subghz);
         value_index = subghz->last_settings->location;
         variable_item_set_current_value_index(item, value_index);
+        variable_item_set_values_text(item, location_text);
         variable_item_set_current_value_text(item, location_text[value_index]);
 
         // OK forgets the signals Ignore put aside
@@ -630,7 +682,8 @@ void subghz_scene_receiver_config_on_enter(void* context) {
     value_index = value_index_uint32(
         subghz_txrx_speaker_get_state(subghz->txrx), speaker_value, COMBO_BOX_COUNT);
     variable_item_set_current_value_index(item, value_index);
-    variable_item_set_current_value_text(item, combobox_text[value_index]);
+    variable_item_set_values_text(item, combobox_text);
+        variable_item_set_current_value_text(item, combobox_text[value_index]);
 
     if(scene_manager_get_scene_state(subghz->scene_manager, SubGhzSceneReadRAW) !=
        SubGhzCustomEventManagerSet) {
@@ -665,6 +718,7 @@ void subghz_scene_receiver_config_on_enter(void* context) {
             raw_threshold_rssi_value,
             RAW_THRESHOLD_RSSI_COUNT);
         variable_item_set_current_value_index(item, value_index);
+        variable_item_set_values_text(item, raw_threshold_rssi_text);
         variable_item_set_current_value_text(item, raw_threshold_rssi_text[value_index]);
     }
     view_dispatcher_switch_to_view(subghz->view_dispatcher, SubGhzViewIdVariableItemList);
@@ -691,6 +745,7 @@ void subghz_scene_receiver_config_on_exit(void* context) {
     SubGhz* subghz = context;
     variable_item_list_set_selected_item(subghz->variable_item_list, 0);
     variable_item_list_reset(subghz->variable_item_list);
+    subghz_scene_receiver_config_free_texts();
 
     subghz_last_settings_save(subghz->last_settings);
     scene_manager_set_scene_state(

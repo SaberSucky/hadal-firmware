@@ -8,6 +8,12 @@ enum VarItemListIndex {
     VarItemListIndexAbout,
 };
 
+static const char* const interval_text[] =
+    {"1s", "2s", "3s", "4s", "5s", "6s", "7s", "8s", "9s", "10s"};
+static const char* const power_text[] =
+    {"0dBm", "1dBm", "2dBm", "3dBm", "4dBm", "5dBm", "6dBm"};
+static const char* const show_mac_text[] = {"No", "Yes"};
+
 void findmy_scene_config_broadcast_interval_changed(VariableItem* item) {
     FindMy* app = variable_item_get_context(item);
     uint8_t index = variable_item_get_current_value_index(item);
@@ -64,6 +70,7 @@ void findmy_scene_config_on_enter(void* context) {
             app);
     }
     // Broadcast Interval is 1-10, so use 0-9 and offset indexes by 1
+    variable_item_set_values_text(item, interval_text);
     variable_item_set_current_value_index(item, app->state.broadcast_interval - 1);
     char interval_str[5];
     snprintf(interval_str, sizeof(interval_str), "%ds", app->state.broadcast_interval);
@@ -71,6 +78,7 @@ void findmy_scene_config_on_enter(void* context) {
 
     item = variable_item_list_add(
         var_item_list, "Transmit Power", 7, findmy_scene_config_transmit_power_changed, app);
+    variable_item_set_values_text(item, power_text);
     variable_item_set_current_value_index(item, app->state.transmit_power);
     char power_str[7];
     snprintf(power_str, sizeof(power_str), "%ddBm", app->state.transmit_power);
@@ -79,6 +87,7 @@ void findmy_scene_config_on_enter(void* context) {
     item = variable_item_list_add(var_item_list, "Register Tag", 0, NULL, NULL);
 
     item = variable_item_list_add(var_item_list, "Show MAC", 2, findmy_scene_config_show_mac, app);
+    variable_item_set_values_text(item, show_mac_text);
     variable_item_set_current_value_index(item, app->state.show_mac);
     variable_item_set_current_value_text(item, app->state.show_mac ? "Yes" : "No");
 

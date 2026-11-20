@@ -113,14 +113,18 @@ void variable_item_set_current_value_text(VariableItem* item, const char* curren
 
 /** Give every value's text, so the list can show the item as a control that suits it.
  *
- * Two or three short values are drawn side by side, the chosen one filled; more are a
- * dropdown: OK opens them as a list to choose from. Either way Left and Right still step
- * through the values. An On/Off item is a switch, whose value OK turns over. In every case the
- * list's enter callback no longer hears OK on this item.
+ * The control depends only on the values, never on the one chosen, so an item looks the same
+ * whichever it shows:
+ * - two values that are on and off (in either order): a switch, which OK turns over
+ * - five values or more that are all numbers ("70%", "-3 dB", "433.92", the first one perhaps
+ *   "Off"): a meter, the value over a bar of how far along it is; OK lists them all
+ * - two or three short values: buttons side by side, the chosen one filled; OK picks the next
+ * - more, or longer: a dropdown, the value and a chevron; OK opens them as a list
+ * Left and Right always step through the values, and the list's enter callback does not hear
+ * OK on such an item (only on a locked one, an action or an item without texts).
  *
- * Items without their texts are drawn as before: a switch for On/Off, a meter for numbers with
- * many steps, arrows for the rest; OK on a switch turns it over only in a list that has no
- * enter callback.
+ * An item without its values' texts is drawn as arrows, "< value >", as stock lists are (its
+ * other values cannot be known, so no guess is made from the one on show).
  *
  * @param      item         VariableItem* instance
  * @param      values_text  the texts, values_count of them, kept by pointer: they must

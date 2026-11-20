@@ -15,6 +15,10 @@ typedef struct {
     ViewDispatcher* view_dispatcher;
     VariableItemList* variable_item_list;
     VariableItemList* variable_item_list_rgb;
+    // the RGB list's values as text, for its controls: the colours' names, the saturations
+    const char** color_texts;
+    char (*saturation_text_buffer)[4];
+    const char** saturation_texts;
 } NotificationAppSettings;
 
 static const NotificationSequence sequence_note_c = {
@@ -717,6 +721,16 @@ static NotificationAppSettings* alloc_settings(void) {
     //--- RGB BACKLIGHT END ---
 
     app->variable_item_list_rgb = variable_item_list_alloc();
+    app->color_texts = malloc(rgb_backlight_get_color_count() * sizeof(const char*));
+    for(uint8_t i = 0; i < rgb_backlight_get_color_count(); i++) {
+        app->color_texts[i] = rgb_backlight_get_color_text(i);
+    }
+    app->saturation_text_buffer = malloc(255 * sizeof(*app->saturation_text_buffer));
+    app->saturation_texts = malloc(255 * sizeof(const char*));
+    for(size_t i = 0; i < 255; i++) {
+        snprintf(app->saturation_text_buffer[i], sizeof(app->saturation_text_buffer[i]), "%u", (unsigned)i);
+        app->saturation_texts[i] = app->saturation_text_buffer[i];
+    }
     View* view_rgb = variable_item_list_get_view(app->variable_item_list_rgb);
 
     // set callback for exit from rgb settings menu
@@ -746,6 +760,7 @@ static NotificationAppSettings* alloc_settings(void) {
         app);
     value_index = app->notification->settings.rgb.led_2_color_index;
     variable_item_set_current_value_index(item, value_index);
+    variable_item_set_values_text(item, app->color_texts);
     variable_item_set_current_value_text(item, rgb_backlight_get_color_text(value_index));
     variable_item_set_locked(
         item, (app->notification->settings.rgb.rgb_backlight_installed == 0), "RGB MOD \nOFF!");
@@ -759,6 +774,7 @@ static NotificationAppSettings* alloc_settings(void) {
         app);
     value_index = app->notification->settings.rgb.led_1_color_index;
     variable_item_set_current_value_index(item, value_index);
+    variable_item_set_values_text(item, app->color_texts);
     variable_item_set_current_value_text(item, rgb_backlight_get_color_text(value_index));
     variable_item_set_locked(
         item, (app->notification->settings.rgb.rgb_backlight_installed == 0), "RGB MOD \nOFF!");
@@ -772,6 +788,7 @@ static NotificationAppSettings* alloc_settings(void) {
         app);
     value_index = app->notification->settings.rgb.led_0_color_index;
     variable_item_set_current_value_index(item, value_index);
+    variable_item_set_values_text(item, app->color_texts);
     variable_item_set_current_value_text(item, rgb_backlight_get_color_text(value_index));
     variable_item_set_locked(
         item, (app->notification->settings.rgb.rgb_backlight_installed == 0), "RGB MOD \nOFF!");
@@ -835,6 +852,7 @@ static NotificationAppSettings* alloc_settings(void) {
     variable_item_set_current_value_index(item, value_index);
     char valtext[4] = {};
     snprintf(valtext, sizeof(valtext), "%d", value_index);
+    variable_item_set_values_text(item, app->saturation_texts);
     variable_item_set_current_value_text(item, valtext);
     variable_item_set_locked(
         item, (app->notification->settings.rgb.rgb_backlight_installed == 0), "RGB MOD \nOFF!");
@@ -870,6 +888,9 @@ static void free_settings(NotificationAppSettings* app) {
     view_dispatcher_remove_view(app->view_dispatcher, RGBViewId);
     variable_item_list_free(app->variable_item_list);
     variable_item_list_free(app->variable_item_list_rgb);
+    free(app->color_texts);
+    free(app->saturation_text_buffer);
+    free(app->saturation_texts);
     view_dispatcher_free(app->view_dispatcher);
 
     furi_record_close(RECORD_GUI);

@@ -32,6 +32,10 @@ typedef enum {
     DisplayTestViewDisplayTest,
 } DisplayTestView;
 
+// the contrast item's 64 values as text, for its meter
+static char contrast_text_buffer[64][3];
+static const char* contrast_texts[64];
+
 const bool config_bias_value[] = {
     true,
     false,
@@ -153,6 +157,7 @@ DisplayTest* display_test_alloc(void) {
         COUNT_OF(config_bias_value),
         display_config_set_bias,
         instance);
+    variable_item_set_values_text(item, config_bias_text);
     variable_item_set_current_value_index(item, 1);
     variable_item_set_current_value_text(item, config_bias_text[1]);
     // Regulation Ratio
@@ -162,11 +167,17 @@ DisplayTest* display_test_alloc(void) {
         COUNT_OF(config_regulation_ratio_value),
         display_config_set_regulation_ratio,
         instance);
+    variable_item_set_values_text(item, config_regulation_ratio_text);
     variable_item_set_current_value_index(item, 5);
     variable_item_set_current_value_text(item, config_regulation_ratio_text[5]);
     // Contrast
     item = variable_item_list_add(
         instance->variable_item_list, "Contrast:", 64, display_config_set_contrast, instance);
+    for(size_t i = 0; i < COUNT_OF(contrast_texts); i++) {
+        snprintf(contrast_text_buffer[i], sizeof(contrast_text_buffer[i]), "%u", (unsigned)i);
+        contrast_texts[i] = contrast_text_buffer[i];
+    }
+    variable_item_set_values_text(item, contrast_texts);
     variable_item_set_current_value_index(item, 32);
     variable_item_set_current_value_text(item, "32");
 

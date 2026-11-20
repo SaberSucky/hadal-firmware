@@ -220,6 +220,7 @@ void subghz_scene_signal_settings_on_enter(void* context) {
         subghz);
     value_index = value_index_int32(counter_mode, counter_mode_value, mode_count);
     variable_item_set_current_value_index(item, value_index);
+    variable_item_set_values_text(item, counter_mode_text);
     variable_item_set_current_value_text(item, counter_mode_text[value_index]);
     variable_item_set_locked(item, (counter_mode == 0xff), "Not available\nfor this\nprotocol !");
     //

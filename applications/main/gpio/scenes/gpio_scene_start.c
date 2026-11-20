@@ -60,6 +60,7 @@ void gpio_scene_start_on_enter(void* context) {
         GpioOtgSettingsNum,
         gpio_scene_start_var_list_change_callback,
         app);
+    variable_item_set_values_text(item, gpio_otg_text);
     if(power_is_otg_enabled(app->power)) {
         variable_item_set_current_value_index(item, GpioOtgOn);
         variable_item_set_current_value_text(item, gpio_otg_text[GpioOtgOn]);

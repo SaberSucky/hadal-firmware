@@ -20,15 +20,7 @@ static void ibutton_settings_write_targets_changed(VariableItem* item) {
     }
 }
 
-// OK toggles the highlighted blank type, so the list is usable without discovering left/right.
-static void ibutton_settings_write_targets_entered(void* context, uint32_t index) {
-    VariableItem* item = variable_item_list_get(context, index);
-    furi_check(item); // the list holds one row per target and nothing else
-
-    variable_item_set_current_value_index(
-        item, variable_item_get_current_value_index(item) ? 0 : 1);
-    ibutton_settings_write_targets_changed(item);
-}
+static const char* const write_target_text[] = {"OFF", "ON"};
 
 static void ibutton_settings_write_targets_on_enter(VariableItemList* list) {
     page.mask = ibutton_settings_get_write_targets();
@@ -43,11 +35,12 @@ static void ibutton_settings_write_targets_on_enter(VariableItemList* list) {
             ibutton_settings_write_targets_changed,
             (void*)(uintptr_t)target);
 
+        // a switch: OK turns it over, as Left and Right do
+        variable_item_set_values_text(item, write_target_text);
         variable_item_set_current_value_index(item, enabled ? 1 : 0);
         variable_item_set_current_value_text(item, enabled ? "ON" : "OFF");
     }
 
-    variable_item_list_set_enter_callback(list, ibutton_settings_write_targets_entered, list);
 }
 
 static bool ibutton_settings_write_targets_on_save(void) {

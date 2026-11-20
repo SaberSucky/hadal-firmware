@@ -1,18 +1,18 @@
 #include "../infrared_app_i.h"
 
-static const char* infrared_scene_gpio_settings_pin_text[] = {
+static const char* const infrared_scene_gpio_settings_pin_text[] = {
     "Flipper",
     "2 (A7)",
     "Detect",
 };
 
-static const char* infrared_scene_gpio_settings_otg_text[] = {
+static const char* const infrared_scene_gpio_settings_otg_text[] = {
     "OFF",
     "ON",
 };
 
 // Indexed by InfraredTxSpeed
-static const char* infrared_scene_gpio_settings_speed_text[] = {
+static const char* const infrared_scene_gpio_settings_speed_text[] = {
     "Normal",
     "Fast",
     "Turbo",
@@ -62,6 +62,7 @@ static void infrared_scene_gpio_settings_init(InfraredApp* infrared) {
 
     value_index = infrared->app_state.universal_speed;
     variable_item_set_current_value_index(item, value_index);
+    variable_item_set_values_text(item, infrared_scene_gpio_settings_speed_text);
     variable_item_set_current_value_text(
         item, infrared_scene_gpio_settings_speed_text[value_index]);
 
@@ -74,6 +75,7 @@ static void infrared_scene_gpio_settings_init(InfraredApp* infrared) {
 
     value_index = infrared->app_state.tx_pin;
     variable_item_set_current_value_index(item, value_index);
+    variable_item_set_values_text(item, infrared_scene_gpio_settings_pin_text);
     variable_item_set_current_value_text(item, infrared_scene_gpio_settings_pin_text[value_index]);
 
     item = variable_item_list_add(
@@ -86,6 +88,7 @@ static void infrared_scene_gpio_settings_init(InfraredApp* infrared) {
     if(infrared->app_state.tx_pin < FuriHalInfraredTxPinMax) {
         value_index = infrared->app_state.is_otg_enabled;
         variable_item_set_current_value_index(item, value_index);
+        variable_item_set_values_text(item, infrared_scene_gpio_settings_otg_text);
         variable_item_set_current_value_text(
             item, infrared_scene_gpio_settings_otg_text[value_index]);
     } else {

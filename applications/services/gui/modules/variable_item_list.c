@@ -37,6 +37,8 @@ struct VariableItem {
     FuriString* current_value_text;
     const char* const* values_text; // every value's text, when the app gave them
     uint8_t values_count;
+    uint8_t control; // VariableItemControl, as last drawn: what OK does
+
     VariableItemChangeCallback change_callback;
     bool locked;
     FuriString* locked_message;
@@ -85,27 +87,38 @@ static bool variable_item_text_is(const char* text, const char* const* words) {
 static const char* const switch_on_words[] = {"on", "yes", "enabled", "enable", "true", NULL};
 static const char* const switch_off_words[] = {"off", "no", "disabled", "disable", "false", NULL};
 
-/** Whether a two-valued item reads as on or off, and which it is now */
+/** Whether an item's two values are an on/off pair (whichever comes first), and whether the one
+ * chosen is "on". Only from the texts the app gave: what one value says cannot tell what the
+ * other is ("Off" may pair with "Phone") */
 static bool variable_item_is_switch(const VariableItem* item, bool* on) {
-    if(item->values_count != 2) return false;
-    const char* text = furi_string_get_cstr(item->current_value_text);
-    if(variable_item_text_is(text, switch_on_words)) {
-        if(on) *on = true;
-        return true;
+    if(!item->values_text || item->values_count != 2) return false;
+    const char* first = item->values_text[0];
+    const char* second = item->values_text[1];
+    const bool pair = (variable_item_text_is(first, switch_off_words) &&
+                       variable_item_text_is(second, switch_on_words)) ||
+                      (variable_item_text_is(first, switch_on_words) &&
+                       variable_item_text_is(second, switch_off_words));
+    if(pair && on) {
+        const uint8_t index = item->current_value_index < 2 ? item->current_value_index : 0;
+        *on = variable_item_text_is(item->values_text[index], switch_on_words);
     }
-    if(variable_item_text_is(text, switch_off_words)) {
-        if(on) *on = false;
-        return true;
-    }
-    return false;
+    return pair;
 }
 
-/** A value that is a number ("70%", "-3 dB", "30s"), or the "Off" that comes before them */
-static bool variable_item_is_number(const VariableItem* item) {
-    const char* text = furi_string_get_cstr(item->current_value_text);
+static bool variable_item_text_is_number(const char* text) {
     if(text[0] == '-' || text[0] == '+') text++;
-    if(text[0] >= '0' && text[0] <= '9') return true;
-    return item->current_value_index == 0 && variable_item_text_is(text, switch_off_words);
+    return text[0] >= '0' && text[0] <= '9';
+}
+
+/** Every value a number ("70%", "-3 dB", "30s", "433.92"), the first one perhaps an "Off" */
+static bool variable_item_is_number(const VariableItem* item) {
+    if(!item->values_text) return false;
+    for(uint8_t i = 0; i < item->values_count; i++) {
+        const char* text = item->values_text[i];
+        if(i == 0 && variable_item_text_is(text, switch_off_words)) continue;
+        if(!variable_item_text_is_number(text)) return false;
+    }
+    return true;
 }
 
 /** The segments' total width, or 0 when they do not fit in width */
@@ -117,21 +130,21 @@ static uint16_t variable_item_segments_width(Canvas* canvas, const VariableItem*
     return total <= width ? total : 0;
 }
 
+/** The control an item is drawn as. It depends only on the item's values, never on the one
+ * chosen, so an item looks the same whichever value it shows. An item without its values' texts
+ * (an app on the SD card written for stock lists) is always arrows: guessing from the one value
+ * on show turned "Off" into a switch and its other value back into arrows */
 static VariableItemControl
     variable_item_control(Canvas* canvas, const VariableItem* item, uint16_t width) {
+    if(!item->values_text || item->values_count < 2) return VariableItemControlArrows;
     if(variable_item_is_switch(item, NULL)) return VariableItemControlSwitch;
-    if(item->values_text) {
-        if(item->values_count <= SEGMENTS_MAX && variable_item_segments_width(canvas, item, width)) {
-            return VariableItemControlSegments;
-        }
-        if(item->values_count > 2 && !variable_item_is_number(item)) {
-            return VariableItemControlDropdown;
-        }
-    }
     if(item->values_count >= METER_MIN_VALUES && variable_item_is_number(item)) {
         return VariableItemControlMeter;
     }
-    return VariableItemControlArrows;
+    if(item->values_count <= SEGMENTS_MAX && variable_item_segments_width(canvas, item, width)) {
+        return VariableItemControlSegments;
+    }
+    return VariableItemControlDropdown;
 }
 
 /** A switch, its right end at x, its top at y: filled with the knob on the right when on */
@@ -224,8 +237,10 @@ static void variable_item_list_draw_dropdown(
     int32_t y = item_y + 8 - height / 2;
     y = CLAMP(y, 64 - ELEMENTS_HINT_BAR_HEIGHT - 1 - height, 1);
 
+    // the rows draw no controls while it is open (their labels only): the box needs only a
+    // clear edge, and the list's scrollbar under it
     canvas_set_color(canvas, ColorWhite);
-    canvas_draw_box(canvas, left - 1, y - 1, width + 2, height + 2);
+    canvas_draw_box(canvas, left - 1, y - 1, 128 - (left - 1), height + 2);
     canvas_set_color(canvas, ColorBlack);
     canvas_draw_rframe(canvas, left, y, width, height, 3);
     canvas_draw_rframe(canvas, left + 1, y, width - 2, height, 3); // a heavier side edge: it floats
@@ -269,7 +284,7 @@ static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
         uint8_t y_offset = 0;
 
         if(item_position < items_on_screen) {
-            const VariableItem* item = VariableItemArray_cref(it);
+            VariableItem* item = VariableItemArray_ref(it);
             uint8_t item_y = y_offset + (item_position * item_height);
             uint8_t item_text_y = item_y + item_height - 4;
             size_t scroll_counter = 0;
@@ -299,6 +314,7 @@ static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
             const VariableItemControl control =
                 item->locked ? VariableItemControlArrows :
                                variable_item_control(canvas, item, SEGMENTS_WIDTH_MAX);
+            item->control = control; // segments or dropdown hangs on the texts' widths
             uint16_t segments = 0;
             if(control == VariableItemControlSwitch) {
                 // the label has the room the arrows took
@@ -324,7 +340,9 @@ static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
             }
 
             bool on = false;
-            if(item->locked) {
+            if(model->dropdown_open) {
+                // the dropdown's list takes the right of the screen: rows show their labels
+            } else if(item->locked) {
                 canvas_draw_icon(canvas, 110, item_text_y - 8, &I_Lock_7x8);
             } else if(control == VariableItemControlSwitch) {
                 variable_item_is_switch(item, &on);
@@ -671,22 +689,33 @@ void variable_item_list_process_ok(VariableItemList* variable_item_list) {
         VariableItemListModel * model,
         {
             VariableItem* item = variable_item_list_get_selected_item(model);
-            // OK works a switch or opens a dropdown for the apps that gave their values' texts
-            // (they know OK is the list's), and for a switch in a list that does not use OK
-            const bool takes_ok = item->values_text || !variable_item_list->callback;
+            // OK belongs to the control of an item whose values the list knows: it turns a
+            // switch over, moves to the next button, opens the list of a dropdown or a meter.
+            // Arrows (an app that gave no texts) leave it to the app, as always
             bool on = false;
             if(item->locked) {
                 model->locked_message_visible = true;
                 furi_timer_start(
                     variable_item_list->locked_timer, furi_kernel_get_tick_frequency() * 3);
-            } else if(takes_ok && variable_item_is_switch(item, &on)) {
+            } else if(item->control == VariableItemControlSwitch && variable_item_is_switch(item, &on)) {
                 item->current_value_index = !item->current_value_index;
                 model->scroll_counter = 0;
                 if(item->change_callback) item->change_callback(item);
-            } else if(item->values_text && item->values_count > 2) {
+            } else if(item->control == VariableItemControlSegments && item->values_count > 1) {
+                item->current_value_index = (item->current_value_index + 1) % item->values_count;
+                model->scroll_counter = 0;
+                if(item->change_callback) item->change_callback(item);
+            } else if(
+                (item->control == VariableItemControlDropdown ||
+                 item->control == VariableItemControlMeter) &&
+                item->values_text) {
                 model->dropdown_open = true;
                 model->dropdown_index = item->current_value_index;
                 model->dropdown_window = 0;
+                // the hint bar covers the bottom row: the item scrolls up to stay in sight
+                if(model->position > model->window_position + 2) {
+                    model->window_position = model->position - 2;
+                }
                 const uint8_t rows = MIN(item->values_count, DROPDOWN_ROWS);
                 if(model->dropdown_index >= rows) model->dropdown_window = model->dropdown_index - rows + 1;
             } else if(variable_item_list->callback) {
@@ -836,6 +865,7 @@ VariableItem* variable_item_list_add(
             item->current_value_index = 0;
             item->current_value_text = furi_string_alloc();
             item->values_text = NULL;
+            item->control = VariableItemControlArrows;
             item->locked = false;
             item->locked_message = furi_string_alloc();
         },

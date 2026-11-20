@@ -406,6 +406,8 @@ static bool clock_input_callback(InputEvent* event, void* context) {
 
 // ---------------- alarm menu (VariableItemList) ----------------
 
+static const char* const alarm_toggle_text[] = {"OFF", "ON"};
+
 static void alarm_toggle_changed(VariableItem* item) {
     AppState* app = variable_item_get_context(item);
     app->settings.alarm_enabled = variable_item_get_current_value_index(item) == 1;
@@ -684,6 +686,7 @@ int32_t clock_app(void* p) {
     app->alarm_menu = variable_item_list_alloc();
     app->alarm_toggle_item =
         variable_item_list_add(app->alarm_menu, "Alarm", 2, alarm_toggle_changed, app);
+    variable_item_set_values_text(app->alarm_toggle_item, alarm_toggle_text);
     variable_item_set_current_value_index(app->alarm_toggle_item, app->settings.alarm_enabled);
     variable_item_set_current_value_text(
         app->alarm_toggle_item, app->settings.alarm_enabled ? "ON" : "OFF");

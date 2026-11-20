@@ -21,15 +21,7 @@ static void lfrfid_settings_write_targets_changed(VariableItem* item) {
     }
 }
 
-// OK toggles the highlighted chip, so the list is usable without discovering left/right.
-static void lfrfid_settings_write_targets_entered(void* context, uint32_t index) {
-    VariableItem* item = variable_item_list_get(context, index);
-    furi_check(item); // the list holds one row per target and nothing else
-
-    variable_item_set_current_value_index(
-        item, variable_item_get_current_value_index(item) ? 0 : 1);
-    lfrfid_settings_write_targets_changed(item);
-}
+static const char* const write_target_text[] = {"OFF", "ON"};
 
 static void lfrfid_settings_write_targets_on_enter(VariableItemList* list) {
     page.mask = lfrfid_settings_get_write_targets();
@@ -45,11 +37,12 @@ static void lfrfid_settings_write_targets_on_enter(VariableItemList* list) {
             lfrfid_settings_write_targets_changed,
             (void*)(uintptr_t)target);
 
+        // a switch: OK turns it over, as Left and Right do
+        variable_item_set_values_text(item, write_target_text);
         variable_item_set_current_value_index(item, enabled ? 1 : 0);
         variable_item_set_current_value_text(item, enabled ? "ON" : "OFF");
     }
 
-    variable_item_list_set_enter_callback(list, lfrfid_settings_write_targets_entered, list);
 }
 
 static bool lfrfid_settings_write_targets_on_save(void) {
