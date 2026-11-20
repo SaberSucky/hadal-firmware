@@ -120,6 +120,14 @@ typedef struct {
     int8_t descent_g;
 } AssetPackFontMetrics;
 
+/** How many pixels taller (or deeper) than the stock font a pack font may be */
+#define ASSET_PACK_FONT_SLACK 3
+
+/** Whether a pack font's metrics are close enough to the stock font's (ASSET_PACK_FONT_SLACK) */
+bool asset_pack_font_metrics_fit(
+    const AssetPackFontMetrics* font,
+    const AssetPackFontMetrics* expected);
+
 /** Read the metrics of a u8g2 font; false if it is shorter than a header. */
 bool asset_pack_font_metrics(const uint8_t* font, size_t size, AssetPackFontMetrics* out);
 
@@ -130,8 +138,8 @@ bool asset_pack_font_metrics(const uint8_t* font, size_t size, AssetPackFontMetr
  * u8g2 trusts font data completely: a corrupt glyph makes its decoder read on past the end of
  * the font, up to a bus fault. So this walks the font the way u8g2 does and refuses anything
  * that could read outside it:
- *  - the layout metrics (height, ascent, descent) must equal the replaced font's, or every
- *    screen's layout would change;
+ *  - the layout metrics (height, ascent, descent) must be within ASSET_PACK_FONT_SLACK pixels of
+ *    the replaced font's, or screens would be laid out wrongly;
  *  - the glyph chain must stay inside the data and end properly, and the header's shortcut
  *    offsets must point at glyphs;
  *  - every glyph is decoded with u8g2's own algorithm against a bit budget of exactly the bytes

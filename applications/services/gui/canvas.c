@@ -277,7 +277,7 @@ void canvas_draw_icon_animation(
 
     x += canvas->offset_x;
     y += canvas->offset_y;
-    // An asset pack may replace the icon (same size and frame count); its lock is held while drawing
+    // An asset pack may replace the icon (same frame count); its lock is held while drawing
     const Icon* icon = asset_packs_icon_acquire(icon_animation->icon);
     uint8_t* icon_data = NULL;
     compress_icon_decode(
@@ -577,6 +577,11 @@ void canvas_draw_icon_bitmap(
     x += canvas->offset_x;
     y += canvas->offset_y;
     const Icon* drawn = asset_packs_icon_acquire(icon);
+    if(drawn != icon) {
+        // a pack's icon of another size is drawn at its own size
+        w = icon_get_width(drawn);
+        h = icon_get_height(drawn);
+    }
     uint8_t* icon_data = NULL;
     compress_icon_decode(canvas->compress_icon, icon_get_frame_data(drawn, 0), &icon_data);
     u8g2_DrawXBM(&canvas->fb, x, y, w, h, icon_data);

@@ -15,6 +15,8 @@
  * Marker file present from the start of a load until the pack has been drawn with for a while
  * (asset_packs_mark_stable()). Still there at boot means the firmware died in that time.
  */
+#define ASSET_PACK_MAX_ICON_WIDTH  128
+#define ASSET_PACK_MAX_ICON_HEIGHT 64
 #define ASSET_PACKS_LOADING_MARKER "/int/.asset_pack_loading"
 
 /* Directory recursion plus snprintf: kept generous, the stack is only held while loading */
@@ -321,7 +323,9 @@ static void add_icon(
     const Icon* original,
     const uint8_t* const* blobs,
     const size_t* sizes,
-    size_t frame_count) {
+    size_t frame_count,
+    uint8_t width,
+    uint8_t height) {
     size_t blob_bytes = 0;
     for(size_t i = 0; i < frame_count; i++) {
         blob_bytes += align_up(sizes[i]);
@@ -336,8 +340,9 @@ static void add_icon(
         frames[i] = cursor;
         cursor += align_up(sizes[i]);
     }
-    FURI_CONST_ASSIGN(icon->width, original->width);
-    FURI_CONST_ASSIGN(icon->height, original->height);
+    // A pack's icon may differ in size from the one it replaces (packs made for Momentum do this)
+    FURI_CONST_ASSIGN(icon->width, width);
+    FURI_CONST_ASSIGN(icon->height, height);
     FURI_CONST_ASSIGN(icon->frame_count, original->frame_count);
     FURI_CONST_ASSIGN(icon->frame_rate, original->frame_rate);
     FURI_CONST_ASSIGN_PTR(icon->frames, frames);
@@ -365,7 +370,8 @@ static void load_static_icon(LoadState* state, const char* file_path, const char
 
     AssetPackBmx bmx;
     AssetPackStatus status = asset_pack_bmx_parse(data, size, &bmx);
-    if(status == AssetPackOk && (bmx.width != original->width || bmx.height != original->height)) {
+    if(status == AssetPackOk && (bmx.width > ASSET_PACK_MAX_ICON_WIDTH ||
+                                 bmx.height > ASSET_PACK_MAX_ICON_HEIGHT)) {
         status = AssetPackErrSize;
     }
     if(status == AssetPackOk) {
@@ -385,7 +391,7 @@ static void load_static_icon(LoadState* state, const char* file_path, const char
     } else {
         const uint8_t* blobs[1] = {bmx.blob};
         const size_t sizes[1] = {bmx.blob_size};
-        add_icon(state, original, blobs, sizes, 1);
+        add_icon(state, original, blobs, sizes, 1, bmx.width, bmx.height);
     }
     free(data);
 }
@@ -402,8 +408,9 @@ static void load_animated_icon(LoadState* state, const char* dir_path, const cha
     AssetPackAnimMeta meta;
     AssetPackStatus status = asset_pack_anim_meta_parse(meta_data, meta_size, &meta);
     free(meta_data);
-    if(status != AssetPackOk || meta.width != original->width ||
-       meta.height != original->height || meta.frame_count != original->frame_count ||
+    // the frame count must match: the animation steps through the built-in icon's frames
+    if(status != AssetPackOk || meta.width > ASSET_PACK_MAX_ICON_WIDTH ||
+       meta.height > ASSET_PACK_MAX_ICON_HEIGHT || meta.frame_count != original->frame_count ||
        meta.frame_count > ASSET_PACK_MAX_ICON_FRAMES) {
         FURI_LOG_W(TAG, "%s: skipped, meta does not match the built-in icon", pack_path);
         return;
@@ -442,7 +449,14 @@ static void load_animated_icon(LoadState* state, const char* dir_path, const cha
     } else if(!take_budget(state, frame_count, blob_bytes)) {
         FURI_LOG_W(TAG, "%s: skipped, icon RAM budget used up", pack_path);
     } else {
-        add_icon(state, original, (const uint8_t* const*)frames, sizes, frame_count);
+        add_icon(
+            state,
+            original,
+            (const uint8_t* const*)frames,
+            sizes,
+            frame_count,
+            meta.width,
+            meta.height);
     }
     for(size_t i = 0; i < frame_count; i++) {
         free(frames[i]);

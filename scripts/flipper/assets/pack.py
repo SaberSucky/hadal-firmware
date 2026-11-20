@@ -38,6 +38,8 @@ STOCK_FONTS = {
 
 PNG_EXT = ".png"
 BMX_EXT = ".bmx"
+# asset_pack_format.h ASSET_PACK_FONT_SLACK
+FONT_SLACK = 3
 FRAME_NAME = "frame_%02d.bm"
 ANIM_META_NAME = "meta"
 HEATSHRINK_WINDOW = 8
@@ -382,13 +384,15 @@ def font_problem(font: bytes, expected: dict = None):
         if not 1 <= font[i] <= 8:
             return f"header field {i} is {font[i]}, must be 1 to 8"
     if expected is not None:
+        # asset_pack_font_metrics_fit(): a few pixels either way of the stock font
         info = font_info(font)
-        for key in ("max_char_height", "ascent_A", "descent_g"):
-            if info[key] != expected[key]:
-                return (
-                    f"{key} is {info[key]}, the font it replaces has {expected[key]} "
-                    f"(it would change the layout of every screen)"
-                )
+        h, a, d = info["max_char_height"], info["ascent_A"], info["descent_g"]
+        if not 4 <= h <= expected["max_char_height"] + FONT_SLACK:
+            return f"max_char_height is {h}, the font it replaces has {expected['max_char_height']}"
+        if not 3 <= a <= expected["ascent_A"] + FONT_SLACK:
+            return f"ascent_A is {a}, the font it replaces has {expected['ascent_A']}"
+        if not expected["descent_g"] - FONT_SLACK <= d <= 0:
+            return f"descent_g is {d}, the font it replaces has {expected['descent_g']}"
     upper_a = (font[17] << 8) | font[18]
     lower_a = (font[19] << 8) | font[20]
     unicode = (font[21] << 8) | font[22]
@@ -752,11 +756,26 @@ def validate_packed_anims(anims_dir: str):
             _check_dims(width, height, f"Anims/{name}")
             if not order:
                 raise PackError("empty frame order")
-            for i in range(max(order) + 1):
-                frame = os.path.join(base, f"frame_{i}.bm")
-                if not os.path.isfile(frame):
-                    raise PackError(f"missing frame_{i}.bm")
-                decode_blob(_read(frame), width, height)
+            count = max(order) + 1
+            frames_file = os.path.join(base, "frames.bin")
+            if os.path.isfile(frames_file):
+                from .dolphin import frames_file_unpack
+
+                blobs = frames_file_unpack(_read(frames_file))
+                if len(blobs) != count:
+                    raise PackError(f"frames.bin holds {len(blobs)} frames, needs {count}")
+            else:
+                blobs = []
+                for i in range(count):
+                    frame = os.path.join(base, f"frame_{i}.bm")
+                    if not os.path.isfile(frame):
+                        raise PackError(f"missing frame_{i}.bm")
+                    blobs.append(_read(frame))
+            limit = (width + 7) // 8 * height + 1
+            for i, blob in enumerate(blobs):
+                if len(blob) > limit:
+                    raise PackError(f"frame {i} is {len(blob)} bytes, the firmware takes {limit}")
+                decode_blob(blob, width, height)
         except (KeyError, ValueError, PackError) as e:
             errors.append(f"Anims/{name}: {e}")
     return errors, len(names)
@@ -795,10 +814,15 @@ def validate_pack(pack_dir: str, icon_index: dict = None, repo_root: str = None)
                 want = icon_index.get(path)
                 if want is None:
                     warnings.append(f"Icons/{path}: no such built-in icon (ignored)")
-                elif want != (width, height, len(blobs)):
+                elif want[2] != len(blobs) or width > 128 or height > 64:
                     errors.append(
                         f"Icons/{path}: is {width}x{height} x{len(blobs)}, "
                         f"firmware icon is {want[0]}x{want[1]} x{want[2]} (would be skipped)"
+                    )
+                elif (width, height) != want[:2]:
+                    warnings.append(
+                        f"Icons/{path}: is {width}x{height}, drawn in place of "
+                        f"{want[0]}x{want[1]} (it may overlap what is around it)"
                     )
     except PackError as e:
         errors.append(str(e))

@@ -1,4 +1,6 @@
 # Built-in icons an asset pack can replace: the icons the firmware itself draws.
+# The main menu's module icons (MainMenu/) are never replaced: Sub-GHz, NFC and the rest look
+# the same whatever pack is in use.
 # Apps on the SD card use their own copies, so they are not listed. The icon index
 # (assets_icon_index.c) is generated from this list. Every listed icon is kept in
 # the firmware, so only add icons the firmware uses. Regenerate with:
@@ -62,19 +64,6 @@ Loader/err_02
 Loader/err_03
 Loader/err_04
 Loader/err_05
-MainMenu/125khz_14
-MainMenu/BadUsb_14
-MainMenu/Clock_14
-MainMenu/FileManager_14
-MainMenu/GPIO_14
-MainMenu/Infrared_14
-MainMenu/NFC_14
-MainMenu/Plugins_14
-MainMenu/Settings_14
-MainMenu/Sub1ghz_14
-MainMenu/SubGHzRemote_14
-MainMenu/U2F_14
-MainMenu/iButton_14
 PIN/Pin_arrow_up_7x9
 PIN/Pin_back_arrow_10x8
 PIN/Pin_pointer_5x3

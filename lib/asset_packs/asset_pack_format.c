@@ -182,6 +182,17 @@ static uint16_t read_u16_be(const uint8_t* p) {
     return (uint16_t)((p[0] << 8) | p[1]);
 }
 
+bool asset_pack_font_metrics_fit(
+    const AssetPackFontMetrics* font,
+    const AssetPackFontMetrics* expected) {
+    // Packs made for other firmwares (Momentum's) use fonts a little smaller or larger than the
+    // stock ones; screens are laid out with some room, so a few pixels either way still fit
+    return font->max_char_height >= 4 &&
+           font->max_char_height <= expected->max_char_height + ASSET_PACK_FONT_SLACK &&
+           font->ascent_a >= 3 && font->ascent_a <= expected->ascent_a + ASSET_PACK_FONT_SLACK &&
+           font->descent_g <= 0 && font->descent_g >= expected->descent_g - ASSET_PACK_FONT_SLACK;
+}
+
 AssetPackStatus
     asset_pack_font_check(const uint8_t* font, size_t size, const AssetPackFontMetrics* expected) {
     if(size < ASSET_PACK_FONT_HEADER_SIZE + 2 + sizeof(empty_unicode_section)) return AssetPackErrTooShort;
@@ -194,10 +205,7 @@ AssetPackStatus
 
     AssetPackFontMetrics metrics;
     asset_pack_font_metrics(font, size, &metrics);
-    if(metrics.max_char_height != expected->max_char_height ||
-       metrics.ascent_a != expected->ascent_a || metrics.descent_g != expected->descent_g) {
-        return AssetPackErrMetrics;
-    }
+    if(!asset_pack_font_metrics_fit(&metrics, expected)) return AssetPackErrMetrics;
 
     const size_t upper_a = read_u16_be(font + 17);
     const size_t lower_a = read_u16_be(font + 19);

@@ -50,6 +50,9 @@ class Main(App):
 
     def validate(self):
         index = pack.source_icon_index(self.args.icons) if self.args.icons else None
+        if index:
+            # the firmware never replaces the main menu's module icons (icon_override_list.txt)
+            index = {k: v for k, v in index.items() if not k.startswith("MainMenu/")}
         report = pack.validate_pack(self.args.pack, index, REPO_ROOT)
         for w in report["warnings"]:
             self.logger.warning(w)
@@ -75,7 +78,10 @@ class Main(App):
             if len(parts) == 3 and parts[1] in "dDrR" and parts[2][:2] in ("I_", "A_")
         }
         by_symbol = {i["symbol"]: i["path"] for i in pack.source_icons(self.args.icons)}
-        paths = sorted(by_symbol[s] for s in defined if s in by_symbol)
+        # the module icons of the main menu stay as they are, whatever pack is in use
+        paths = sorted(
+            by_symbol[s] for s in defined if s in by_symbol and not by_symbol[s].startswith("MainMenu/")
+        )
         unknown = sorted(s for s in defined if s not in by_symbol)
         for s in unknown:
             self.logger.warning(f"{s}: defined in the firmware but not in {self.args.icons}")
