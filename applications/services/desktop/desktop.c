@@ -1,5 +1,6 @@
 #include <core/crash_report.h>
 #include "helpers/crash_report_save.h"
+#include "helpers/boot_timeline_save.h"
 #include <update_util/boot_guard.h>
 #include <update_util/update_rollback.h>
 #include "desktop_i.h"
@@ -221,6 +222,8 @@ static bool desktop_custom_event_callback(void* context, uint32_t event) {
         // This firmware works: it becomes the one to roll back to
         boot_guard_on_stable();
         boot_guard_set_rollback_available(update_rollback_promote(desktop->storage));
+        // and where this start's time went
+        boot_timeline_save(desktop->storage);
 
     } else {
         return scene_manager_handle_custom_event(desktop->scene_manager, event);

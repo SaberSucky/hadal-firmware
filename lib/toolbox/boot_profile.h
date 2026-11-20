@@ -16,7 +16,7 @@
 extern "C" {
 #endif
 
-#define BOOT_PROFILE_MAX_MARKS 32u
+#define BOOT_PROFILE_MAX_MARKS 40u
 
 /** Record that `name` happened now. `name` must stay valid for ever (use a string literal). */
 void boot_profile_mark(const char* name);

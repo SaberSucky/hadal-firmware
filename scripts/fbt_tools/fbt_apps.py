@@ -97,6 +97,12 @@ class ApplicationsCGenerator:
                 f"const size_t {entry_block}_COUNT = COUNT_OF({entry_block});"
             )
 
+        # the start hooks' names, for the start-up timeline
+        start_hooks = self.buildset.get_apps_of_type(FlipperAppType.STARTUP)
+        contents.append("const char* const FLIPPER_ON_SYSTEM_START_NAMES[] = {")
+        contents.append(",\n".join(f'"{app.appid}"' for app in start_hooks))
+        contents.append("};")
+
         archive_app = self.buildset.get_apps_of_type(FlipperAppType.ARCHIVE)
         if archive_app:
             contents.extend(

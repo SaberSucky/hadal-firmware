@@ -1,3 +1,4 @@
+#include <toolbox/boot_profile.h>
 #include "gui_i.h"
 #include <assets_icons.h>
 
@@ -265,6 +266,12 @@ static void gui_redraw(Gui* gui) {
         }
 
         canvas_commit(gui->canvas);
+        // the first frame with the desktop on it, for the start-up timeline
+        static bool desktop_drawn = false;
+        if(!desktop_drawn && gui_view_port_find_enabled(gui->layers[GuiLayerDesktop])) {
+            desktop_drawn = true;
+            boot_profile_mark("desktop on screen");
+        }
     } while(false);
 
     gui_unlock(gui);

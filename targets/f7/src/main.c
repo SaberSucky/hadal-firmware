@@ -1,6 +1,7 @@
 #include <furi.h>
 #include <furi_hal.h>
 #include <flipper.h>
+#include <toolbox/boot_profile.h>
 #include <alt_boot.h>
 #include <update_util/update_operation.h>
 
@@ -9,11 +10,14 @@
 int32_t init_task(void* context) {
     UNUSED(context);
 
+    boot_profile_mark("kernel");
     // Flipper FURI HAL
     furi_hal_init();
+    boot_profile_mark("hardware");
 
     // Init flipper
     flipper_init();
+    boot_profile_mark("services started");
 
     furi_background();
 

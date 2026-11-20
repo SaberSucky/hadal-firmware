@@ -40,6 +40,7 @@ The Flipper ships with ST's "BLE Light" radio stack, which can only advertise an
 - **Rollback:** a firmware that fails to start four times in a row is replaced by the last one that ran steadily (kept in `/ext/update/.hadal_rollback`), with your settings and files left as they are
 - **Crash reports:** after a crash, `/ext/crash/` gets a report: the thread, the message, where it happened and the call chain. `python3 scripts/crash_report.py <report>` names the functions
 - `update/hadal_update.log` on the SD card records every update
+- **Start-up timeline:** 30 seconds after each start, `/ext/apps_data/boot/timeline.txt` lists when each step of the start ended and how long it took (the hardware, the SD card, the radio, every start hook, the desktop). The `boot_profile` CLI command prints the same
 
 ### Asset packs
 **Settings → Hadal → Interface → Asset Pack** (also Settings → Desktop) switches the animations, icons and fonts to those of a pack on the SD card (`/ext/asset_packs/<Name>/`), without reflashing. The folder layout is compatible with the one other custom firmwares use, and everything that loads it is written for Hadal. A pack that is missing or broken changes nothing, and one that crashes the firmware is turned off at the next start. See [documentation/AssetPacks.md](documentation/AssetPacks.md).

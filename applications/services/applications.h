@@ -44,6 +44,8 @@ extern const size_t FLIPPER_APPS_COUNT;
  */
 extern const FlipperInternalOnStartHook FLIPPER_ON_SYSTEM_START[];
 extern const size_t FLIPPER_ON_SYSTEM_START_COUNT;
+/** The start hooks' app ids, in the same order (FLIPPER_ON_SYSTEM_START_COUNT of them) */
+extern const char* const FLIPPER_ON_SYSTEM_START_NAMES[];
 
 /* System apps
  * Can only be spawned by loader by name

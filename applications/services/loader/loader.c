@@ -1,3 +1,4 @@
+#include <toolbox/boot_profile.h>
 #include "loader.h"
 #include "loader_i.h"
 #include <applications.h>
@@ -1073,8 +1074,10 @@ int32_t loader_srv(void* p) {
     furi_record_create(RECORD_LOADER, loader);
 
     FURI_LOG_I(TAG, "Executing system start hooks");
+    boot_profile_mark("start hooks");
     for(size_t i = 0; i < FLIPPER_ON_SYSTEM_START_COUNT; i++) {
         FLIPPER_ON_SYSTEM_START[i]();
+        boot_profile_mark(FLIPPER_ON_SYSTEM_START_NAMES[i]);
     }
 
     if((furi_hal_rtc_get_boot_mode() == FuriHalRtcBootModeNormal) && FLIPPER_AUTORUN_APP_NAME &&
