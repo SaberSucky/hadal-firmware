@@ -2853,5 +2853,132 @@ class CrashReportScriptTests(unittest.TestCase):
         self.assertEqual(crash_report.report_addresses(plain), [("raised", 0x08001000)])
 
 
+class BleSeenTests(TempDirCase):
+    """applications/system/ble_tools/ble_seen.c: what Tracker Detector, Find My Stuff and Crowd
+    Meter know about the devices around. Built as-is under ASan/UBSan."""
+
+    AIRTAG_AWAY = "1EFF4C001219" + "10" + "AB" * 22 + "0100"     # Find My, long payload: away from owner
+    AIRTAG_HOME = "07FF4C0012020000"                                 # Find My, short: owner nearby
+    GOOGLE_UTP = "0D16AAFE41" + "CD" * 9                             # Google tag, unwanted-tracking mode
+    GOOGLE_HOME = "0D16AAFE40" + "CD" * 9
+    TILE = "0303EDFE"                                                # 16-bit UUID list with Tile
+    NAMED = "0A09" + "Headphone".encode().hex()             # length byte: type + 9 characters
+    AIRPODS = "0BFF4C0007" + "00" * 7
+
+    @classmethod
+    def setUpClass(cls):
+        import subprocess
+
+        if not _have_sanitizer("address,undefined"):
+            raise unittest.SkipTest("gcc with AddressSanitizer is not available")
+        cls.build_dir = tempfile.mkdtemp(prefix="bls_")
+        cls.exe = os.path.join(cls.build_dir, "ble_seen_host")
+        app = os.path.join(REPO_ROOT, "applications", "system", "ble_tools")
+        subprocess.check_call(
+            [
+                "gcc", "-std=gnu11", "-g", "-O1", "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
+                "-Wall", "-Wextra", "-Werror", "-I", app, "-o", cls.exe,
+                os.path.join(REPO_ROOT, "scripts", "host_tests", "ble_seen_host.c"),
+                os.path.join(app, "ble_seen.c"),
+            ]
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.build_dir, True)
+
+    def run_seen(self, lines, *args):
+        import subprocess
+
+        r = subprocess.run([self.exe, *args], input="\n".join(lines) + "\n", capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+        return r.stdout.splitlines()
+
+    def test_kinds_and_separation(self):
+        out = self.run_seen([
+            f"H 010000000000 -60 0 {self.AIRTAG_AWAY}",
+            f"H 020000000000 -60 0 {self.AIRTAG_HOME}",
+            f"H 030000000000 -60 0 {self.GOOGLE_UTP}",
+            f"H 040000000000 -60 0 {self.GOOGLE_HOME}",
+            f"H 050000000000 -60 0 {self.TILE}",
+            f"H 060000000000 -60 0 {self.NAMED}",
+            f"H 070000000000 -60 0 {self.AIRPODS}",
+            "?",
+        ])
+        self.assertEqual(out[:7], [
+            "010000000000 Find My tag separated=1 name= rssi=-60",
+            "020000000000 Find My tag separated=0 name= rssi=-60",
+            "030000000000 Google tag separated=1 name= rssi=-60",
+            "040000000000 Google tag separated=0 name= rssi=-60",
+            "050000000000 Tile separated=1 name= rssi=-60",
+            "060000000000 Named device separated=0 name=Headphone rssi=-60",
+            "070000000000 AirPods separated=0 name= rssi=-60",
+        ])
+
+    def test_a_name_does_not_hide_a_tracker(self):
+        out = self.run_seen([f"H 010000000000 -60 0 {self.TILE}", f"H 010000000000 -60 10 {self.NAMED}", "?"])
+        self.assertTrue(out[0].startswith("010000000000 Tile "), out[0])
+
+    def test_following_needs_away_and_time(self):
+        lines = []
+        for minute in range(0, 12):
+            t = minute * 60000
+            lines += [f"H 010000000000 -70 {t} {self.AIRTAG_AWAY}", f"H 020000000000 -70 {t} {self.AIRTAG_HOME}",
+                      f"E {t} 60000 180000"]
+        lines += ["F 540000 600000", "F 660000 600000"]
+        # at 9 min nothing yet; at 11 min only the tag away from its owner
+        self.assertEqual(self.run_seen(lines), [".", "010000000000", "."])
+
+    def test_a_gap_starts_the_clock_again(self):
+        out = self.run_seen([
+            f"H 010000000000 -70 0 {self.AIRTAG_AWAY}",
+            "E 400000 60000 180000",                          # unheard for 6.7 min: forgotten
+            f"H 010000000000 -70 400000 {self.AIRTAG_AWAY}",
+            "F 900000 600000",                                # 8.3 min since it came back
+        ])
+        self.assertEqual(out, ["."])
+
+    def test_counts_and_a_full_table(self):
+        lines = [f"H {i:012x} -60 {i * 10} 020106" for i in range(1, 41)]
+        lines += ["C 400 1000", "C 400 100", "?"]
+        out = self.run_seen(lines, "16")
+        self.assertEqual(out[0], "16")          # the table holds 16, the newest
+        self.assertEqual(out[1], "11")          # heard within the last 100 ms (300..400, both ends)
+        self.assertEqual(len(out) - 3, 16)
+
+    def test_fuzz(self):
+        import subprocess
+
+        for seed in ("1", "99"):
+            r = subprocess.run([self.exe, "fuzz", "20000", seed], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+
+
+class ScreenPreviewTests(TempDirCase):
+    """The app screens drawn by the firmware's own canvas on the host, under sanitizers"""
+
+    def test_every_screen_draws(self):
+        import glob
+        import subprocess
+
+        if not glob.glob(os.path.join(REPO_ROOT, "build", "f7-firmware-*", "assets", "compiled", "assets_icons.c")):
+            raise unittest.SkipTest("the firmware has not been built: no compiled icons")
+        if not _have_sanitizer("address"):
+            raise unittest.SkipTest("gcc with AddressSanitizer is not available")
+        from PIL import Image
+
+        r = subprocess.run(
+            [sys.executable, os.path.join(REPO_ROOT, "scripts", "screen_preview.py"), self.tmp],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(r.returncode, 0, r.stderr[-3000:])
+        screens = [p for p in glob.glob(os.path.join(self.tmp, "*.png")) if "contact_sheet" not in p]
+        self.assertGreaterEqual(len(screens), 14)
+        for path in screens:
+            image = Image.open(path).convert("L")
+            self.assertEqual(image.size, (512, 256), path)
+            self.assertLess(image.getextrema()[0], 50, f"{path} is blank")
+
+
 if __name__ == "__main__":
     unittest.main()

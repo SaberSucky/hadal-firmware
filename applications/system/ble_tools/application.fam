@@ -1,0 +1,46 @@
+# Three Bluetooth LE apps on the BLE Full radio stack's scanning, sharing ble_seen (what a device is)
+# and ble_tools (scanning and a signal meter)
+App(
+    appid="tracker_detector",
+    name="Tracker Detector",
+    apptype=FlipperAppType.EXTERNAL,
+    targets=["f7"],
+    entry_point="tracker_detector_app",
+    requires=["gui"],
+    stack_size=2 * 1024,
+    sources=["tracker_detector.c", "ble_seen.c", "ble_tools.c"],
+    fap_category="Bluetooth",
+    fap_icon="tracker_detector_10px.png",
+    fap_version="0.1",
+    fap_description="Warns when a tracker away from its owner (AirTag, SmartTag, Tile, Google tag) travels with you, and helps find it",
+)
+
+App(
+    appid="find_my_stuff",
+    name="Find My Stuff",
+    apptype=FlipperAppType.EXTERNAL,
+    targets=["f7"],
+    entry_point="find_my_stuff_app",
+    requires=["gui"],
+    stack_size=2 * 1024,
+    sources=["find_my_stuff.c", "ble_seen.c", "ble_tools.c"],
+    fap_category="Bluetooth",
+    fap_icon="find_my_stuff_10px.png",
+    fap_version="0.1",
+    fap_description="Find your own Bluetooth earbuds, watch, tag or phone with a hotter / colder meter",
+)
+
+App(
+    appid="crowd_meter",
+    name="Crowd Meter",
+    apptype=FlipperAppType.EXTERNAL,
+    targets=["f7"],
+    entry_point="crowd_meter_app",
+    requires=["gui"],
+    stack_size=2 * 1024,
+    sources=["crowd_meter.c", "ble_seen.c", "ble_tools.c"],
+    fap_category="Bluetooth",
+    fap_icon="crowd_meter_10px.png",
+    fap_version="0.1",
+    fap_description="How busy a place is, from the Bluetooth devices around, with a 20 minute graph",
+)

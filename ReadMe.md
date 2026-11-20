@@ -19,6 +19,9 @@ Hadal is built on top of [Unleashed Firmware](https://github.com/DarkFlippers/un
 The Flipper ships with ST's "BLE Light" radio stack, which can only advertise and accept connections. It can't hear other devices. Hadal switches the radio to ST's **"BLE Full"** stack, which adds the observer role, and adds a scanning API on top of it.
 
 - **BLE Scanner** app (Apps → Bluetooth): lists nearby Bluetooth LE devices by signal strength, and recognises Find My accessories (AirTags and similar), AirPods, Samsung SmartTags, Tile trackers and Google Find My Device tags
+- **Tracker Detector** (Apps → Bluetooth): keep it open and it warns you (vibration, red light, a full-screen message) when a tracker that is away from its owner has moved along with you for 10 minutes: AirTags and other Find My accessories, Google Find My Device tags, SmartTags and Tiles. AirTags and Google tags say when their owner is not near, so one whose owner walks beside you is listed but not warned about. OK on a tracker shows how near it is, to find it
+- **Find My Stuff**: every device around, strongest first, by name where it says one. Pick yours (earbuds, a watch, your own tag) and a hotter / colder meter walks you to it, clicking faster as you get closer
+- **Crowd Meter**: how busy a place is, from the devices heard in the last minute, with a graph of the last 20 minutes and what kinds of device they are. It counts devices, not people
 - Passive scanning (silent, only listens) or active scanning (also asks devices for their names)
 - Normal Bluetooth (phone app, Bluetooth remotes) keeps working, and scanning survives Bluetooth profile switches
 - `furi_hal_bt_scanner_*` API for apps
@@ -119,6 +122,7 @@ The list, its source and each app's author and licence file are in [THIRD_PARTY_
 
 - **Developer documentation:** [developer.flipper.net](https://developer.flipper.net/flipperzero/doxygen)
 - **Writing apps:** [AppsOnSDCard](/documentation/AppsOnSDCard.md), [AppManifests](/documentation/AppManifests.md)
+- **Screen previews:** `python3 scripts/screen_preview.py` draws app screens on a PC with the firmware's own drawing code and fonts, into `build/screen_preview/` (after one firmware build)
 
 ### Project structure
 
