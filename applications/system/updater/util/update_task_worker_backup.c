@@ -1,5 +1,6 @@
 #include "update_task.h"
 #include "update_task_i.h"
+#include "update_trace.h"
 
 #include <furi.h>
 #include <furi_hal.h>
@@ -203,6 +204,11 @@ int32_t update_task_worker_backup_restore(void* context) {
     if((boot_mode != FuriHalRtcBootModePreUpdate) && (boot_mode != FuriHalRtcBootModePostUpdate)) {
         /* no idea how we got here. Do nothing */
         return UPDATE_TASK_NOERR;
+    }
+
+    if(boot_mode == FuriHalRtcBootModePostUpdate) {
+        /* What the part that ran from RAM (radio and firmware) left in the RTC registers */
+        update_trace_report();
     }
 
     bool success = false;

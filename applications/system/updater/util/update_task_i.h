@@ -16,6 +16,7 @@ typedef struct UpdateTask {
     updateProgressCb status_change_cb;
     void* status_change_cb_state;
     FuriHalRtcBootMode boot_mode;
+    bool firmware_written; /**< the new firmware went in before the radio this run */
 } UpdateTask;
 
 void update_task_set_progress(UpdateTask* update_task, UpdateTaskStage stage, uint8_t progress);

@@ -51,6 +51,11 @@ typedef enum {
     /* Index of FS directory entry corresponding to FW update to be applied */
     FuriHalRtcRegisterUpdateFolderFSIndex,
     FuriHalRtcRegisterPinValue, /**< Encoded value of the currently set PIN */
+    /* Steps of the update that runs from RAM (it cannot write to the SD card): reported to the
+     * SD card log by the firmware after the update */
+    FuriHalRtcRegisterUpdateTrace, /**< Current update: marker, starts, last step, detail */
+    FuriHalRtcRegisterUpdateTraceStart, /**< Current update: RTC time of its first step */
+    FuriHalRtcRegisterUpdateTracePrevious, /**< An earlier update that did not finish */
 
     FuriHalRtcRegisterMAX, /**< Service value, do not use */
 } FuriHalRtcRegister;

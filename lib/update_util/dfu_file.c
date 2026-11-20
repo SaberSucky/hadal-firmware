@@ -153,3 +153,38 @@ bool dfu_file_process_targets(const DfuUpdateTask* task, File* dfuf, const uint8
 
     return true;
 }
+
+bool dfu_file_get_address_range(
+    File* dfuf,
+    const uint8_t n_targets,
+    uint32_t* start,
+    uint32_t* end) {
+    TargetPrefix target_prefix = {0};
+    ImageElementHeader image_element = {0};
+    uint32_t lowest = UINT32_MAX, highest = 0;
+
+    if(!storage_file_seek(dfuf, sizeof(DfuPrefix), true)) return false;
+
+    for(uint8_t i_target = 0; i_target < n_targets; ++i_target) {
+        if(storage_file_read(dfuf, &target_prefix, sizeof(TargetPrefix)) != sizeof(TargetPrefix)) {
+            return false;
+        }
+        for(uint32_t i_element = 0; i_element < target_prefix.dwNbElements; ++i_element) {
+            if(storage_file_read(dfuf, &image_element, sizeof(ImageElementHeader)) !=
+               sizeof(ImageElementHeader)) {
+                return false;
+            }
+            const uint64_t element_end =
+                (uint64_t)image_element.dwElementAddress + image_element.dwElementSize;
+            if(element_end > UINT32_MAX) return false;
+            if(image_element.dwElementAddress < lowest) lowest = image_element.dwElementAddress;
+            if(element_end > highest) highest = (uint32_t)element_end;
+            if(!storage_file_seek(dfuf, image_element.dwElementSize, false)) return false;
+        }
+    }
+
+    if(lowest >= highest) return false;
+    *start = lowest;
+    *end = highest;
+    return true;
+}

@@ -424,6 +424,7 @@ UpdateTask* update_task_alloc(void) {
     update_task->file = storage_file_alloc(update_task->storage);
     update_task->status_change_cb = NULL;
     update_task->boot_mode = furi_hal_rtc_get_boot_mode();
+    update_task->firmware_written = false;
     update_log("--- updater started, boot mode %d", update_task->boot_mode);
     update_task->update_path = furi_string_alloc();
 

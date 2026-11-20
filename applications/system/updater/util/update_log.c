@@ -9,6 +9,13 @@
 #define LINE_SIZE 192
 
 void update_log(const char* format, ...) {
+#ifdef FURI_RAM_EXEC
+    // The updater that runs from RAM mounts the SD card read-only (FatFS _FS_READONLY), and the
+    // radio core may restart the Flipper at any moment of it: it leaves its steps in RTC
+    // registers instead (update_trace.c), which the firmware logs after the update
+    UNUSED(format);
+    return;
+#else
     char line[LINE_SIZE];
     // The tick says how long after the kernel started: restarts show as the time going back
     int prefix = snprintf(line, sizeof(line), "[%8lu] ", (unsigned long)furi_get_tick());
@@ -36,4 +43,5 @@ void update_log(const char* format, ...) {
     }
     storage_file_free(file);
     furi_record_close(RECORD_STORAGE);
+#endif
 }
