@@ -17,8 +17,8 @@
  *   A <addr 12 hex>                                    the device is paired with this Flipper
  *   (every device heard that is not yet mine is recognised from the list)
  * People (ble_crowd.c):
- *   K <ms> <window> <near dBm>                         print "phones worn things unknown mine
- *                                                      people near"
+ *   K <ms> <window> <min dBm>                          print "phones worn things unknown mine
+ *                                                      people", counting devices this strong
  *   O <addr 12 hex>                                    print the device's role and its label
  * argv: [capacity]   or   fuzz N SEED   or   fuzzmine N SEED
  */
@@ -123,14 +123,13 @@ int main(int argc, char** argv) {
             BleCrowd crowd;
             ble_crowd_count(&table, (uint32_t)ms, (uint32_t)a, rssi, &crowd);
             printf(
-                "%u %u %u %u %u %u %u\n",
+                "%u %u %u %u %u %u\n",
                 crowd.by_role[BleRolePhone],
                 crowd.by_role[BleRoleWearable],
                 crowd.by_role[BleRoleThing],
                 crowd.by_role[BleRoleUnknown],
                 crowd.mine,
-                crowd.people,
-                crowd.people_near);
+                crowd.people);
         } else if(line[0] == 'O' && sscanf(line + 2, "%15s", hex) == 1) {
             hex_bytes(hex, addr, 6);
             for(size_t i = 0; i < table.count; i++) {

@@ -111,6 +111,7 @@ static void parse_find_my(BleSeen* device, const uint8_t* payload, uint8_t lengt
     }
     const bool away = form == APPLE_FIND_MY_AWAY;
     device->apple_type = APPLE_FIND_MY;
+    device->findmy_status = payload[1];
     switch(FIND_MY_TYPE(payload[1])) {
     case FIND_MY_AIRTAG:
         set_kind(device, BleKindAirTag);

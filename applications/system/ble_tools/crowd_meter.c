@@ -1,12 +1,14 @@
 /**
  * Crowd Meter: how many people are around, from the Bluetooth LE devices heard: phones, and
  * earbuds or watches beyond the phones, not trackers, beacons, televisions or computers, and not
- * your own (ble_crowd.h). With a graph of the last 20 minutes and what the devices are. An
+ * your own (ble_crowd.h). Up and Down choose how far: near you, this room, or everything heard;
+ * each keeps its own graph of the last 20 minutes. The second page says what the devices are. An
  * estimate: a phone that keeps quiet is not heard. Needs the BLE Full radio stack.
  */
 #include "ble_tools.h"
 #include "ble_crowd.h"
 
+#include <gui/elements.h>
 #include <input/input.h>
 #include <stdio.h>
 
@@ -16,7 +18,24 @@
 #define SAMPLE_MS    (10U * 1000U)
 #define HISTORY      124U /* one sample a column: 20 minutes */
 #define TICK_MS      500U
-#define NEAR_DBM     (-70) /* "near you": a few metres, in the open */
+
+/* How far is counted, by how strong a device is heard: a rough distance, as walls, pockets and
+ * bodies weaken the signal too */
+typedef enum {
+    RangeNear,
+    RangeRoom,
+    RangeAll,
+    RangeCount,
+} Range;
+
+static const struct {
+    int min_dbm;
+    const char* name;
+} ranges[RangeCount] = {
+    [RangeNear] = {-65, "within ~3 m"},
+    [RangeRoom] = {-78, "within ~10 m"},
+    [RangeAll] = {-127, "all heard"},
+};
 
 typedef enum {
     PageNow,
@@ -38,9 +57,10 @@ typedef struct {
     bool supported;
     uint32_t started;
     Page page;
-    BleCrowd crowd;
-    size_t peak;
-    uint16_t history[HISTORY]; /**< people, newest last */
+    Range range;
+    BleCrowd crowd[RangeCount];
+    size_t peak[RangeCount];
+    uint16_t history[RangeCount][HISTORY]; /**< people in each range, newest last */
     size_t history_count;
     BleMine mine;
 } CrowdMeter;
@@ -50,24 +70,29 @@ static const char* crowd_word(size_t people) {
 }
 
 static void count_now(CrowdMeter* app, uint32_t now) {
-    ble_crowd_count(&app->table, now, WINDOW_MS, NEAR_DBM, &app->crowd);
-    if(app->crowd.people > app->peak) app->peak = app->crowd.people;
+    // every range, so that each graph goes on while another is shown
+    for(size_t range = 0; range < RangeCount; range++) {
+        ble_crowd_count(&app->table, now, WINDOW_MS, ranges[range].min_dbm, &app->crowd[range]);
+        if(app->crowd[range].people > app->peak[range]) app->peak[range] = app->crowd[range].people;
+    }
 }
 
 static void add_sample(CrowdMeter* app) {
-    const uint16_t value = app->crowd.people;
-    if(app->history_count < HISTORY) {
-        app->history[app->history_count++] = value;
-    } else {
-        memmove(app->history, app->history + 1, (HISTORY - 1) * sizeof(uint16_t));
-        app->history[HISTORY - 1] = value;
+    const bool full = app->history_count == HISTORY;
+    for(size_t range = 0; range < RangeCount; range++) {
+        uint16_t* history = app->history[range];
+        if(full) memmove(history, history + 1, (HISTORY - 1) * sizeof(uint16_t));
+        history[full ? HISTORY - 1 : app->history_count] = app->crowd[range].people;
     }
+    if(!full) app->history_count++;
 }
 
 static void draw_now(Canvas* canvas, CrowdMeter* app, uint32_t now) {
     char text[24];
     // the estimate, and what it means
-    const size_t people = app->crowd.people;
+    const BleCrowd* crowd = &app->crowd[app->range];
+    const uint16_t* history = app->history[app->range];
+    const size_t people = crowd->people;
     snprintf(text, sizeof(text), "%u%s", (unsigned)people, app->table.count >= CAPACITY ? "+" : "");
     canvas_set_font(canvas, FontBigNumbers);
     canvas_draw_str(canvas, 2, 30, text);
@@ -75,8 +100,9 @@ static void draw_now(Canvas* canvas, CrowdMeter* app, uint32_t now) {
     canvas_set_font(canvas, FontPrimary);
     canvas_draw_str(canvas, x, 22, crowd_word(people));
     canvas_set_font(canvas, FontSecondary);
-    snprintf(text, sizeof(text), "people, %u near you", (unsigned)app->crowd.people_near);
-    canvas_draw_str(canvas, x, 31, text);
+    // the range, with the buttons that change it
+    snprintf(text, sizeof(text), "ud=%s", ranges[app->range].name);
+    elements_hints(canvas, x, 31, AlignLeft, text);
 
     // the last 20 minutes, scaled to the busiest moment (at least 10), under the peak
     canvas_draw_line(canvas, 2, 62, 125, 62); // two clear columns and a row from the edges
@@ -90,14 +116,14 @@ static void draw_now(Canvas* canvas, CrowdMeter* app, uint32_t now) {
     }
     uint16_t top = 10;
     for(size_t i = 0; i < app->history_count; i++) {
-        if(app->history[i] > top) top = app->history[i];
+        if(history[i] > top) top = history[i];
     }
     for(size_t i = 0; i < app->history_count; i++) {
-        const int h = app->history[i] * 16 / top;
+        const int h = history[i] * 16 / top;
         const int column = 125 - (int)(app->history_count - 1 - i);
         if(h) canvas_draw_line(canvas, column, 61, column, 61 - h);
     }
-    snprintf(text, sizeof(text), "peak %u", (unsigned)app->peak);
+    snprintf(text, sizeof(text), "peak %u", (unsigned)app->peak[app->range]);
     canvas_draw_str(canvas, 2, 43, text);
 }
 
@@ -113,14 +139,15 @@ static void draw_kinds(Canvas* canvas, CrowdMeter* app) {
         {BleRoleUnknown, "Unknown"},
     };
     char text[8];
+    const BleCrowd* crowd = &app->crowd[app->range];
     canvas_set_font(canvas, FontSecondary);
-    uint16_t top = app->crowd.mine ? app->crowd.mine : 1;
+    uint16_t top = crowd->mine ? crowd->mine : 1;
     for(size_t i = 0; i < COUNT_OF(rows); i++) {
-        if(app->crowd.by_role[rows[i].role] > top) top = app->crowd.by_role[rows[i].role];
+        if(crowd->by_role[rows[i].role] > top) top = crowd->by_role[rows[i].role];
     }
     for(size_t i = 0; i <= COUNT_OF(rows); i++) {
         const bool yours = i == COUNT_OF(rows);
-        const uint16_t value = yours ? app->crowd.mine : app->crowd.by_role[rows[i].role];
+        const uint16_t value = yours ? crowd->mine : crowd->by_role[rows[i].role];
         const int y = 22 + (int)i * 10;
         canvas_draw_str(canvas, 2, y, yours ? "Yours" : rows[i].name);
         snprintf(text, sizeof(text), "%u", (unsigned)value);
@@ -172,6 +199,7 @@ int32_t crowd_meter_app(void* p) {
 
     // passive: only listens, and devices are not asked anything
     app->started = furi_get_tick();
+    app->range = RangeAll; // as it always counted; Up for nearer
     ble_tools_mine_load(&app->mine);
     app->supported = ble_tools_scan_start(&app->scan, false);
 
@@ -186,6 +214,9 @@ int32_t crowd_meter_app(void* p) {
             if(event.key == InputKeyLeft || event.key == InputKeyRight || event.key == InputKeyOk) {
                 app->page = (app->page + 1) % PageCount;
             }
+            // nearer and further
+            if(event.key == InputKeyUp && app->range > 0) app->range--;
+            if(event.key == InputKeyDown && app->range + 1 < RangeCount) app->range++;
             furi_mutex_release(app->mutex);
             view_port_update(app->view_port);
         }

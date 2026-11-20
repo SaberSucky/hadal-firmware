@@ -21,6 +21,7 @@
 typedef enum {
     ModeList,
     ModeLocate,
+    ModeInfo, /**< what is known about the selected device */
 } Mode;
 
 typedef struct {
@@ -150,7 +151,66 @@ static void draw_list(Canvas* canvas, FindMyStuff* app) {
     }
     const BleSeen* selected = device_at(app, app->selected);
     elements_hint_bar(
-        canvas, selected && selected->mine ? "ok=Find;ok=Hold: not mine" : "ok=Find;ok=Hold: mine");
+        canvas,
+        selected && selected->mine ? "ok=Find;ok=Hold: not mine;right=Info" :
+                                     "ok=Find;ok=Hold: mine;right=Info");
+}
+
+/** Everything known about the selected device, as heard: what it is, what it said, how strong */
+static void draw_info(Canvas* canvas, FindMyStuff* app) {
+    char text[40];
+    const BleSeen* device = device_at(app, app->selected);
+    canvas_set_font(canvas, FontPrimary);
+    if(!device) {
+        canvas_draw_str(canvas, 2, 9, "Gone");
+        canvas_draw_line(canvas, 0, 12, 127, 12);
+        elements_hint_bar(canvas, "back=List");
+        return;
+    }
+    ble_tools_label(device, text, sizeof(text));
+    ble_tools_draw_fit(canvas, 2, 9, text, 123);
+    canvas_draw_line(canvas, 0, 12, 127, 12);
+    canvas_set_font(canvas, FontSecondary);
+
+    // what it is taken for, and whether it is yours (lines 10 apart: descenders keep clear)
+    snprintf(
+        text,
+        sizeof(text),
+        "Kind: %s%s%s",
+        ble_kind_name(device->kind),
+        device->mine ? ", yours" : "",
+        (device->traits & BLE_TRAIT_PAIRED) ? ", paired" : "");
+    ble_tools_draw_fit(canvas, 2, 22, text, 123);
+    // what it said, in Apple's terms when it is Apple's
+    if(device->apple_type == 0x12) {
+        snprintf(
+            text,
+            sizeof(text),
+            "Find My, status %02X, %s",
+            device->findmy_status,
+            device->separated ? "away" : "owner near");
+    } else if(device->model) {
+        snprintf(text, sizeof(text), "Model %04X, colour %02X", device->model, device->colour);
+    } else if(device->apple_type) {
+        snprintf(text, sizeof(text), "Apple message %02X", device->apple_type);
+    } else {
+        snprintf(text, sizeof(text), "Traits %02X", device->traits);
+    }
+    ble_tools_draw_fit(canvas, 2, 32, text, 123);
+    // how strong, and the address it uses now
+    snprintf(
+        text,
+        sizeof(text),
+        "%d dBm  %02X:%02X:%02X:%02X:%02X:%02X",
+        device->rssi_avg_x8 / 8,
+        device->addr[5],
+        device->addr[4],
+        device->addr[3],
+        device->addr[2],
+        device->addr[1],
+        device->addr[0]);
+    ble_tools_draw_fit(canvas, 2, 42, text, 123);
+    elements_hint_bar(canvas, "back=List");
 }
 
 static void draw_callback(Canvas* canvas, void* context) {
@@ -162,6 +222,8 @@ static void draw_callback(Canvas* canvas, void* context) {
     } else if(app->mode == ModeLocate) {
         ble_meter_draw(canvas, &app->meter, app->locate_label, furi_get_tick());
         ble_tools_draw_sound_hint(canvas, app->sound);
+    } else if(app->mode == ModeInfo) {
+        draw_info(canvas, app);
     } else {
         draw_list(canvas, app);
     }
@@ -189,6 +251,10 @@ static bool handle_input(FindMyStuff* app, const InputEvent* event) {
         return true;
     }
     if(event->type != InputTypeShort && event->type != InputTypeRepeat) return true;
+    if(app->mode == ModeInfo) {
+        if(event->key == InputKeyBack || event->key == InputKeyLeft) app->mode = ModeList;
+        return true;
+    }
     if(app->mode == ModeLocate) {
         if(event->key == InputKeyBack) app->mode = ModeList;
         if(event->key == InputKeyOk && event->type == InputTypeShort) app->sound = !app->sound;
@@ -202,6 +268,9 @@ static bool handle_input(FindMyStuff* app, const InputEvent* event) {
         break;
     case InputKeyDown:
         if(app->selected + 1 < app->table.count) select_row(app, app->selected + 1);
+        break;
+    case InputKeyRight:
+        if(device_at(app, app->selected)) app->mode = ModeInfo;
         break;
     case InputKeyOk: {
         const BleSeen* device = device_at(app, app->selected);

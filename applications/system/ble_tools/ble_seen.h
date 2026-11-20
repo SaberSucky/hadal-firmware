@@ -62,6 +62,7 @@ typedef struct {
     uint8_t traits; /**< BLE_TRAIT_* */
     uint16_t model; /**< AirPods / Beats model from the pairing broadcast, 0 when unknown */
     uint8_t colour; /**< and their colour */
+    uint8_t findmy_status; /**< the Find My status byte as sent (type in bits 4-5) */
     bool handed_over; /**< its mark moved on to its next address (ble_mine_follow()) */
     char name[BLE_SEEN_NAME_SIZE];
 } BleSeen;

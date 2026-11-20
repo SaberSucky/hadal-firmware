@@ -29,14 +29,18 @@ int main(int argc, char** argv) {
             const char* hex = kinds[i % 8];
             const size_t length = hex ? adv_hex(hex, data) : 0;
             const uint8_t addr[6] = {id, (uint8_t)(i >> 8), 0x13, 0x37, 0xC0, 0xDE};
-            ble_seen_update(&app->table, addr, -70, data, (uint8_t)length, t);
+            ble_seen_update(&app->table, addr, (int8_t)(-58 - (i * 11) % 40), data, (uint8_t)length, t);
         }
         ble_seen_expire(&app->table, t, FORGET_MS, FORGET_MS);
         count_now(app, t);
         add_sample(app);
     }
     preview_tick = end;
+    app->range = RangeAll;
     preview_draw("crowd_meter_now", draw_callback, app);
+    app->range = RangeNear;
+    preview_draw("crowd_meter_near", draw_callback, app);
+    app->range = RangeAll;
     app->page = PageKinds;
     preview_draw("crowd_meter_kinds", draw_callback, app);
     return 0;

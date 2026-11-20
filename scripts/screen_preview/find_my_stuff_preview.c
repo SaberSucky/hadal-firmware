@@ -38,6 +38,9 @@ int main(int argc, char** argv) {
     app->devices[1].mine = true; // yours: ticked, first
     resort(app);
     preview_draw("find_my_stuff_list", draw_callback, app);
+    app->mode = ModeInfo;
+    preview_draw("find_my_stuff_info", draw_callback, app);
+    app->mode = ModeList;
 
     select_row(app, 0);
     app->mode = ModeLocate;

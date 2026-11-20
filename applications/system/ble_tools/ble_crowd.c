@@ -112,14 +112,18 @@ static uint16_t estimate(uint16_t phones, uint16_t worn) {
     return phones + (worn > phones ? worn - phones : 0);
 }
 
+/** Whether a device counts: heard in the window, and within range */
+static bool in_count(const BleSeen* device, uint32_t now, uint32_t window_ms, int min_dbm) {
+    return now - device->last_seen <= window_ms && rssi_of(device) >= min_dbm;
+}
+
 void ble_crowd_count(
     const BleSeenTable* table,
     uint32_t now,
     uint32_t window_ms,
-    int near_dbm,
+    int min_dbm,
     BleCrowd* crowd) {
     memset(crowd, 0, sizeof(BleCrowd));
-    uint16_t near[BleRoleCount] = {0};
     // which devices are an earlier address of one counted (each pairs with one at most)
     uint8_t merged[CROWD_MAX / 8] = {0};
     uint8_t absorbed[CROWD_MAX / 8] = {0};
@@ -127,7 +131,7 @@ void ble_crowd_count(
 
     for(size_t i = 0; i < count; i++) {
         const BleSeen* device = &table->devices[i];
-        if(now - device->last_seen > window_ms || device->mine) continue;
+        if(!in_count(device, now, window_ms, min_dbm) || device->mine) continue;
         const BleRole role = ble_role(device);
         if(role == BleRoleUnknown) continue;
         // the closest later address of the same device, if it changed address in the window
@@ -135,7 +139,8 @@ void ble_crowd_count(
         uint32_t best_gap = UINT32_MAX;
         for(size_t j = 0; j < count; j++) {
             const BleSeen* later = &table->devices[j];
-            if(j == i || BIT_GET(absorbed, j) || later->mine || now - later->last_seen > window_ms) {
+            if(j == i || BIT_GET(absorbed, j) || later->mine ||
+               !in_count(later, now, window_ms, min_dbm)) {
                 continue;
             }
             if(!same_device(device, later, role, now)) continue;
@@ -153,7 +158,7 @@ void ble_crowd_count(
 
     for(size_t i = 0; i < count; i++) {
         const BleSeen* device = &table->devices[i];
-        if(now - device->last_seen > window_ms) continue;
+        if(!in_count(device, now, window_ms, min_dbm)) continue;
         if(device->mine) {
             crowd->mine++;
             continue;
@@ -161,8 +166,6 @@ void ble_crowd_count(
         if(BIT_GET(merged, i)) continue;
         const BleRole role = ble_role(device);
         crowd->by_role[role]++;
-        if(rssi_of(device) >= near_dbm) near[role]++;
     }
     crowd->people = estimate(crowd->by_role[BleRolePhone], crowd->by_role[BleRoleWearable]);
-    crowd->people_near = estimate(near[BleRolePhone], near[BleRoleWearable]);
 }

@@ -44,18 +44,18 @@ typedef struct {
     uint16_t by_role[BleRoleCount]; /**< devices in each role, each counted once */
     uint16_t mine; /**< the user's own, not counted */
     uint16_t people; /**< the estimate */
-    uint16_t people_near; /**< of them, those at least as strong as near_dbm */
 } BleCrowd;
 
 BleRole ble_role(const BleSeen* device);
 const char* ble_role_name(BleRole role);
 
-/** Count the devices heard in the last window_ms, and the people they stand for */
+/** Count the devices heard in the last window_ms at least as strong as min_dbm (the range: a
+ * weaker one is further away), and the people they stand for */
 void ble_crowd_count(
     const BleSeenTable* table,
     uint32_t now,
     uint32_t window_ms,
-    int near_dbm,
+    int min_dbm,
     BleCrowd* crowd);
 
 #ifdef __cplusplus
