@@ -33,6 +33,7 @@ typedef struct {
     uint8_t tx_power;
     bool skip_duplicates; /**< Read: a signal already in the list is not added again */
     bool autosave; /**< Read: every new signal is saved to /ext/subghz/autosave */
+    bool location; /**< Read: new signals get the phone's location (helpers/subghz_location.h) */
 } SubGhzLastSettings;
 
 SubGhzLastSettings* subghz_last_settings_alloc(void);

@@ -42,6 +42,7 @@ The Flipper ships with ST's "BLE Light" radio stack, which can only advertise an
 - **Ignore a signal:** on a received signal, **Ignore** puts it aside for good (a neighbour's doorbell, a weather station): it leaves the list and never shows again. Kept in `/ext/subghz/assets/ignored.txt`; **Read → Config → Forget ignored** brings them all back
 - **Duplicates: Skip** (Read → Config): a signal already anywhere in the list is not added again, not only a repeat of the last one. A signal counts as the same whatever frequency, preset or timing it came in on; a rolling code is new each press
 - **Autosave** (Read → Config): every new signal is saved to `/ext/subghz/autosave/` as it comes in, named by protocol, date and time
+- **Location** (Read → Config → Location: Phone): every new signal is saved with where it was received (Latitude and Longitude lines in the `.sub`), from the Flipper app on your paired phone. No GPS module needed; with the phone away or its location off, signals are saved as before
 - **Your own frequencies:** Settings → Hadal → Protocols → Sub-GHz Frequencies adds and removes frequencies in `setting_user`, and keeps or leaves out the built-in list; comments, hopper frequencies and custom presets in the file are left alone
 
 ### Levels

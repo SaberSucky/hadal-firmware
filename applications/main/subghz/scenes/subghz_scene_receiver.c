@@ -175,6 +175,11 @@ static void subghz_scene_add_to_history_callback(
                 idx -= deleted;
             }
         }
+        // where it was received, if the phone says and Location is on
+        int32_t latitude = 0, longitude = 0;
+        const bool located = subghz->last_settings->location &&
+                             subghz_location_get(subghz->location, &latitude, &longitude);
+        subghz_history_set_location(history, located, latitude, longitude);
         if(subghz_history_add_to_history(
                history, decoder_base, &preset, subghz_txrx_get_air_time_ms(subghz->txrx))) {
             furi_string_reset(item_name);
@@ -246,6 +251,8 @@ void subghz_scene_receiver_on_enter(void* context) {
 
     subghz_view_receiver_set_mode(subghz->subghz_receiver, SubGhzViewReceiverModeLive);
 
+    if(subghz->last_settings->location) subghz_location_start(subghz->location);
+
     // Load history to receiver
     subghz_view_receiver_exit(subghz->subghz_receiver);
     for(uint16_t i = 0; i < subghz_history_get_item(history); i++) {
@@ -307,6 +314,8 @@ bool subghz_scene_receiver_on_event(void* context, SceneManagerEvent event) {
 
         switch(event.event) {
         case SubGhzCustomEventViewReceiverBack:
+            // Read is done with the phone's location
+            subghz_location_stop(subghz->location);
             // Stop CC1101 Rx
             subghz->state_notifications = SubGhzNotificationStateIDLE;
             subghz_txrx_stop(subghz->txrx);
@@ -371,6 +380,7 @@ bool subghz_scene_receiver_on_event(void* context, SceneManagerEvent event) {
             break;
         }
     } else if(event.type == SceneManagerEventTypeTick) {
+        subghz_location_poll(subghz->location);
         //a module unplugged while this screen is up is noticed here or not at all
         bool redraw = subghz_txrx_radio_device_poll_active(subghz->txrx);
 

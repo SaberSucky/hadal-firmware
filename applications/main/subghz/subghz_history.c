@@ -10,6 +10,7 @@
 #include <flipper_format/flipper_format_i.h>
 
 #include "helpers/subghz_signal_hash.h"
+#include <gps/gps.h>
 
 #define TAG "SubGhzHistory"
 
@@ -42,6 +43,9 @@ struct SubGhzHistory {
     bool full;
     bool skip_duplicates; /**< a signal already in the list anywhere is not added again */
     bool autosave; /**< new records wait to be autosaved */
+    bool location_set; /**< where the next record was received is known */
+    int32_t latitude; /**< degrees x 1e7 */
+    int32_t longitude;
     const uint32_t* ignored; /**< signals never added */
     size_t ignored_count;
     FuriString* tmp_string;
@@ -69,6 +73,17 @@ void subghz_history_set_skip_duplicates(SubGhzHistory* instance, bool skip) {
 void subghz_history_set_autosave(SubGhzHistory* instance, bool autosave) {
     furi_assert(instance);
     instance->autosave = autosave;
+}
+
+void subghz_history_set_location(
+    SubGhzHistory* instance,
+    bool known,
+    int32_t latitude,
+    int32_t longitude) {
+    furi_assert(instance);
+    instance->location_set = known;
+    instance->latitude = latitude;
+    instance->longitude = longitude;
 }
 
 void subghz_history_set_ignored(SubGhzHistory* instance, const uint32_t* hashes, size_t count) {
@@ -403,6 +418,17 @@ bool subghz_history_add_to_history(
     for(size_t i = 0; i < added && instance->skip_duplicates && !drop; i++) {
         drop = SubGhzHistoryItemArray_get(instance->history->data, i)->signal_hash ==
                item->signal_hash;
+    }
+    if(!drop && instance->location_set) {
+        // where it was received, after the hash (which leaves these lines out anyway)
+        char coordinate[24];
+        Stream* stream = flipper_format_get_raw_stream(item->flipper_string);
+        stream_seek(stream, 0, StreamOffsetFromEnd);
+        gps_location_format_coordinate(coordinate, sizeof(coordinate), instance->latitude);
+        flipper_format_write_string_cstr(item->flipper_string, "Latitude", coordinate);
+        gps_location_format_coordinate(coordinate, sizeof(coordinate), instance->longitude);
+        flipper_format_write_string_cstr(item->flipper_string, "Longitude", coordinate);
+        stream_rewind(stream);
     }
     if(drop) {
         furi_string_free(item->item_str);

@@ -93,6 +93,13 @@ void subghz_history_set_ignored(SubGhzHistory* instance, const uint32_t* hashes,
 /** What signal a record holds */
 uint32_t subghz_history_get_signal_hash(SubGhzHistory* instance, uint16_t idx);
 
+/** Where the next records were received (degrees x 1e7), written into them; known false: no lines */
+void subghz_history_set_location(
+    SubGhzHistory* instance,
+    bool known,
+    int32_t latitude,
+    int32_t longitude);
+
 /** Whether records added from now on wait to be autosaved */
 void subghz_history_set_autosave(SubGhzHistory* instance, bool autosave);
 

@@ -16,6 +16,7 @@ enum SubGhzSettingIndex {
     SubGhzSettingIndexDeleteOldSignals,
     SubGhzSettingIndexSkipDuplicates,
     SubGhzSettingIndexAutosave,
+    SubGhzSettingIndexLocation,
     SubGhzSettingIndexForgetIgnored,
     SubGhzSettingIndexSound,
     SubGhzSettingIndexResetToDefault,
@@ -361,6 +362,20 @@ static void subghz_scene_receiver_config_set_autosave(VariableItem* item) {
     if(subghz->history) subghz_history_set_autosave(subghz->history, index == 1);
 }
 
+static const char* const location_text[] = {"Off", "Phone"};
+
+static void subghz_scene_receiver_config_set_location(VariableItem* item) {
+    SubGhz* subghz = variable_item_get_context(item);
+    const uint8_t index = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, location_text[index]);
+    subghz->last_settings->location = index == 1;
+    if(index) {
+        subghz_location_start(subghz->location);
+    } else {
+        subghz_location_stop(subghz->location);
+    }
+}
+
 static void subghz_scene_receiver_config_show_ignored(VariableItem* item, size_t count) {
     char text[8];
     snprintf(text, sizeof(text), "%u", (unsigned)count);
@@ -588,6 +603,17 @@ void subghz_scene_receiver_config_on_enter(void* context) {
         value_index = subghz->last_settings->autosave;
         variable_item_set_current_value_index(item, value_index);
         variable_item_set_current_value_text(item, combobox_text[value_index]);
+
+        // where each signal was received, from the Flipper app on a paired phone
+        item = variable_item_list_add(
+            subghz->variable_item_list,
+            "Location",
+            2,
+            subghz_scene_receiver_config_set_location,
+            subghz);
+        value_index = subghz->last_settings->location;
+        variable_item_set_current_value_index(item, value_index);
+        variable_item_set_current_value_text(item, location_text[value_index]);
 
         // OK forgets the signals Ignore put aside
         item = variable_item_list_add(subghz->variable_item_list, "Forget ignored", 1, NULL, subghz);

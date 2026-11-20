@@ -1,6 +1,7 @@
 #pragma once
 
 #include "helpers/subghz_ignore.h"
+#include "helpers/subghz_location.h"
 #include "helpers/subghz_types.h"
 #include "helpers/subghz_gen_info.h"
 #include <lib/subghz/types.h>
@@ -112,6 +113,7 @@ struct SubGhz {
 
     uint16_t idx_menu_chosen;
     uint32_t ignored[SUBGHZ_IGNORE_MAX]; /**< helpers/subghz_ignore.h */
+    SubGhzLocation* location; /**< the phone's, while Read runs with Location on */
     size_t ignored_count;
     SubGhzLoadTypeFile load_type_file;
     uint8_t tx_power;

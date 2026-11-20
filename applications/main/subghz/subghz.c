@@ -215,6 +215,7 @@ SubGhz* subghz_alloc(bool alloc_for_tx_only) {
         subghz->filter = subghz->last_settings->filter;
         subghz->tx_power = subghz->last_settings->tx_power;
         subghz_history_apply_filters(subghz);
+        subghz->location = subghz_location_alloc();
     } else {
         subghz->filter = SubGhzProtocolFlag_Decodable;
         subghz->ignore_filter = 0x0;
@@ -319,6 +320,8 @@ void subghz_free(SubGhz* subghz, bool alloc_for_tx_only) {
 
     if(!alloc_for_tx_only) {
         subghz_history_free(subghz->history);
+        subghz_location_free(subghz->location);
+        subghz->location = NULL;
     }
 
     free(subghz->gen_info);
