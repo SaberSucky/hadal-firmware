@@ -46,13 +46,13 @@ void asset_packs_unload_icons(void);
 /** Load the active pack's icons again after asset_packs_unload_icons(). No-op if not unloaded. */
 void asset_packs_reload_icons(void);
 
-/** Most icon RAM a pack may hold for its icons to stay while an app runs */
-#define ASSET_PACK_APP_KEEP_RAM (12u * 1024u)
+/** Most RAM (icons and fonts) a pack may hold to stay while an app runs */
+#define ASSET_PACK_APP_KEEP_RAM (6u * 1024u)
 
 /**
- * An app is about to start: the pack's icons stay if they are small (ASSET_PACK_APP_KEEP_RAM),
- * so that they show in apps too, else they are freed to give the app the RAM, as
- * asset_packs_unload_icons() does. asset_packs_reload_icons() brings them back afterwards.
+ * An app is about to start: the pack stays if it is small (ASSET_PACK_APP_KEEP_RAM, icons and
+ * fonts together), so that it shows in apps too, else its icons and fonts are freed to give the
+ * app the RAM. asset_packs_reload_icons() brings them back afterwards.
  */
 void asset_packs_app_starting(void);
 

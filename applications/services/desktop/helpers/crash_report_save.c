@@ -53,6 +53,13 @@ static void crash_report_format(const FuriCrashReport* report, FuriString* text)
     for(size_t i = 0; i < 12; i++) {
         furi_string_cat_printf(text, "%s r%u=%08lX", i % 4 ? "" : "\n ", i, report->registers[i]);
     }
+    if(report->app[0]) {
+        furi_string_cat_printf(
+            text,
+            "\nApp: %s, which started with %lu bytes free",
+            report->app,
+            report->app_heap_free);
+    }
     furi_string_cat_printf(
         text,
         "\nMemory: %lu bytes free, %lu at the lowest\n"

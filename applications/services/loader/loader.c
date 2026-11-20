@@ -12,6 +12,8 @@
 #include <toolbox/path.h>
 #include <flipper_application/flipper_application.h>
 #include <loader/firmware_api/firmware_api.h>
+#include <core/crash_report.h>
+#include <datetime/datetime.h>
 
 #define TAG "Loader"
 
@@ -424,6 +426,9 @@ static const FlipperInternalApplication* loader_find_application_by_name(const c
 
     return NULL;
 }
+
+static const char* loader_app_short_name(const char* path);
+static void loader_check_leak(Loader* loader);
 
 static void loader_start_app_thread(Loader* loader, FlipperInternalApplicationFlag flags) {
     // setup heap trace
@@ -889,6 +894,10 @@ static LoaderMessageLoaderStatusResult loader_do_start_by_name(
         event.type = LoaderEventTypeApplicationBeforeLoad;
         furi_pubsub_publish(loader->pubsub, &event);
 
+        // the desktop has made room: what the app has to work with, and what it should give back
+        loader->app.heap_before = memmgr_get_free_heap();
+        furi_crash_report_note_app(loader_app_short_name(name), loader->app.heap_before);
+
         // Per launch, not per bracket: a deferred chain closes its outer bracket with the args of
         // whichever launch it started with, which need not be the one that started the app
         loader->app.rpc = loader_do_args_are_rpc(args);
@@ -1009,6 +1018,58 @@ static bool loader_do_deferred_launch(Loader* loader, LoaderDeferredLaunchRecord
     return is_successful;
 }
 
+/* ---- memory kept by apps that have closed ---- */
+
+#define LOADER_MEMORY_LOG       EXT_PATH("crash/memory.log")
+#define LOADER_MEMORY_LOG_MAX   (8U * 1024U) // then started afresh
+#define LOADER_LEAK_SLACK_BYTES (512U) // services may keep a little on first use
+
+// The file name without folders and extension, as menus show it
+static const char* loader_app_short_name(const char* path) {
+    const char* slash = strrchr(path, '/');
+    return slash ? slash + 1 : path;
+}
+
+static void loader_check_leak(Loader* loader) {
+    const size_t after = memmgr_get_free_heap();
+    if(after + LOADER_LEAK_SLACK_BYTES >= loader->app.heap_before) return;
+    const size_t kept = loader->app.heap_before - after;
+    const char* name = loader_app_short_name(furi_string_get_cstr(loader->app.launch_path));
+    FURI_LOG_W(TAG, "%s kept %zu bytes after it closed", name, kept);
+
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    if(storage_sd_status(storage) == FSE_OK) {
+        FileInfo info;
+        if(storage_common_stat(storage, LOADER_MEMORY_LOG, &info) == FSE_OK &&
+           info.size > LOADER_MEMORY_LOG_MAX) {
+            storage_common_remove(storage, LOADER_MEMORY_LOG);
+        }
+        storage_simply_mkdir(storage, EXT_PATH("crash"));
+        File* file = storage_file_alloc(storage);
+        if(storage_file_open(file, LOADER_MEMORY_LOG, FSAM_WRITE, FSOM_OPEN_APPEND)) {
+            DateTime now;
+            furi_hal_rtc_get_datetime(&now);
+            FuriString* line = furi_string_alloc_printf(
+                "%04u-%02u-%02u %02u:%02u:%02u %s kept %zu bytes after it closed (%zu free as it "
+                "started, %zu after)\n",
+                now.year,
+                now.month,
+                now.day,
+                now.hour,
+                now.minute,
+                now.second,
+                name,
+                kept,
+                loader->app.heap_before,
+                after);
+            storage_file_write(file, furi_string_get_cstr(line), furi_string_size(line));
+            furi_string_free(line);
+        }
+        storage_file_free(file);
+    }
+    furi_record_close(RECORD_STORAGE);
+}
+
 static void loader_do_app_closed(Loader* loader) {
     furi_assert(loader->app.thread);
 
@@ -1037,6 +1098,10 @@ static void loader_do_app_closed(Loader* loader) {
         loader->app.thread = NULL;
     }
 
+    // Everything the app took should be back now (the desktop takes its own back only after
+    // ApplicationStopped below): what is missing went somewhere and stays gone
+    loader_check_leak(loader);
+    furi_crash_report_note_app(NULL, 0);
     furi_string_free(loader->app.launch_path);
 
     FURI_LOG_D(TAG, "Application stopped. Free heap: %zu", memmgr_get_free_heap());

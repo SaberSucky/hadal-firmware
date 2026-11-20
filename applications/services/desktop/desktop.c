@@ -535,7 +535,9 @@ static Desktop* desktop_alloc(void) {
     desktop->update_clock_timer =
         furi_timer_alloc(desktop_clock_timer_callback, FuriTimerTypePeriodic, desktop);
 
-    desktop->app_running = loader_is_locked(desktop->loader);
+    // whether an app already runs is asked once the desktop is up (desktop_run()): the loader
+    // answers only after every start hook has run
+    desktop->app_running = false;
 
     furi_record_create(RECORD_DESKTOP, desktop);
 
@@ -729,6 +731,7 @@ int32_t desktop_srv(void* p) {
     }
 
     // Special case: autostart application is already running
+    desktop->app_running = loader_is_locked(desktop->loader);
     if(desktop->app_running && animation_manager_is_animation_loaded(desktop->animation_manager)) {
         animation_manager_unload_and_stall_animation(desktop->animation_manager);
     }

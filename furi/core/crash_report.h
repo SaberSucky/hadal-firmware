@@ -29,6 +29,8 @@ typedef struct {
     uint32_t exception; /**< IPSR: 0 in a thread, else the exception number */
     char message[64];
     char thread[24];
+    char app[24]; /**< the app running, empty for none */
+    uint32_t app_heap_free; /**< free heap as that app started */
     uint32_t check;
 } FuriCrashReport;
 
@@ -36,6 +38,9 @@ typedef struct {
 void furi_crash_report_capture(const char* message, const uint32_t* registers);
 /** The report of the last crash, or NULL */
 const FuriCrashReport* furi_crash_report_get(void);
+
+/** The app now running (NULL for none) and the free heap as it started, for a crash report */
+void furi_crash_report_note_app(const char* app, uint32_t heap_free);
 void furi_crash_report_clear(void);
 
 #ifdef __cplusplus

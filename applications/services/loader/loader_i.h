@@ -23,6 +23,7 @@ typedef struct {
     bool insomniac;
     bool rpc;
     FlipperApplication* fap;
+    size_t heap_before; /**< free heap as it started (the desktop had made room): leak check */
 } LoaderAppData;
 
 typedef struct {

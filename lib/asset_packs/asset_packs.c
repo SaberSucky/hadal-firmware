@@ -49,6 +49,7 @@ typedef struct {
     PackIcon* icons; /**< sorted by original; guarded by mutex */
     size_t icon_count;
     size_t ram_used; /**< what icons hold */
+    size_t font_ram; /**< what fonts hold */
     /** The running app's icons that the pack replaces, sorted by original (the app's own
      * copy); the replacements belong to icons. Guarded by mutex. */
     PackIcon* app_icons;
@@ -147,22 +148,33 @@ static void graveyard_timer_callback(void* context) {
 }
 
 /** Stop using the pack fonts. They are freed later, see graveyard. Caller holds the mutex. */
-static void discard_fonts_locked(void) {
+/* Fonts wait out a grace period before they are freed: a canvas may still hold one mid-frame.
+ * Every frame starts by setting a font again, so a few frames are enough; the full grace is for
+ * pack switches, the short one when an app starts and needs the RAM while it loads */
+#define ASSET_PACKS_FONT_SHORT_GRACE_MS 100
+
+static void discard_fonts_locked_after(uint32_t grace_ms) {
+    asset_packs.font_ram = 0;
     bool buried = false;
     for(size_t slot = 0; slot < ASSET_PACK_FONT_SLOTS; slot++) {
         FontBlock* block = asset_packs.fonts[slot];
         if(!block) continue;
         atomic_store_explicit(&asset_packs.font_data[slot], NULL, memory_order_release);
         asset_packs.fonts[slot] = NULL;
-        block->buried_tick = furi_get_tick();
+        // as if buried earlier, so that it is due after grace_ms
+        block->buried_tick =
+            furi_get_tick() - furi_ms_to_ticks(ASSET_PACKS_FONT_GRACE_MS - grace_ms);
         block->next = asset_packs.graveyard;
         asset_packs.graveyard = block;
         buried = true;
     }
     if(buried) {
-        furi_timer_restart(
-            asset_packs.graveyard_timer, furi_ms_to_ticks(ASSET_PACKS_FONT_GRACE_MS));
+        furi_timer_restart(asset_packs.graveyard_timer, furi_ms_to_ticks(grace_ms));
     }
+}
+
+static void discard_fonts_locked(void) {
+    discard_fonts_locked_after(ASSET_PACKS_FONT_GRACE_MS);
 }
 
 static void notify_changed(void) {
@@ -690,6 +702,7 @@ static int32_t loader_thread(void* context) {
                 &asset_packs.font_data[slot], state.fonts[slot]->data, memory_order_release);
             state.fonts[slot] = NULL;
         }
+        asset_packs.font_ram = state.font_bytes;
         installed = true;
     }
     if(!load_cancelled(&state) && state.icon_count > 0) {
@@ -789,10 +802,14 @@ void asset_packs_app_starting(void) {
     ensure_init();
 
     furi_mutex_acquire(asset_packs.mutex, FuriWaitForever);
-    // small: they stay, and show in the app too; a load still running may finish either way
-    if(asset_packs.ram_used > ASSET_PACK_APP_KEEP_RAM || atomic_load(&asset_packs.loading)) {
+    // A small pack stays, and shows in the app too. A larger one gives the app all it holds,
+    // icons and fonts alike (they come back when it is done): the main apps run close to the
+    // end of the RAM, and a pack's 24 KB was enough to run them out. A load still running stops.
+    const size_t held = asset_packs.ram_used + asset_packs.font_ram;
+    if(held > ASSET_PACK_APP_KEEP_RAM || atomic_load(&asset_packs.loading)) {
         asset_packs.icons_unloaded = true;
         discard_icons_locked();
+        discard_fonts_locked_after(ASSET_PACKS_FONT_SHORT_GRACE_MS);
     }
     furi_mutex_release(asset_packs.mutex);
 }
@@ -904,7 +921,7 @@ void asset_packs_reload_icons(void) {
     furi_mutex_acquire(asset_packs.mutex, FuriWaitForever);
     bool reload = asset_packs.icons_unloaded && asset_packs.name[0];
     asset_packs.icons_unloaded = false;
-    // Fonts stay loaded through unload/reload; they only come back if the unload cut a load short
+    // Fonts come back too when the app start gave them up (or the unload cut a load short)
     bool fonts_missing = true;
     for(size_t slot = 0; slot < ASSET_PACK_FONT_SLOTS; slot++) {
         if(asset_packs.fonts[slot]) fonts_missing = false;

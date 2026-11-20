@@ -7,7 +7,7 @@
 #include <furi_hal_rtc.h>
 #include <stm32wbxx.h>
 
-#define CRASH_REPORT_MAGIC      (0x31524348U) /* "HCR1" */
+#define CRASH_REPORT_MAGIC      (0x32524348U) /* "HCR2": an app and its heap added */
 // how far up the stack to look for return addresses
 #define CRASH_REPORT_SCAN_WORDS (256U)
 
@@ -17,6 +17,16 @@ extern size_t xPortGetMinimumEverFreeHeapSize(void);
 
 #ifndef FURI_RAM_EXEC
 __attribute__((section(".noinit"))) static FuriCrashReport crash_report;
+
+static void crash_report_copy_text(char* to, size_t size, const char* from);
+
+static char crash_report_app[24];
+static uint32_t crash_report_app_heap;
+
+void furi_crash_report_note_app(const char* app, uint32_t heap_free) {
+    crash_report_copy_text(crash_report_app, sizeof(crash_report_app), app ? app : "");
+    crash_report_app_heap = app ? heap_free : 0;
+}
 
 static uint32_t crash_report_check(const FuriCrashReport* report) {
     const uint8_t* bytes = (const uint8_t*)report;
@@ -68,6 +78,8 @@ void furi_crash_report_capture(const char* message, const uint32_t* registers) {
     crash_report.heap_free = xPortGetFreeHeapSize();
     crash_report.heap_lowest = xPortGetMinimumEverFreeHeapSize();
     crash_report.exception = __get_IPSR();
+    memcpy(crash_report.app, crash_report_app, sizeof(crash_report.app));
+    crash_report.app_heap_free = crash_report_app_heap;
     crash_report_copy_text(crash_report.message, sizeof(crash_report.message), message);
 
     const uint32_t* stack;

@@ -1,5 +1,9 @@
 #include "infrared_brute_force.h"
 
+#include <furi.h>
+
+#define TAG "InfraredBruteForce"
+
 #include <stdlib.h>
 #include <m-dict.h>
 #include <m-array.h>
@@ -21,6 +25,10 @@ typedef struct {
     uint32_t is_raw   : 1;
     uint32_t key;
 } InfraredBruteForceCandidate;
+
+// How often the free RAM is looked at while codes are collected, and what is left for the rest
+#define IR_BF_MEMORY_CHECK_STEP 16
+#define IR_BF_MEMORY_RESERVE    (6U * 1024U)
 
 // Database files are far below 2 GB; a position that does not fit is never taken
 #define IR_BF_CANDIDATE_POSITION_MAX (0x7FFFFFFFU)
@@ -378,6 +386,20 @@ InfraredErrorCode infrared_brute_force_calculate_messages(InfraredBruteForce* br
                 .is_raw = infrared_signal_is_raw(signal),
                 .key = ir_bf_signal_key(signal, decoder),
             };
+            // A button with hundreds of codes grows its list by reallocating; with the RAM nearly
+            // gone that failed, and a failed allocation stops the Flipper. Short of RAM, the
+            // button keeps the codes it has (most-used first still comes from them).
+            const size_t held = InfraredBruteForceCandidateArray_size(record->candidates);
+            if(held % IR_BF_MEMORY_CHECK_STEP == 0 &&
+               memmgr_heap_get_max_free_block() <
+                   held * sizeof(InfraredBruteForceCandidate) * 2 + IR_BF_MEMORY_RESERVE) {
+                FURI_LOG_W(
+                    TAG,
+                    "Low on RAM: %s keeps %zu codes",
+                    furi_string_get_cstr(signal_name),
+                    held);
+                continue;
+            }
             InfraredBruteForceCandidateArray_push_back(record->candidates, candidate);
         }
     } while(false);

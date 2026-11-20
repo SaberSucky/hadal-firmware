@@ -732,10 +732,11 @@ int32_t power_srv(void* p) {
 
     furi_record_create(RECORD_POWER, power);
 
-    // Can't be done in alloc, other things in startup need power service and it would deadlock by waiting for loader
-    Loader* loader = furi_record_open(RECORD_LOADER);
-    power->app_running = loader_is_locked(loader);
-    furi_record_close(RECORD_LOADER);
+    // Not asking the loader whether an app runs: it answers only once every start hook has run,
+    // and until this loop runs nothing can ask the power service anything (the desktop's idle
+    // animation asks for the battery's health). Nothing runs before the hooks are done, and an
+    // app that starts later is heard of through the loader's events.
+    power->app_running = false;
 
     furi_event_loop_run(power->event_loop);
 

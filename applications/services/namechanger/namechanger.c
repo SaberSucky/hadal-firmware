@@ -106,12 +106,16 @@ static bool namechanger_spoof_init(void) {
 
 static void namechanger_apply(void) {
 
-    // Wait for all required services to start and create their records
+    // The name and the spoofing come from the SD card: storage and the USB port's service are
+    // all that is needed to put them in place. Bluetooth is waited for only to restart with them,
+    // below: the desktop, which waits for this to bring the USB port up, no longer waits for
+    // Bluetooth's own restart as well.
+    static uint8_t done_marker;
     uint8_t timeout = 0;
-    while(!furi_record_exists(RECORD_CLI_VCP) || !furi_record_exists(RECORD_BT) ||
-          !furi_record_exists(RECORD_STORAGE)) {
+    while(!furi_record_exists(RECORD_CLI_VCP) || !furi_record_exists(RECORD_STORAGE)) {
         timeout++;
         if(timeout > 250) {
+            furi_record_create(RECORD_NAMECHANGER_DONE, &done_marker);
             return;
         }
         furi_delay_ms(5);
@@ -122,6 +126,8 @@ static void namechanger_apply(void) {
     const bool renamed = namechanger_init();
     // after the name: a spoofed address goes over the one the name gives
     const bool spoofed = namechanger_spoof_init();
+    // the name is final: the USB port may come up
+    furi_record_create(RECORD_NAMECHANGER_DONE, &done_marker);
     // The desktop normally brings the USB port up after this, with the new name already in place.
     // Only if it gave up waiting is the port up with the old name: reconnect it once.
     if(renamed) {
@@ -134,6 +140,10 @@ static void namechanger_apply(void) {
         furi_record_close(RECORD_CLI_VCP);
     }
     if(renamed || spoofed) {
+        for(timeout = 0; !furi_record_exists(RECORD_BT) && timeout < 250; timeout++) {
+            furi_delay_ms(5);
+        }
+        if(!furi_record_exists(RECORD_BT)) return;
         furi_delay_ms(3);
         Bt* bt = furi_record_open(RECORD_BT);
         if(!bt_profile_restore_default(bt)) {
@@ -151,9 +161,7 @@ int32_t namechanger_on_system_start(void* p) {
         return 0;
     }
 
+    // creates RECORD_NAMECHANGER_DONE as soon as the name is in place
     namechanger_apply();
-
-    static uint8_t done_marker;
-    furi_record_create(RECORD_NAMECHANGER_DONE, &done_marker);
     return 0;
 }

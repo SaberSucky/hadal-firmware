@@ -38,6 +38,9 @@ typedef struct {
     const char* header;
     size_t scroll_counter;
     FuriTimer* scroll_timer;
+    // the selected item's text or the header scrolls: the timer redraws only then (an IR
+    // remote's screen stays up for minutes, and it woke the CPU three times a second)
+    bool scrolls;
 } ButtonMenuModel;
 
 static void button_menu_draw_text(
@@ -54,6 +57,7 @@ static void button_menu_draw_text(
     if(selected) {
         size_t text_width = canvas_string_width(canvas, furi_string_get_cstr(disp_str));
         if(text_width >= ITEM_WIDTH - 8) {
+            model->scrolls = true;
             elements_scrollable_text_line(
                 canvas,
                 item_x + 4,
@@ -131,6 +135,7 @@ static void button_menu_view_draw_callback(Canvas* canvas, void* _model) {
     furi_assert(_model);
 
     ButtonMenuModel* model = (ButtonMenuModel*)_model;
+    model->scrolls = false; // set again below by what scrolls in this frame
     canvas_set_font(canvas, FontSecondary);
 
     const size_t active_screen = model->position / BUTTONS_PER_SCREEN;
@@ -151,6 +156,7 @@ static void button_menu_view_draw_callback(Canvas* canvas, void* _model) {
         size_t header_width = canvas_string_width(canvas, furi_string_get_cstr(disp_str));
 
         if(header_width >= ITEM_WIDTH - 8) {
+            model->scrolls = true;
             elements_scrollable_text_line(
                 canvas, 3, 13, ITEM_WIDTH - 8, disp_str, model->scroll_counter, false);
         } else {
@@ -399,8 +405,15 @@ ButtonMenuItem* button_menu_add_item(
 
 static void button_menu_process_timer_callback(void* context) {
     ButtonMenu* button_menu = context;
+    bool redraw = false;
     with_view_model(
-        button_menu->view, ButtonMenuModel * model, { model->scroll_counter++; }, true);
+        button_menu->view,
+        ButtonMenuModel * model,
+        {
+            model->scroll_counter++;
+            redraw = model->scrolls;
+        },
+        redraw);
 }
 
 static void button_menu_enter_callback(void* context) {
