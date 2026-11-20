@@ -12,7 +12,10 @@ bool md5_calc_file(File* file, const char* path, unsigned char output[16], FS_Er
         return false;
     }
 
-    const size_t size_to_read = 512;
+    // Read in large pieces: the card then reads many sectors per command instead of one. This is
+    // what qFlipper waits on when it checks the files already on the card, and what the updater
+    // spends its time on when it checks which resources changed.
+    const size_t size_to_read = 4096;
     uint8_t* data = malloc(size_to_read);
     bool result = true;
 

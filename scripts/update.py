@@ -11,7 +11,7 @@ from flipper.app import App
 from flipper.assets.coprobin import CoproBinary, get_stack_type
 from flipper.assets.heatshrink_stream import HeatshrinkDataStreamHeader
 from flipper.assets.obdata import ObReferenceValues, OptionBytesData
-from flipper.assets.tarball import compress_tree_tarball, tar_sanitizer_filter
+from flipper.assets.tarball import compress_tree_tarball, tar_sanitizer_filter, compress_files_tarball
 from flipper.utils.fff import FlipperFormatFile
 from slideshow import Main as SlideshowMain
 
@@ -23,6 +23,12 @@ class Main(App):
     #  No compression, plain tar
     RESOURCE_TAR_MODE = "w:"
     RESOURCE_FILE_NAME = "resources.ths"  # .Tar.HeatShrink
+    # qFlipper does not upload a file the update folder on the card already holds with the same
+    # MD5. So resources that seldom change go in archives of their own, which stay byte for byte
+    # the same from build to build while their files do: each file at least this big (mostly
+    # bundled apps), and the apps of each app folder together. Their names are listed under
+    # "Resources extra"; the Manifest in resources.ths still lists every file.
+    BIG_RESOURCE_SIZE = 256 * 1024
     RESOURCE_ENTRY_NAME_MAX_LENGTH = 100
 
     WHITELISTED_STACK_TYPES = set(
@@ -97,6 +103,7 @@ class Main(App):
             "radio.bin" if self.args.radiobin else ""
         )  # used to be basename(self.args.radiobin)
         resources_basename = ""
+        self.resource_extras = []
 
         radio_version = 0
         radio_meta = None
@@ -199,6 +206,9 @@ class Main(App):
         file.writeKey("OB mask", self.bytes2ffhex(obvalues.compare_mask))
         file.writeKey("OB write mask", self.bytes2ffhex(obvalues.write_mask))
         file.writeKey("Splashscreen", self.SPLASH_BIN_NAME if self.args.splash else "")
+        # Last: firmwares that do not know it stop reading before it
+        if self.resource_extras:
+            file.writeKey("Resources extra", " ".join(self.resource_extras))
         file.save(join(self.args.directory, self.UPDATE_MANIFEST_NAME))
 
         return 0
@@ -245,14 +255,60 @@ class Main(App):
             raise ValueError("Resource name too long")
         return tar_sanitizer_filter(tarinfo)
 
+    @staticmethod
+    def extra_archive_name(group: str) -> str:
+        """res-<group>-<crc of the group's name>.ths: the same from build to build"""
+        stem = "".join(c if c.isalnum() or c in "-_" else "_" for c in group)[:24]
+        return f"res-{stem}-{zlib.crc32(group.encode()) & 0xFFFFFF:06x}.ths"
+
+    def resource_group(self, name: str, size: int):
+        """The extra archive a resource goes in, or None for resources.ths: a big file on its
+        own, an app with the other apps of its folder (an update then re-uploads only the
+        folders whose apps changed)"""
+        if name == "Manifest":
+            return None
+        if size >= self.BIG_RESOURCE_SIZE:
+            return os.path.splitext(name.rsplit("/", 1)[-1])[0]
+        parts = name.split("/")
+        if len(parts) >= 3 and parts[0] == "apps":
+            return f"apps-{parts[1]}"
+        return None
+
     def package_resources(self, srcdir: str, dst_name: str):
         try:
+            groups = {}
+            for root, _, files in os.walk(srcdir):
+                for f in files:
+                    path = join(root, f)
+                    name = os.path.relpath(path, srcdir).replace(os.sep, "/")
+                    group = self.resource_group(name, os.path.getsize(path))
+                    if group:
+                        groups.setdefault(group, []).append(name)
+            grouped = {name for names in groups.values() for name in names}
+
+            def main_filter(tarinfo):
+                if tarinfo.isfile() and tarinfo.name in grouped:
+                    return None
+                return self._tar_filter(tarinfo)
+
             src_size, compressed_size = compress_tree_tarball(
-                srcdir, dst_name, filter=self._tar_filter
+                srcdir, dst_name, filter=main_filter
             )
+            for group in sorted(groups):
+                archive = self.extra_archive_name(group)
+                s, c = compress_files_tarball(
+                    srcdir,
+                    sorted(groups[group]),
+                    join(os.path.dirname(dst_name), archive),
+                    filter=self._tar_filter,
+                )
+                src_size += s
+                compressed_size += c
+                self.resource_extras.append(archive)
 
             self.logger.info(
                 f"Resources compression ratio: {compressed_size * 100 / src_size:.2f}%"
+                f" ({len(groups)} more archives for big files and app folders)"
             )
             return True
         except Exception as e:

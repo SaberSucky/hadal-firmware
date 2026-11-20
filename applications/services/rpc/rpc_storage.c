@@ -1,5 +1,6 @@
 #include <core/common_defines.h>
 #include <core/memmgr.h>
+#include <core/memmgr_heap.h>
 #include <core/record.h>
 #include <rpc/rpc.h>
 #include <rpc/rpc_i.h>
@@ -25,13 +26,53 @@ typedef enum {
     RpcStorageStateWriting,
 } RpcStorageState;
 
+/**
+ * qFlipper sends a file in 1 KB pieces. Written one by one, each is a separate small write to the
+ * SD card, and small writes are what SD cards are slowest at; uploads (update packages above all)
+ * went at the card's small-write speed. The pieces are gathered here and written 16 KB at a time.
+ */
+#define RPC_STORAGE_WRITE_BUFFER_SIZE (16 * 1024)
+
 typedef struct {
     RpcSession* session;
     Storage* api;
     File* file;
     RpcStorageState state;
     uint32_t current_command_id;
+    uint8_t* write_buffer; // NULL: written as it comes (no RAM to spare at the start)
+    size_t write_buffered;
 } RpcStorageSystem;
+
+/** Write out what the buffer holds; false if the card took less */
+static bool rpc_system_storage_write_flush(RpcStorageSystem* rpc_storage) {
+    const size_t size = rpc_storage->write_buffered;
+    rpc_storage->write_buffered = 0;
+    if(!size) return true;
+    return storage_file_write(rpc_storage->file, rpc_storage->write_buffer, size) == size;
+}
+
+/** Add a piece of the file: buffered, written out when the buffer fills */
+static bool rpc_system_storage_write_data(
+    RpcStorageSystem* rpc_storage,
+    const uint8_t* data,
+    size_t size) {
+    if(!rpc_storage->write_buffer) {
+        return storage_file_write(rpc_storage->file, data, size) == size;
+    }
+    while(size) {
+        const size_t space = RPC_STORAGE_WRITE_BUFFER_SIZE - rpc_storage->write_buffered;
+        const size_t part = MIN(space, size);
+        memcpy(rpc_storage->write_buffer + rpc_storage->write_buffered, data, part);
+        rpc_storage->write_buffered += part;
+        data += part;
+        size -= part;
+        if(rpc_storage->write_buffered == RPC_STORAGE_WRITE_BUFFER_SIZE &&
+           !rpc_system_storage_write_flush(rpc_storage)) {
+            return false;
+        }
+    }
+    return true;
+}
 
 static void rpc_system_storage_reset_state(
     RpcStorageSystem* rpc_storage,
@@ -49,6 +90,12 @@ static void rpc_system_storage_reset_state(
         }
 
         if(rpc_storage->state == RpcStorageStateWriting) {
+            // an interrupted upload keeps what arrived, as it did before the buffer
+            if(rpc_storage->write_buffer) {
+                rpc_system_storage_write_flush(rpc_storage);
+                free(rpc_storage->write_buffer);
+                rpc_storage->write_buffer = NULL;
+            }
             storage_file_close(rpc_storage->file);
             storage_file_free(rpc_storage->file);
         }
@@ -451,6 +498,12 @@ static void rpc_system_storage_write_process(const PB_Main* request, void* conte
         const char* path = request->content.storage_write_request.path;
         fs_operation_success =
             storage_file_open(rpc_storage->file, path, FSAM_WRITE, FSOM_CREATE_ALWAYS);
+        // Only for files that come in pieces, and only with plenty of RAM left
+        rpc_storage->write_buffered = 0;
+        if(fs_operation_success && request->has_next &&
+           memmgr_heap_get_max_free_block() > RPC_STORAGE_WRITE_BUFFER_SIZE * 3) {
+            rpc_storage->write_buffer = malloc(RPC_STORAGE_WRITE_BUFFER_SIZE);
+        }
     }
 
     File* file = rpc_storage->file;
@@ -460,10 +513,15 @@ static void rpc_system_storage_write_process(const PB_Main* request, void* conte
         if(request->content.storage_write_request.has_file &&
            request->content.storage_write_request.file.data &&
            request->content.storage_write_request.file.data->size) {
-            uint8_t* buffer = request->content.storage_write_request.file.data->bytes;
-            size_t buffer_size = request->content.storage_write_request.file.data->size;
-            size_t written_size = storage_file_write(file, buffer, buffer_size);
-            fs_operation_success = (written_size == buffer_size);
+            fs_operation_success = rpc_system_storage_write_data(
+                rpc_storage,
+                request->content.storage_write_request.file.data->bytes,
+                request->content.storage_write_request.file.data->size);
+        }
+
+        // the last piece: everything is on the card before the reply says so
+        if(fs_operation_success && !request->has_next && rpc_storage->write_buffer) {
+            fs_operation_success = rpc_system_storage_write_flush(rpc_storage);
         }
 
         send_response = !request->has_next;
@@ -741,6 +799,8 @@ void* rpc_system_storage_alloc(RpcSession* session) {
     rpc_storage->api = furi_record_open(RECORD_STORAGE);
     rpc_storage->session = session;
     rpc_storage->state = RpcStorageStateIdle;
+    rpc_storage->write_buffer = NULL;
+    rpc_storage->write_buffered = 0;
 
     RpcHandler rpc_handler = {
         .message_handler = NULL,

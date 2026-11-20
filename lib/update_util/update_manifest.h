@@ -43,6 +43,8 @@ typedef struct {
     FuriHalFlashRawOptionByteData ob_write_mask;
     FuriString* splash_file;
     bool valid;
+    /** More resource archives after resource_bundle, space-separated (big files, see update.py) */
+    FuriString* resource_extras;
 } UpdateManifest;
 
 UpdateManifest* update_manifest_alloc(void);

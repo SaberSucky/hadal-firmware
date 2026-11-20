@@ -10,6 +10,9 @@
 
 #define MAX_NAME_LEN    255
 #define FILE_BLOCK_SIZE 512
+/* Unpacked files are written in pieces this big: a 512-byte write is one SD card command per
+ * sector, the slowest way to write a card, and most of an update's install time */
+#define EXTRACT_BLOCK_SIZE 4096
 
 #define FILE_OPEN_NTRIES      10
 #define FILE_OPEN_RETRY_DELAY 25
@@ -295,7 +298,7 @@ typedef struct {
 static bool archive_extract_current_file(TarArchive* archive, const char* dst_path) {
     mtar_t* tar = &archive->tar;
     File* out_file = storage_file_alloc(archive->storage);
-    uint8_t* readbuf = malloc(FILE_BLOCK_SIZE);
+    uint8_t* readbuf = malloc(EXTRACT_BLOCK_SIZE);
 
     bool success = true;
     uint8_t n_tries = FILE_OPEN_NTRIES;
@@ -316,7 +319,7 @@ static bool archive_extract_current_file(TarArchive* archive, const char* dst_pa
 
         while(!mtar_eof_data(tar)) {
             // mtar_read_data() returns a negative MTAR_* error code on failure
-            int32_t readcnt = mtar_read_data(tar, readbuf, FILE_BLOCK_SIZE);
+            int32_t readcnt = mtar_read_data(tar, readbuf, EXTRACT_BLOCK_SIZE);
             if((readcnt <= 0) || !storage_file_write(out_file, readbuf, readcnt)) {
                 success = false;
                 break;

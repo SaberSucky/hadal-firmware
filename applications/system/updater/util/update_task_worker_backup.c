@@ -85,6 +85,7 @@ static void update_task_cleanup_resources(UpdateTask* update_task) {
                     update_task,
                     UpdateTaskStageProgress,
                     (n_processed_file_entries++ * 100) / n_file_entries);
+                if(update_task_resources_is_kept(furi_string_get_cstr(entry_ptr->name))) continue;
 
                 FuriString* file_path = furi_string_alloc();
                 path_concat(
@@ -181,6 +182,26 @@ static bool update_task_post_update(UpdateTask* update_task) {
                 update_task_set_progress(update_task, UpdateTaskStageResourcesFileUnpack, 0);
                 tar_archive_set_file_callback(archive, update_task_resource_unpack_cb, &progress);
                 CHECK_RESULT(tar_archive_unpack_to(archive, STORAGE_EXT_PATH_PREFIX, NULL));
+
+                FuriString* extra = furi_string_alloc();
+                bool extras_ok = true;
+                for(size_t offset = 0; extras_ok && update_task_resources_next_extra(
+                                                        update_task, &offset, extra);) {
+                    TarArchive* extra_archive = tar_archive_alloc(update_task->storage);
+                    progress.archive = extra_archive;
+                    extras_ok = tar_archive_open(
+                        extra_archive, furi_string_get_cstr(extra), TarOpenModeReadHeatshrink);
+                    if(extras_ok) {
+                        tar_archive_set_file_callback(
+                            extra_archive, update_task_resource_unpack_cb, &progress);
+                        extras_ok =
+                            tar_archive_unpack_to(extra_archive, STORAGE_EXT_PATH_PREFIX, NULL);
+                    }
+                    tar_archive_free(extra_archive);
+                }
+                progress.archive = archive;
+                furi_string_free(extra);
+                CHECK_RESULT(extras_ok);
             }
         }
 

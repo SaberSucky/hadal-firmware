@@ -45,6 +45,14 @@ static bool
     return ok && index->count > 0;
 }
 
+bool update_task_resources_is_kept(const char* name) {
+    // Asset packs the previous firmware installed (Momentum's, say) are the user's to keep:
+    // removing them took the animations out of packs people went on using
+    return strncmp(name, "asset_packs/", strlen("asset_packs/")) == 0;
+}
+
+#define resources_is_kept update_task_resources_is_kept
+
 // Files and folders the old resources had and the new ones do not
 static uint32_t resources_remove_stale(UpdateTask* update_task, const UpdateResourceIndex* index) {
     uint32_t removed = 0;
@@ -66,6 +74,7 @@ static uint32_t resources_remove_stale(UpdateTask* update_task, const UpdateReso
             if(entry->type != ResourceManifestEntryTypeFile) continue;
             update_task_set_progress(update_task, UpdateTaskStageProgress, done++ * 100 / files);
             if(update_resource_index_find(index, furi_string_get_cstr(entry->name))) continue;
+            if(resources_is_kept(furi_string_get_cstr(entry->name))) continue;
             path_concat(STORAGE_EXT_PATH_PREFIX, furi_string_get_cstr(entry->name), path);
             if(storage_common_remove(update_task->storage, furi_string_get_cstr(path)) == FSE_OK) {
                 removed++;
@@ -78,6 +87,7 @@ static uint32_t resources_remove_stale(UpdateTask* update_task, const UpdateReso
             if(entry->type != ResourceManifestEntryTypeDirectory) continue;
             update_task_set_progress(update_task, UpdateTaskStageProgress, done++ * 100 / dirs);
             if(update_resource_index_find(index, furi_string_get_cstr(entry->name))) continue;
+            if(resources_is_kept(furi_string_get_cstr(entry->name))) continue;
             path_concat(STORAGE_EXT_PATH_PREFIX, furi_string_get_cstr(entry->name), path);
             // a folder that still holds the user's own files stays
             storage_common_remove(update_task->storage, furi_string_get_cstr(path));
@@ -124,6 +134,34 @@ static bool resources_unpack_cb(const char* name, bool is_directory, void* conte
     return true;
 }
 
+bool update_task_resources_next_extra(UpdateTask* update_task, size_t* offset, FuriString* path) {
+    const char* list = furi_string_get_cstr(update_task->manifest->resource_extras);
+    size_t start = *offset;
+    while(list[start] == ' ') start++;
+    if(!list[start]) return false;
+    size_t end = start;
+    while(list[end] && list[end] != ' ') end++;
+
+    FuriString* name = furi_string_alloc_set_str(list + start);
+    furi_string_left(name, end - start);
+    path_concat(furi_string_get_cstr(update_task->update_path), furi_string_get_cstr(name), path);
+    furi_string_free(name);
+    *offset = end;
+    return true;
+}
+
+static bool resources_unpack(ResourceUnpack* unpack, const char* archive_path) {
+    unpack->archive = tar_archive_alloc(unpack->update_task->storage);
+    bool unpacked = tar_archive_open(unpack->archive, archive_path, TarOpenModeReadHeatshrink);
+    if(unpacked) {
+        tar_archive_set_file_callback(unpack->archive, resources_unpack_cb, unpack);
+        unpacked = tar_archive_unpack_to(unpack->archive, STORAGE_EXT_PATH_PREFIX, NULL);
+    }
+    tar_archive_free(unpack->archive);
+    unpack->archive = NULL;
+    return unpacked;
+}
+
 bool update_task_resources_install(UpdateTask* update_task, const char* archive_path) {
     Storage* storage = update_task->storage;
     FuriString* staged = furi_string_alloc();
@@ -153,14 +191,15 @@ bool update_task_resources_install(UpdateTask* update_task, const char* archive_
             .file = storage_file_alloc(storage),
             .path = furi_string_alloc(),
         };
-        unpack.archive = tar_archive_alloc(storage);
-        bool unpacked = tar_archive_open(unpack.archive, archive_path, TarOpenModeReadHeatshrink);
-        if(unpacked) {
-            update_task_set_progress(update_task, UpdateTaskStageResourcesFileUnpack, 0);
-            tar_archive_set_file_callback(unpack.archive, resources_unpack_cb, &unpack);
-            unpacked = tar_archive_unpack_to(unpack.archive, STORAGE_EXT_PATH_PREFIX, NULL);
+        update_task_set_progress(update_task, UpdateTaskStageResourcesFileUnpack, 0);
+        bool unpacked = resources_unpack(&unpack, archive_path);
+        // then the big files, each in an archive of its own
+        FuriString* extra = furi_string_alloc();
+        for(size_t offset = 0;
+            unpacked && update_task_resources_next_extra(update_task, &offset, extra);) {
+            unpacked = resources_unpack(&unpack, furi_string_get_cstr(extra));
         }
-        tar_archive_free(unpack.archive);
+        furi_string_free(extra);
         storage_file_free(unpack.file);
         furi_string_free(unpack.path);
 

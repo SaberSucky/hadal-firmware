@@ -18,6 +18,7 @@
 #define MANIFEST_KEY_OB_MASK       "OB mask"
 #define MANIFEST_KEY_OB_WRITE_MASK "OB write mask"
 #define MANIFEST_KEY_SPLASH_FILE   "Splashscreen"
+#define MANIFEST_KEY_ASSETS_EXTRA  "Resources extra"
 
 UpdateManifest* update_manifest_alloc(void) {
     UpdateManifest* update_manifest = malloc(sizeof(UpdateManifest));
@@ -27,6 +28,7 @@ UpdateManifest* update_manifest_alloc(void) {
     update_manifest->staged_loader_file = furi_string_alloc();
     update_manifest->resource_bundle = furi_string_alloc();
     update_manifest->splash_file = furi_string_alloc();
+    update_manifest->resource_extras = furi_string_alloc();
     update_manifest->target = 0;
     update_manifest->manifest_version = 0;
     memset(update_manifest->ob_reference.bytes, 0, FURI_HAL_FLASH_OB_RAW_SIZE_BYTES);
@@ -44,6 +46,7 @@ void update_manifest_free(UpdateManifest* update_manifest) {
     furi_string_free(update_manifest->staged_loader_file);
     furi_string_free(update_manifest->resource_bundle);
     furi_string_free(update_manifest->splash_file);
+    furi_string_free(update_manifest->resource_extras);
     free(update_manifest);
 }
 
@@ -112,6 +115,11 @@ static bool
 
         flipper_format_read_string(
             flipper_file, MANIFEST_KEY_SPLASH_FILE, update_manifest->splash_file);
+        // the last key: absent from packages that keep all resources in one archive
+        if(!furi_string_empty(update_manifest->resource_bundle)) {
+            flipper_format_read_string(
+                flipper_file, MANIFEST_KEY_ASSETS_EXTRA, update_manifest->resource_extras);
+        }
 
         update_manifest->valid =
             (!furi_string_empty(update_manifest->firmware_dfu_image) ||

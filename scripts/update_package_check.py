@@ -203,6 +203,22 @@ def resource_manifest_problems(files, first_file):
     return problems
 
 
+def read_resource_archive(path):
+    """(names, {file name: data}, first file name) of a .ths resources archive"""
+    with open(path, "rb") as f:
+        header = HeatshrinkDataStreamHeader.unpack(f.read(7))
+        body = f.read()
+    tar_bytes = heatshrink2.decompress(body, window_sz2=header.window_size, lookahead_sz2=header.lookahead_size)
+    with tempfile.NamedTemporaryFile(suffix=".tar") as tmp:
+        tmp.write(tar_bytes)
+        tmp.flush()
+        with tarfile.open(tmp.name) as tar:
+            names = tar.getnames()
+            files = {m.name: tar.extractfile(m).read() for m in tar.getmembers() if m.isfile()}
+            first_file = next((m.name for m in tar.getmembers() if m.isfile()), None)
+    return names, files, first_file
+
+
 def open_package(path, scratch):
     if os.path.isdir(path):
         return path
@@ -382,22 +398,26 @@ def check_package(path, expect="any", ob_data=None, scratch=None, api_csv=API_CS
 
     # ---- resources ----
     if file_of("Resources") and os.path.isfile(file_of("Resources")):
+        # Big files may be in archives of their own, named under "Resources extra"
+        extras = m.get("Resources extra", "").split()
         try:
-            with open(file_of("Resources"), "rb") as f:
-                header = HeatshrinkDataStreamHeader.unpack(f.read(7))
-                body = f.read()
-            tar_bytes = heatshrink2.decompress(body, window_sz2=header.window_size, lookahead_sz2=header.lookahead_size)
-            with tempfile.NamedTemporaryFile(suffix=".tar") as tmp:
-                tmp.write(tar_bytes)
-                tmp.flush()
-                with tarfile.open(tmp.name) as tar:
-                    names = tar.getnames()
-                    apps = {m.name: tar.extractfile(m).read() for m in tar.getmembers() if m.isfile() and m.name.endswith(".fap")}
-                    files = {m.name: tar.extractfile(m).read() for m in tar.getmembers() if m.isfile()}
-                    first_file = next((m.name for m in tar.getmembers() if m.isfile()), None)
+            names, files, first_file = read_resource_archive(file_of("Resources"))
+            for extra in extras:
+                extra_path = os.path.join(folder, extra)
+                if not os.path.isfile(extra_path):
+                    raise ValueError(f"extra resource archive {extra} is missing")
+                extra_names, extra_files, _ = read_resource_archive(extra_path)
+                twice = sorted(set(extra_files) & set(files))
+                if twice:
+                    raise ValueError(f"{extra} repeats {twice[:3]}")
+                names += extra_names
+                files.update(extra_files)
+            apps = {name: data for name, data in files.items() if name.endswith(".fap")}
         except Exception as e:  # noqa: BLE001
             report.fail(f"resources do not unpack: {e}")
         else:
+            if extras:
+                report.ok(f"resources: {len(extras)} big files in archives of their own")
             unsafe = [n for n in names if n.startswith("/") or ".." in n.split("/")]
             report.check(not unsafe, f"resources unpack to {len(names)} relative paths", f"resources contain unsafe paths: {unsafe[:3]}")
             # An update leaves a file on the card alone when it has the size and MD5 the new
