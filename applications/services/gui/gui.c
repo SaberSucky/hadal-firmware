@@ -258,13 +258,23 @@ static void gui_redraw(Gui* gui) {
             gui_redraw_status_bar(gui, need_attention);
         } else {
             if(!gui_redraw_fs(gui)) {
+                bool desktop_only = false;
                 if(!gui_redraw_window(gui)) {
-                    gui_redraw_desktop(gui);
+                    desktop_only = gui_redraw_desktop(gui);
                 }
-                gui_redraw_status_bar(gui, false);
+                if(!(desktop_only && gui->status_bar_hidden)) {
+                    gui_redraw_status_bar(gui, false);
+                }
             }
         }
 
+        if(gui->inverted) {
+            uint8_t* buffer = canvas_get_buffer(gui->canvas);
+            const size_t size = canvas_get_buffer_size(gui->canvas);
+            for(size_t i = 0; i < size; i++) {
+                buffer[i] = ~buffer[i];
+            }
+        }
         canvas_commit(gui->canvas);
         // the first frame with the desktop on it, for the start-up timeline
         static bool desktop_drawn = false;

@@ -67,6 +67,8 @@ typedef struct {
     /** DesktopPinFailAction, after pin_fail_limit wrong PINs in a row */
     uint8_t pin_fail_action;
     uint8_t pin_fail_limit;
+    /** light pixels on dark, the whole screen (v21) */
+    uint8_t dark_mode;
 } DesktopSettings;
 
 void desktop_settings_load(DesktopSettings* settings);

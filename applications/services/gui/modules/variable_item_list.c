@@ -69,7 +69,7 @@ static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
 
             if(position == model->position) {
                 canvas_set_color(canvas, ColorBlack);
-                elements_slightly_rounded_box(canvas, 0, item_y + 1, item_width, item_height - 2);
+                canvas_draw_rbox(canvas, 0, item_y + 1, item_width, item_height - 2, 3);
                 canvas_set_color(canvas, ColorWhite);
                 scroll_counter = model->scroll_counter;
                 if(scroll_counter < 1) {

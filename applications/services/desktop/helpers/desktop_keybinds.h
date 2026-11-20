@@ -10,7 +10,8 @@
  *
  * The action is a desktop action (Main Menu, Lock Menu, Lock, Archive, Power Off, Nothing), an
  * app's name, an app on the SD card, or any file, opened in the app it belongs to. A button that
- * has no line does what it always did.
+ * has no line does what it always did. "control 1" and "control 2" are the two app tiles of the
+ * control centre (Up on the desktop), bound the same way.
  */
 #pragma once
 
@@ -34,6 +35,10 @@ typedef enum {
     DesktopKeybindRightHold,
     DesktopKeybindOkPress,
     DesktopKeybindOkHold,
+    /** The buttons are the binds above; the two below are the control centre's app tiles */
+    DesktopKeybindButtonCount,
+    DesktopKeybindControl1 = DesktopKeybindButtonCount,
+    DesktopKeybindControl2,
     DesktopKeybindCount,
 } DesktopKeybind;
 

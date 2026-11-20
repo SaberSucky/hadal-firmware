@@ -53,6 +53,10 @@ struct Gui {
     bool lockdown;
     bool lockdown_inhibit;
     bool direct_draw;
+    /** Dark mode: every frame is shown inverted, light pixels on dark (set by the desktop) */
+    bool inverted;
+    /** The desktop layer has the whole screen: no status bar over it (the control centre) */
+    bool status_bar_hidden;
     ViewPortArray_t layers[GuiLayerMAX];
     Canvas* canvas;
 

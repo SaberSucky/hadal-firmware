@@ -13,6 +13,9 @@ static const char* const button_labels[DesktopKeybindCount] = {
     [DesktopKeybindRightHold] = "Right held",
     [DesktopKeybindOkPress] = "OK",
     [DesktopKeybindOkHold] = "OK held",
+    // the control centre's two app tiles (Up on the desktop)
+    [DesktopKeybindControl1] = "Up panel app 1",
+    [DesktopKeybindControl2] = "Up panel app 2",
 };
 
 void hadal_settings_scene_desktop_keys_on_enter(void* context) {
@@ -26,7 +29,7 @@ void hadal_settings_scene_desktop_keys_on_enter(void* context) {
         if(hadal_keybinds_get(app->storage, bind, action)) {
             hadal_keybinds_label(furi_string_get_cstr(action), label);
         } else {
-            furi_string_set_str(label, "default");
+            furi_string_set_str(label, bind < DesktopKeybindButtonCount ? "default" : "none");
         }
         furi_string_printf(item, "%s: %s", button_labels[bind], furi_string_get_cstr(label));
         submenu_add_item(

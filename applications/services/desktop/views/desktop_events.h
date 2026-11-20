@@ -37,19 +37,11 @@ typedef enum {
     DesktopDebugEventToggleDebugMode,
     DesktopDebugEventExit,
 
-    //DesktopLockMenuEventLock,
-    DesktopLockMenuEventBt,
-    DesktopLockMenuEventDummyModeOn,
-    DesktopLockMenuEventDummyModeOff,
-    DesktopLockMenuEventStealthModeOn,
-    DesktopLockMenuEventStealthModeOff,
-    DesktopLockMenuEventOpenQuickSettings,
-
-    DesktopQuickSettingsEventBrightnessChanged,
-    DesktopQuickSettingsEventVolumeChanged,
-    DesktopQuickSettingsEventVibroChanged,
-    DesktopQuickSettingsEventSave,
-    DesktopQuickSettingsEventClose,
+    DesktopControlCentreEventNone,
+    DesktopControlCentreEventTile, /**< OK on a tile: desktop_control_centre_get_tile() */
+    DesktopControlCentreEventBrightness,
+    DesktopControlCentreEventVolume,
+    DesktopControlCentreEventVibro,
 
     DesktopAnimationEventCheckAnimation,
     DesktopAnimationEventNewIdleAnimation,

@@ -10,7 +10,8 @@
 #define DESKTOP_SETTINGS_VER_17 (17)
 #define DESKTOP_SETTINGS_VER_18 (18)
 #define DESKTOP_SETTINGS_VER_19 (19)
-#define DESKTOP_SETTINGS_VER    (20)
+#define DESKTOP_SETTINGS_VER_20 (20)
+#define DESKTOP_SETTINGS_VER    (21)
 
 #define DESKTOP_SETTINGS_PATH  INT_PATH(DESKTOP_SETTINGS_FILE_NAME)
 #define DESKTOP_SETTINGS_MAGIC (0x17)
@@ -37,12 +38,23 @@ _Static_assert(
         offsetof(DesktopSettings, active_asset_pack) + 32,
     "DesktopSettings before boot_unlocked must still be the v19 layout");
 
-// The fields v20 added: zero is the behaviour before them
+// v20 files hold everything up to dark mode, which v21 appended
+_Static_assert(
+    offsetof(DesktopSettings, dark_mode) == offsetof(DesktopSettings, boot_unlocked) + 4,
+    "DesktopSettings before dark_mode must still be the v20 layout");
+
+// The fields v21 added: zero is the behaviour before them
+static void desktop_settings_clear_v21_options(DesktopSettings* settings) {
+    settings->dark_mode = 0;
+}
+
+// The fields v20 added (and after them, v21's): zero is the behaviour before them
 static void desktop_settings_clear_lock_options(DesktopSettings* settings) {
     settings->boot_unlocked = 0;
     settings->lock_clock = 0;
     settings->pin_fail_action = DesktopPinFailActionNone;
     settings->pin_fail_limit = 0;
+    desktop_settings_clear_v21_options(settings);
 }
 
 // Actual size of DesktopSettings v13
@@ -66,6 +78,7 @@ static void desktop_settings_terminate_strings(DesktopSettings* settings) {
     if(settings->pin_fail_action > DesktopPinFailActionFactoryReset) {
         settings->pin_fail_action = DesktopPinFailActionNone;
     }
+    settings->dark_mode = settings->dark_mode ? 1 : 0;
 }
 
 void desktop_settings_load(DesktopSettings* settings) {
@@ -84,6 +97,17 @@ void desktop_settings_load(DesktopSettings* settings) {
                 sizeof(DesktopSettings),
                 DESKTOP_SETTINGS_MAGIC,
                 DESKTOP_SETTINGS_VER);
+
+        } else if(version == DESKTOP_SETTINGS_VER_20) {
+            // v21 appended dark mode; everything before it is unchanged
+            success = saved_struct_load(
+                DESKTOP_SETTINGS_PATH,
+                settings,
+                offsetof(DesktopSettings, dark_mode),
+                DESKTOP_SETTINGS_MAGIC,
+                DESKTOP_SETTINGS_VER_20);
+
+            if(success) desktop_settings_clear_v21_options(settings);
 
         } else if(version == DESKTOP_SETTINGS_VER_19) {
             // v20 appended the lock options; everything before them is unchanged

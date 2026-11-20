@@ -361,6 +361,8 @@ static void desktop_apply_settings(Desktop* desktop) {
 
     loader_set_menu_style(desktop->loader, desktop->settings.menu_style);
 
+    desktop_set_dark_mode(desktop, desktop->settings.dark_mode);
+
     desktop_apply_asset_pack(desktop);
 
     if(!desktop->app_running && !desktop->locked) {
@@ -420,8 +422,7 @@ static Desktop* desktop_alloc(void) {
     view_dispatcher_set_navigation_event_callback(
         desktop->view_dispatcher, desktop_back_event_callback);
 
-    desktop->lock_menu = desktop_lock_menu_alloc();
-    desktop->quick_settings = desktop_quick_settings_alloc();
+    desktop->control_centre = desktop_control_centre_alloc();
     desktop->debug_view = desktop_debug_alloc();
     desktop->popup = popup_alloc();
     desktop->locked_view = desktop_view_locked_alloc();
@@ -454,12 +455,8 @@ static Desktop* desktop_alloc(void) {
         view_stack_get_view(desktop->locked_view_stack));
     view_dispatcher_add_view(
         desktop->view_dispatcher,
-        DesktopViewIdLockMenu,
-        desktop_lock_menu_get_view(desktop->lock_menu));
-    view_dispatcher_add_view(
-        desktop->view_dispatcher,
-        DesktopViewIdQuickSettings,
-        desktop_quick_settings_get_view(desktop->quick_settings));
+        DesktopViewIdControlCentre,
+        desktop_control_centre_get_view(desktop->control_centre));
     view_dispatcher_add_view(
         desktop->view_dispatcher, DesktopViewIdDebug, desktop_debug_get_view(desktop->debug_view));
     view_dispatcher_add_view(
@@ -548,12 +545,16 @@ static Desktop* desktop_alloc(void) {
  * Private API
  */
 
+bool desktop_lock_needs_pin(const Desktop* desktop) {
+    return desktop_pin_code_is_set() && !desktop->keypad_lock;
+}
+
 void desktop_lock(Desktop* desktop) {
     furi_assert(!desktop->locked);
 
     furi_hal_rtc_set_flag(FuriHalRtcFlagLock);
 
-    if(desktop_pin_code_is_set()) {
+    if(desktop_lock_needs_pin(desktop)) {
         CliVcp* cli_vcp = furi_record_open(RECORD_CLI_VCP);
         cli_vcp_disable(cli_vcp);
         furi_record_close(RECORD_CLI_VCP);
@@ -582,6 +583,7 @@ void desktop_unlock(Desktop* desktop) {
     desktop_auto_lock_arm(desktop);
     furi_hal_rtc_reset_flag(FuriHalRtcFlagLock);
     furi_hal_rtc_set_pin_fails(0);
+    desktop->keypad_lock = false;
 
     if(desktop_pin_code_is_set()) {
         CliVcp* cli_vcp = furi_record_open(RECORD_CLI_VCP);
@@ -606,6 +608,11 @@ void desktop_set_dummy_mode_state(Desktop* desktop, bool enabled) {
     desktop->in_transition = false;
 
     desktop_settings_save(&desktop->settings);
+}
+
+void desktop_set_dark_mode(Desktop* desktop, bool enabled) {
+    desktop->gui->inverted = enabled;
+    gui_update(desktop->gui);
 }
 
 void desktop_set_stealth_mode_state(Desktop* desktop, bool enabled) {

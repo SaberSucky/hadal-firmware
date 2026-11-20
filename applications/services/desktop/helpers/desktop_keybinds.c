@@ -14,6 +14,8 @@ static const char* const keybind_names[DesktopKeybindCount] = {
     [DesktopKeybindRightHold] = "right hold",
     [DesktopKeybindOkPress] = "ok press",
     [DesktopKeybindOkHold] = "ok hold",
+    [DesktopKeybindControl1] = "control 1",
+    [DesktopKeybindControl2] = "control 2",
 };
 
 static const struct {

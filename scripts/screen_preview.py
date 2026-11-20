@@ -31,6 +31,7 @@ PREVIEWS = {
     "lock_clock": ["applications/services/desktop/helpers/desktop_lock_clock.c"],
     "keyboard": [],
     "submenu": [],
+    "control_centre": [],
 }
 
 GUI_SOURCES = [
@@ -38,6 +39,7 @@ GUI_SOURCES = [
     "applications/services/gui/elements.c",
     "applications/services/gui/icon.c",
     "applications/services/gui/icon_animation.c",
+    "applications/services/gui/hadal_title_font.c",
     "applications/services/notification/notification_messages.c",
     "applications/services/notification/notification_messages_notes.c",
     "lib/toolbox/compress.c",

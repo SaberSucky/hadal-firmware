@@ -8,8 +8,8 @@
 #include "views/desktop_view_pin_input.h"
 #include "views/desktop_view_locked.h"
 #include "views/desktop_view_main.h"
-#include "views/desktop_view_lock_menu.h"
-#include "views/desktop_view_quick_settings.h"
+#include "views/desktop_view_control_centre.h"
+#include "helpers/desktop_keybinds.h"
 #include "views/desktop_view_debug.h"
 #include "views/desktop_view_slideshow.h"
 
@@ -26,8 +26,7 @@
 
 typedef enum {
     DesktopViewIdMain,
-    DesktopViewIdLockMenu,
-    DesktopViewIdQuickSettings,
+    DesktopViewIdControlCentre,
     DesktopViewIdLocked,
     DesktopViewIdDebug,
     DesktopViewIdPopup,
@@ -51,8 +50,7 @@ struct Desktop {
     SceneManager* scene_manager;
 
     Popup* popup;
-    DesktopLockMenuView* lock_menu;
-    DesktopQuickSettingsView* quick_settings;
+    DesktopControlCentreView* control_centre;
     DesktopDebugView* debug_view;
     DesktopViewLocked* locked_view;
     DesktopMainView* main_view;
@@ -95,9 +93,19 @@ struct Desktop {
     bool asset_pack_guard_done;
     bool app_running;
     bool locked;
+    /** The lock in place, or the next one, opens without the PIN (control centre's Lock) */
+    bool keypad_lock;
 };
 
 void desktop_lock(Desktop* desktop);
 void desktop_unlock(Desktop* desktop);
 void desktop_set_dummy_mode_state(Desktop* desktop, bool enabled);
 void desktop_set_stealth_mode_state(Desktop* desktop, bool enabled);
+/** Show the screen inverted or not (DesktopSettings.dark_mode is the caller's to keep) */
+void desktop_set_dark_mode(Desktop* desktop, bool enabled);
+/** Whether locking now asks for the PIN to unlock: one is set and this is not a keypad lock */
+bool desktop_lock_needs_pin(const Desktop* desktop);
+/** What a button or a control centre tile is bound to (desktop_keybinds.h); false if unbound */
+bool desktop_keybind_read(Desktop* desktop, DesktopKeybind bind, FuriString* out);
+/** Do what a button or a control centre tile is bound to (desktop_keybinds.h); false if unbound */
+bool desktop_keybind_run(Desktop* desktop, DesktopKeybind bind);

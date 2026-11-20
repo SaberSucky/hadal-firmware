@@ -95,12 +95,12 @@ static void desktop_scene_main_start_favorite(Desktop* desktop, FavoriteApp* app
 #define KEYBINDS_FILE_MAX (4096U)
 
 _Static_assert(
-    DesktopMainEventKeybindEnd - DesktopMainEventKeybind == DesktopKeybindCount,
-    "an event for every keybind");
+    DesktopMainEventKeybindEnd - DesktopMainEventKeybind == DesktopKeybindButtonCount,
+    "an event for every button's keybind");
 
-// The action bound to a button, the file's last line for it; false if there is none
-static bool desktop_scene_main_keybind_read(Storage* storage, DesktopKeybind bind, FuriString* out) {
-    File* file = storage_file_alloc(storage);
+// The action bound to a button or tile, the file's last line for it; false if there is none
+bool desktop_keybind_read(Desktop* desktop, DesktopKeybind bind, FuriString* out) {
+    File* file = storage_file_alloc(desktop->storage);
     bool found = false;
     if(storage_file_open(file, DESKTOP_KEYBINDS_PATH, FSAM_READ, FSOM_OPEN_EXISTING)) {
         char* text = malloc(KEYBINDS_FILE_MAX);
@@ -156,10 +156,10 @@ static uint32_t desktop_scene_main_default_event(Desktop* desktop, DesktopKeybin
     }
 }
 
-// Do what the button is bound to; false if it is not bound
-static bool desktop_scene_main_keybind_run(Desktop* desktop, DesktopKeybind bind) {
+// Do what the button (or control centre tile) is bound to; false if it is not bound
+bool desktop_keybind_run(Desktop* desktop, DesktopKeybind bind) {
     FuriString* action = furi_string_alloc();
-    const bool bound = desktop_scene_main_keybind_read(desktop->storage, bind, action);
+    const bool bound = desktop_keybind_read(desktop, bind, action);
     if(bound) {
         const char* text = furi_string_get_cstr(action);
         static const uint32_t events[] = {
@@ -217,7 +217,7 @@ bool desktop_scene_main_on_event(void* context, SceneManagerEvent event) {
     if(event.type == SceneManagerEventTypeCustom && event.event >= DesktopMainEventKeybind &&
        event.event < DesktopMainEventKeybindEnd) {
         const DesktopKeybind bind = event.event - DesktopMainEventKeybind;
-        if(!desktop_scene_main_keybind_run(desktop, bind)) {
+        if(!desktop_keybind_run(desktop, bind)) {
             view_dispatcher_send_custom_event(
                 desktop->view_dispatcher, desktop_scene_main_default_event(desktop, bind));
         }
@@ -234,13 +234,13 @@ bool desktop_scene_main_on_event(void* context, SceneManagerEvent event) {
         } break;
 
         case DesktopMainEventLock:
-            scene_manager_set_scene_state(desktop->scene_manager, DesktopSceneLockMenu, 0);
+            scene_manager_set_scene_state(desktop->scene_manager, DesktopSceneControlCentre, 0);
             desktop_lock(desktop);
             consumed = true;
             break;
 
         case DesktopMainEventOpenLockMenu:
-            scene_manager_next_scene(desktop->scene_manager, DesktopSceneLockMenu);
+            scene_manager_next_scene(desktop->scene_manager, DesktopSceneControlCentre);
             consumed = true;
             break;
 
@@ -298,7 +298,7 @@ bool desktop_scene_main_on_event(void* context, SceneManagerEvent event) {
             break;
         case DesktopAnimationEventInteractAnimation:
             // a short Right press: the binding, if there is one, comes before the animation
-            if(desktop_scene_main_keybind_run(desktop, DesktopKeybindRightPress)) {
+            if(desktop_keybind_run(desktop, DesktopKeybindRightPress)) {
                 // done
             } else if(!animation_manager_interact_process(desktop->animation_manager)) {
                 if(!desktop->settings.dummy_mode) {
@@ -330,7 +330,7 @@ bool desktop_scene_main_on_event(void* context, SceneManagerEvent event) {
                 desktop_scene_main_open_app_or_profile(
                     desktop, &desktop->settings.dummy_apps[DummyAppUpLong]);
             } else {
-                scene_manager_set_scene_state(desktop->scene_manager, DesktopSceneLockMenu, 0);
+                scene_manager_set_scene_state(desktop->scene_manager, DesktopSceneControlCentre, 0);
                 desktop_lock(desktop);
             }
             break;

@@ -1,4 +1,5 @@
 #include "submenu.h"
+#include "../hadal_title_font.h"
 
 #include <assets_icons.h>
 #include <gui/elements.h>
@@ -102,8 +103,15 @@ static void submenu_view_draw_callback(Canvas* canvas, void* _model) {
     canvas_clear(canvas);
 
     if(!furi_string_empty(model->header)) {
-        canvas_set_font(canvas, FontPrimary);
-        canvas_draw_str(canvas, 4, 11, furi_string_get_cstr(model->header));
+        // Hadal's header: the title font's bold capitals over a dotted rule
+        canvas_set_custom_u8g2_font(canvas, hadal_title_font);
+        FuriString* header = furi_string_alloc_set(model->header);
+        elements_string_fit_width(canvas, header, item_width - 4);
+        canvas_draw_str(canvas, 3, 2 + HADAL_TITLE_FONT_HEIGHT, furi_string_get_cstr(header));
+        furi_string_free(header);
+        for(uint8_t x = 3; x < item_width - 1; x += 2) {
+            canvas_draw_dot(canvas, x, 14);
+        }
     }
 
     canvas_set_font(canvas, FontSecondary);
@@ -120,12 +128,13 @@ static void submenu_view_draw_callback(Canvas* canvas, void* _model) {
         if(item_position < items_on_screen) {
             if(position == model->position) {
                 canvas_set_color(canvas, ColorBlack);
-                elements_slightly_rounded_box(
+                canvas_draw_rbox(
                     canvas,
                     0,
                     y_offset + (item_position * item_height) + 1,
                     item_width,
-                    item_height - 2);
+                    item_height - 2,
+                    3);
                 canvas_set_color(canvas, ColorWhite);
             } else {
                 canvas_set_color(canvas, ColorBlack);
