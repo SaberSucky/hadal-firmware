@@ -61,8 +61,8 @@ void ble_tools_draw_fit(Canvas* canvas, int32_t x, int32_t y, const char* text, 
 }
 
 void ble_tools_draw_sound_hint(Canvas* canvas, bool sound) {
-    canvas_set_font(canvas, FontSecondary);
-    canvas_draw_str(canvas, 0, 63, sound ? "OK: mute" : "OK: sound");
+    // in the corner the graph leaves free, clear of the screen's edges
+    elements_hints(canvas, 2, 61, AlignLeft, sound ? "ok=Mute" : "ok=Sound");
 }
 
 void ble_tools_label(const BleSeen* device, char* out, size_t size) {
@@ -121,10 +121,11 @@ void ble_meter_draw(Canvas* canvas, const BleMeter* meter, const char* title, ui
     char text[32];
     canvas_set_font(canvas, FontPrimary);
     FuriString* fitted = furi_string_alloc_set_str(title ? title : "");
-    elements_string_fit_width(canvas, fitted, 126);
-    canvas_draw_str_aligned(canvas, 64, 0, AlignCenter, AlignTop, furi_string_get_cstr(fitted));
+    elements_string_fit_width(canvas, fitted, 122);
+    // a clear row over the capitals and under the descenders, then the rule
+    canvas_draw_str_aligned(canvas, 64, 9, AlignCenter, AlignBottom, furi_string_get_cstr(fitted));
     furi_string_free(fitted);
-    canvas_draw_line(canvas, 0, 11, 127, 11);
+    canvas_draw_line(canvas, 0, 12, 127, 12);
 
     const uint32_t silent_ms = now - meter->last_heard;
     if(!meter->count) {
@@ -150,27 +151,28 @@ void ble_meter_draw(Canvas* canvas, const BleMeter* meter, const char* title, ui
                                                  before - recent >= 3 ? "Colder" :
                                                                         "Steady";
     canvas_set_font(canvas, FontPrimary);
-    canvas_draw_str_aligned(canvas, 127, 14, AlignRight, AlignTop, distance);
+    canvas_draw_str_aligned(canvas, 125, 14, AlignRight, AlignTop, distance);
     canvas_set_font(canvas, FontSecondary);
     if(silent_ms > 5000) {
         snprintf(text, sizeof(text), "unheard %lus", (unsigned long)(silent_ms / 1000));
-        canvas_draw_str_aligned(canvas, 127, 25, AlignRight, AlignTop, text);
+        canvas_draw_str_aligned(canvas, 125, 25, AlignRight, AlignTop, text);
     } else {
-        canvas_draw_str_aligned(canvas, 127, 25, AlignRight, AlignTop, trend);
+        canvas_draw_str_aligned(canvas, 125, 25, AlignRight, AlignTop, trend);
     }
 
     // strength bar, with a tick at the best so far
-    canvas_draw_frame(canvas, 0, 37, 128, 7);
-    canvas_draw_box(canvas, 1, 38, meter_level(rssi, 126), 5);
-    const int best = 1 + meter_level(meter->best, 126);
+    // (two clear columns from the screen's edges)
+    canvas_draw_frame(canvas, 2, 37, 124, 7);
+    canvas_draw_box(canvas, 3, 38, meter_level(rssi, 122), 5);
+    const int best = 3 + meter_level(meter->best, 122);
     canvas_draw_line(canvas, best, 35, best, 45);
 
     // the last readings, oldest on the left; the corner left of them is the app's
     const size_t shown = meter->count < BLE_METER_GRAPH_WIDTH ? meter->count : BLE_METER_GRAPH_WIDTH;
     for(size_t i = 0; i < shown; i++) {
         const int h = meter_level(meter->history[meter->count - shown + i], 16);
-        const int x = 128 - (int)shown + (int)i;
-        if(h) canvas_draw_line(canvas, x, 63, x, 63 - h);
+        const int x = 126 - (int)shown + (int)i;
+        if(h) canvas_draw_line(canvas, x, 62, x, 62 - h);
     }
 }
 

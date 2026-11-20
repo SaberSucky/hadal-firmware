@@ -7,6 +7,14 @@
 #define SAMSUNG_COMPANY      0x0075U
 #define APPLE_FIND_MY        0x12U
 #define APPLE_FIND_MY_AWAY   0x19U /* payload length of the "away from owner" form */
+#define APPLE_FIND_MY_NEAR   0x02U /* payload length of the "owner nearby" form */
+/* The Find My status byte says what sent it, in bits 4-5: every Apple device on the network
+ * sends the same advertisement, AirPods and iPhones too, not only tags */
+#define FIND_MY_TYPE(status) (((status) >> 4) & 0x03U)
+#define FIND_MY_APPLE        0U /* an iPhone, iPad, Mac or Watch */
+#define FIND_MY_AIRTAG       1U
+#define FIND_MY_ACCESSORY    2U /* a Find My network accessory from another maker */
+#define FIND_MY_AIRPODS      3U
 #define APPLE_AIRPODS        0x07U
 #define UUID_SMARTTAG        0xFD5AU
 #define UUID_TILE            0xFEEDU
@@ -26,6 +34,7 @@ static const char* const kind_names[BleKindCount] = {
     [BleKindSamsung] = "Samsung device",
     [BleKindMicrosoft] = "Windows device",
     [BleKindNamed] = "Named device",
+    [BleKindAirTag] = "AirTag",
 };
 
 const char* ble_kind_name(BleKind kind) {
@@ -33,8 +42,8 @@ const char* ble_kind_name(BleKind kind) {
 }
 
 bool ble_kind_is_tracker(BleKind kind) {
-    return kind == BleKindFindMy || kind == BleKindSmartTag || kind == BleKindTile ||
-           kind == BleKindGoogleFind;
+    return kind == BleKindAirTag || kind == BleKindFindMy || kind == BleKindSmartTag ||
+           kind == BleKindTile || kind == BleKindGoogleFind;
 }
 
 // A weaker hint never overrides a stronger one (a tracker stays a tracker)
@@ -60,6 +69,34 @@ static void parse_service(BleSeen* device, uint16_t uuid, const uint8_t* value, 
     }
 }
 
+/* Apple's Find My advertisement after its type byte: its length, the status byte, then the key.
+ * Only the two forms Apple sends, each whole, are taken: anything else is just an Apple device */
+static void parse_find_my(BleSeen* device, const uint8_t* payload, uint8_t length) {
+    const uint8_t form = payload[0];
+    if((form != APPLE_FIND_MY_AWAY && form != APPLE_FIND_MY_NEAR) || length < 1 + form) {
+        set_kind(device, BleKindApple);
+        return;
+    }
+    const bool away = form == APPLE_FIND_MY_AWAY;
+    switch(FIND_MY_TYPE(payload[1])) {
+    case FIND_MY_AIRTAG:
+        set_kind(device, BleKindAirTag);
+        device->separated = away;
+        break;
+    case FIND_MY_ACCESSORY:
+        set_kind(device, BleKindFindMy);
+        device->separated = away;
+        break;
+    case FIND_MY_AIRPODS:
+        // headphones on the network: findable, but not a tag
+        set_kind(device, BleKindAirPods);
+        break;
+    default:
+        set_kind(device, BleKindApple);
+        break;
+    }
+}
+
 void ble_seen_parse(BleSeen* device, const uint8_t* data, uint8_t length) {
     uint8_t pos = 0;
     while(data && pos + 1 < length) {
@@ -79,9 +116,8 @@ void ble_seen_parse(BleSeen* device, const uint8_t* data, uint8_t length) {
             set_kind(device, BleKindNamed);
         } else if(type == 0xFF && value_length >= 2) {
             const uint16_t company = value[0] | (value[1] << 8);
-            if(company == APPLE_COMPANY && value_length >= 4 && value[2] == APPLE_FIND_MY) {
-                set_kind(device, BleKindFindMy);
-                device->separated = value[3] == APPLE_FIND_MY_AWAY;
+            if(company == APPLE_COMPANY && value_length >= 5 && value[2] == APPLE_FIND_MY) {
+                parse_find_my(device, value + 3, value_length - 3);
             } else if(company == APPLE_COMPANY && value_length >= 3 && value[2] == APPLE_AIRPODS) {
                 set_kind(device, BleKindAirPods);
             } else if(company == APPLE_COMPANY) {

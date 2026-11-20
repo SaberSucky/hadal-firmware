@@ -1129,8 +1129,9 @@ void elements_hint_bar(Canvas* canvas, const char* hints) {
     canvas_set_color(canvas, ColorWhite);
     canvas_draw_box(canvas, 0, top, width, ELEMENTS_HINT_BAR_HEIGHT);
     canvas_set_color(canvas, ColorBlack);
-    for(int32_t x = 1; x < width; x += 2) {
-        canvas_draw_dot(canvas, x, top);
+    for(int32_t x = 2; x < width - 2; x += 2) {
+        canvas_draw_dot(canvas, x, top); // two clear columns from the screen's edges
     }
-    elements_hints(canvas, width / 2, canvas_height(canvas) - 2, AlignCenter, hints);
+    // a clear row under the rule, and under the descenders above the screen's edge
+    elements_hints(canvas, width / 2, canvas_height(canvas) - 3, AlignCenter, hints);
 }

@@ -195,14 +195,15 @@ ICONS = {
 .#...#.
 ...#...
 """,
-    "cc_speaker_9x7": """
-...#..#..
-..##...#.
-####.#..#
-####.#..#
-####.#..#
-..##...#.
-...#..#..
+    # a speaker and its sound: 7 wide, so the slider's well has a clear column either side
+    "cc_speaker_7x7": """
+...#...
+..##.#.
+####..#
+####..#
+####..#
+..##.#.
+...#...
 """,
     "cc_bolt_5x7": """
 ..##.

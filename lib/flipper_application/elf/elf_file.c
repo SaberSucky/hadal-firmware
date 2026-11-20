@@ -1038,6 +1038,46 @@ void elf_file_call_fini(ELFFile* elf) {
     elf->init_array_called = false;
 }
 
+#define ELF_SYMBOL_BLOCK 64 // symbols read at a time: 1 KB
+
+void elf_file_for_each_object(
+    ELFFile* elf,
+    size_t object_size,
+    ElfObjectCallback callback,
+    void* context) {
+    furi_check(elf);
+    furi_check(callback);
+    if(!elf->symbol_table || !elf->symbol_count) return;
+
+    Elf32_Sym* symbols = malloc(ELF_SYMBOL_BLOCK * sizeof(Elf32_Sym));
+    FuriString* name = furi_string_alloc();
+    for(size_t first = 0; first < elf->symbol_count; first += ELF_SYMBOL_BLOCK) {
+        const size_t count = MIN((size_t)ELF_SYMBOL_BLOCK, elf->symbol_count - first);
+        const size_t bytes = count * sizeof(Elf32_Sym);
+        if(!storage_file_seek(elf->fd, elf->symbol_table + first * sizeof(Elf32_Sym), true) ||
+           storage_file_read(elf->fd, symbols, bytes) != bytes) {
+            break;
+        }
+        for(size_t i = 0; i < count; i++) {
+            const Elf32_Sym* symbol = &symbols[i];
+            if(ELF32_ST_TYPE(symbol->st_info) != STT_OBJECT || symbol->st_size != object_size ||
+               symbol->st_shndx == SHN_UNDEF || !symbol->st_name) {
+                continue;
+            }
+            ELFSection* section = elf_section_of(elf, symbol->st_shndx);
+            if(!section || !section->data || symbol->st_value + object_size > section->size) {
+                continue;
+            }
+            furi_string_reset(name);
+            if(!elf_read_symbol_name(elf, symbol->st_name, name)) continue;
+            callback(
+                furi_string_get_cstr(name), (const uint8_t*)section->data + symbol->st_value, context);
+        }
+    }
+    furi_string_free(name);
+    free(symbols);
+}
+
 const ElfApiInterface* elf_file_get_api_interface(ELFFile* elf_file) {
     return elf_file->api_interface;
 }

@@ -13,12 +13,13 @@
 // A tile is drawn 18x18 inside a 20x20 cell; the focus ring is the cell's edge
 #define CELL      20
 #define CELL_STEP 20
+#define TILES_X   1 // a clear column between the focus ring and the screen's edge
 #define TILES_Y   11
 
 // Sliders as tall as the two rows of tiles: a rounded well that fills from the bottom, its icon
 // inside it, dark on the empty part and light on the filled part
-#define SLIDER_X0 103
-#define SLIDER_X1 116
+#define SLIDER_X0 102
+#define SLIDER_X1 115 // its focus ring ends a column short of the screen's edge
 #define SLIDER_W  11
 #define SLIDER_H  (2 * CELL)
 
@@ -127,7 +128,7 @@ static void control_centre_draw_header(Canvas* canvas, const ControlCentreState*
         if(hour == 0) hour = 12;
     }
     snprintf(text, sizeof(text), "%u:%02u", hour, state->minute);
-    canvas_draw_str(canvas, 1, 8, text);
+    canvas_draw_str(canvas, 2, 8, text);
 
     // battery: outline with a nub, filled to the charge
     const uint8_t bx = 114, by = 1;
@@ -170,7 +171,7 @@ static void control_centre_draw_tile(
     uint8_t row) {
     const ControlCentreTile tile = control_centre_tile_at(column, row);
     const ControlCentreState* state = &model->state;
-    const uint8_t x = column * CELL_STEP;
+    const uint8_t x = TILES_X + column * CELL_STEP;
     const uint8_t y = TILES_Y + row * CELL_STEP;
     const bool focused = model->column == column && model->row == row;
     const bool on = state->on[tile];
@@ -226,14 +227,15 @@ static void control_centre_draw_slider(
 /** An app tile's line: its app and how to change it, or how to choose one */
 static void control_centre_draw_app_label(Canvas* canvas, const char* label) {
     if(!label[0]) {
-        elements_hints(canvas, 64, 62, AlignCenter, "ok=Choose an app");
+        elements_hints(canvas, 64, 61, AlignCenter, "ok=Choose an app");
         return;
     }
-    const uint16_t hint = elements_hints(canvas, 127, 62, AlignRight, "ok=Hold: change");
+    // the app's name on the left and the hint on the right, two clear columns from the edges
+    const uint16_t hint = elements_hints(canvas, 125, 61, AlignRight, "ok=Hold: change");
     FuriString* name = furi_string_alloc_set_str(label);
     canvas_set_font(canvas, FontSecondary);
-    elements_string_fit_width(canvas, name, 127 - hint - 6);
-    canvas_draw_str(canvas, 1, 62, furi_string_get_cstr(name));
+    elements_string_fit_width(canvas, name, 125 - hint - 6 - 2);
+    canvas_draw_str(canvas, 2, 61, furi_string_get_cstr(name));
     furi_string_free(name);
 }
 
@@ -245,13 +247,13 @@ static void control_centre_draw_picker(Canvas* canvas, const ControlCentreModel*
 
     // header: what this is, and where in the list
     canvas_set_custom_u8g2_font(canvas, hadal_title_font);
-    canvas_draw_str(canvas, 1, 1 + HADAL_TITLE_FONT_HEIGHT, "PICK AN APP");
+    canvas_draw_str(canvas, 2, 1 + HADAL_TITLE_FONT_HEIGHT, "PICK AN APP");
     char position[24];
     snprintf(
         position, sizeof(position), "%u/%u", (unsigned)(model->pick_index + 1), (unsigned)count);
     canvas_set_font(canvas, FontSecondary);
-    canvas_draw_str_aligned(canvas, 127, 1, AlignRight, AlignTop, position);
-    for(uint8_t x = 1; x < 128; x += 2) {
+    canvas_draw_str_aligned(canvas, 125, 1, AlignRight, AlignTop, position);
+    for(uint8_t x = 2; x < 126; x += 2) {
         canvas_draw_dot(canvas, x, 12);
     }
 
@@ -308,7 +310,7 @@ static void control_centre_draw_callback(Canvas* canvas, void* model_) {
         SLIDER_X1,
         model->state.volume,
         model->column == TILE_COLUMNS + 1,
-        &I_cc_speaker_9x7);
+        &I_cc_speaker_7x7);
 
     const ControlCentreTile tile = control_centre_tile_at(model->column, model->row);
     if(model->column < TILE_COLUMNS &&
@@ -318,7 +320,8 @@ static void control_centre_draw_callback(Canvas* canvas, void* model_) {
         char label[40];
         control_centre_label(model, label, sizeof(label));
         canvas_set_font(canvas, FontSecondary);
-        canvas_draw_str_aligned(canvas, 64, 63, AlignCenter, AlignBottom, label);
+        // a clear row under the descenders, above the screen's edge
+        canvas_draw_str_aligned(canvas, 64, 61, AlignCenter, AlignBottom, label);
     }
 
     if(model->picking) control_centre_draw_picker(canvas, model);

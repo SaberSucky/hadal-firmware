@@ -88,10 +88,10 @@ static int bars(int8_t rssi) {
 static void draw_list(Canvas* canvas, FindMyStuff* app) {
     char text[BLE_SEEN_NAME_SIZE];
     canvas_set_font(canvas, FontPrimary);
-    canvas_draw_str(canvas, 2, 10, "Find My Stuff");
+    canvas_draw_str(canvas, 2, 9, "Find My Stuff"); // its descender a row clear of the rule
     canvas_set_font(canvas, FontSecondary);
     snprintf(text, sizeof(text), "%u near", (unsigned)app->table.count);
-    canvas_draw_str_aligned(canvas, 126, 10, AlignRight, AlignBottom, text);
+    canvas_draw_str_aligned(canvas, 125, 9, AlignRight, AlignBottom, text);
     canvas_draw_line(canvas, 0, 12, 127, 12);
 
     if(!app->table.count) {
@@ -106,11 +106,11 @@ static void draw_list(Canvas* canvas, FindMyStuff* app) {
         if(!device) break;
         const int y = 14 + (int)row * 12;
         if(app->top + row == app->selected) {
-            canvas_draw_box(canvas, 0, y, 124, 12);
+            canvas_draw_rbox(canvas, 0, y, 124, 12, 2);
             canvas_set_color(canvas, ColorWhite);
         }
         ble_tools_label(device, text, sizeof(text));
-        ble_tools_draw_fit(canvas, 2, y + 9, text, 100);
+        ble_tools_draw_fit(canvas, 3, y + 9, text, 99);
         // signal bars on the right
         const int level = bars((int8_t)(device->rssi_avg_x8 / 8));
         for(int bar = 0; bar < 4; bar++) {

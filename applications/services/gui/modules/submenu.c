@@ -90,17 +90,23 @@ static void submenu_process_down(Submenu* submenu);
 static void submenu_process_page(Submenu* submenu, bool down);
 static void submenu_process_ok(Submenu* submenu, InputType input_type);
 
-// With a hint bar the rows are shorter, so that as many still fit above it
+// With a hint bar the rows are shorter, so that as many still fit above it: a 12 pixel selection
+// with two clear rows over the capitals and one under the descenders, and a row between rows. The
+// header then has no rule of its own (the hint bar has one), only clear rows under it.
 #define SUBMENU_ITEM_HEIGHT         16
-#define SUBMENU_COMPACT_ITEM_HEIGHT 12
-#define SUBMENU_COMPACT_HEADER      15
+#define SUBMENU_COMPACT_ITEM_HEIGHT 13
+#define SUBMENU_COMPACT_HEADER      12
 
 static bool submenu_has_hints(const SubmenuModel* model) {
     return !model->is_vertical && !furi_string_empty(model->hints);
 }
 
 static size_t submenu_items_on_screen(SubmenuModel* model) {
-    if(submenu_has_hints(model)) return furi_string_empty(model->header) ? 4 : 3;
+    if(submenu_has_hints(model)) {
+        // above the hint bar, with a clear row over its rule
+        const size_t top = furi_string_empty(model->header) ? 0 : SUBMENU_COMPACT_HEADER;
+        return (64 - ELEMENTS_HINT_BAR_HEIGHT - 1 - top) / SUBMENU_COMPACT_ITEM_HEIGHT;
+    }
     size_t res = (model->is_vertical) ? 8 : 4;
     return (furi_string_empty(model->header)) ? res : res - 1;
 }
@@ -122,8 +128,10 @@ static void submenu_view_draw_callback(Canvas* canvas, void* _model) {
         elements_string_fit_width(canvas, header, item_width - 4);
         canvas_draw_str(canvas, 3, 2 + HADAL_TITLE_FONT_HEIGHT, furi_string_get_cstr(header));
         furi_string_free(header);
-        for(uint8_t x = 3; x < item_width - 1; x += 2) {
-            canvas_draw_dot(canvas, x, header_height - 2);
+        if(!hints) {
+            for(uint8_t x = 3; x < item_width - 1; x += 2) {
+                canvas_draw_dot(canvas, x, header_height - 2);
+            }
         }
     }
 
@@ -146,7 +154,7 @@ static void submenu_view_draw_callback(Canvas* canvas, void* _model) {
                     0,
                     y_offset + (item_position * item_height) + 1,
                     item_width,
-                    item_height - 2,
+                    item_height - (hints ? 1 : 2),
                     3);
                 canvas_set_color(canvas, ColorWhite);
             } else {
@@ -165,6 +173,8 @@ static void submenu_view_draw_callback(Canvas* canvas, void* _model) {
             const char* label = furi_string_get_cstr(SubmenuItemArray_cref(it)->label);
             const uint8_t text_y =
                 y_offset + (item_position * item_height) + item_height - (hints ? 3 : 4);
+            // (compact: capitals 3 rows under the row's top, descenders a row above its selection's
+            // bottom; as before: the stock layout)
             if(position == model->position && canvas_string_width(canvas, label) > text_width) {
                 // the selected one scrolls, so the whole of it can be read
                 model->selected_scrolls = true;

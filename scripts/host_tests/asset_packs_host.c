@@ -14,6 +14,9 @@
  *   marker ROOT NAME              when the crash marker exists: through load, stable, reload, drop
  *   fonts  ROOT NAME              which font slots a pack replaces; then drop it and watch the
  *                                 replaced fonts leave the graveyard after the grace period
+ *   app    ROOT NAME SYM...       an app on the SD card with icons named SYM ("I_X_10x10", or
+ *                                 "A_X_8x8:3" with 3 frames): which the pack replaces, while it
+ *                                 runs, after it is gone and after the pack's icons are dropped
  *
  * ROOT is a directory standing in for the SD card (ROOT/ext/asset_packs/...) and internal
  * storage (ROOT/int/). HOST_LOG=1 prints the manager's log lines.
@@ -72,6 +75,66 @@ static void report_all(void) {
             bool same = icons_draw_identically(original, shown);
             asset_packs_icon_release();
             printf("R %08x %s\n", assets_icon_index[i].path_hash, same ? "same" : "diff");
+        }
+    }
+}
+
+/** Icons that replace the firmware's, not those kept for apps alone */
+static size_t count_loaded(void) {
+    size_t loaded = 0;
+    for(size_t i = 0; i < asset_packs.icon_count; i++) {
+        if(asset_packs.icons[i].original) loaded++;
+    }
+    return loaded;
+}
+
+/* ---- an app on the SD card: its icons, as its symbol table would give them ---- */
+
+#define FAKE_APP_MAX 32
+
+struct FlipperApplication {
+    size_t count;
+    const char* names[FAKE_APP_MAX];
+    Icon icons[FAKE_APP_MAX];
+};
+
+void flipper_application_for_each_object(
+    FlipperApplication* app,
+    size_t object_size,
+    FlipperApplicationObjectCallback callback,
+    void* context) {
+    if(object_size != sizeof(Icon)) return;
+    for(size_t i = 0; i < app->count; i++) {
+        callback(app->names[i], &app->icons[i], context);
+    }
+}
+
+/** "I_X_10x10" or "A_X_8x8:3" into an Icon of that size and frame count (frames never read) */
+static void fake_app_add(FlipperApplication* app, char* symbol) {
+    unsigned width = 1, height = 1, frames = 1;
+    char* colon = strchr(symbol, ':');
+    if(colon) {
+        *colon = '\0';
+        frames = (unsigned)atoi(colon + 1);
+    }
+    const char* size = strrchr(symbol, '_');
+    if(size) sscanf(size + 1, "%ux%u", &width, &height);
+    Icon icon = {
+        .width = width, .height = height, .frame_count = frames, .frame_rate = 4, .frames = NULL};
+    memcpy(&app->icons[app->count], &icon, sizeof(Icon));
+    app->names[app->count] = symbol;
+    app->count++;
+}
+
+static void report_app(const char* when, FlipperApplication* app) {
+    for(size_t i = 0; i < app->count; i++) {
+        const Icon* original = &app->icons[i];
+        const Icon* shown = asset_packs_icon_acquire(original);
+        if(shown != original) {
+            printf("%s %s R %ux%u %u\n", when, app->names[i], shown->width, shown->height, shown->frame_count);
+            asset_packs_icon_release();
+        } else {
+            printf("%s %s S\n", when, app->names[i]);
         }
     }
 }
@@ -190,8 +253,24 @@ int main(int argc, char** argv) {
     if(!strcmp(command, "verify") && argc == 4) {
         asset_packs_set_active(argv[3]);
         wait_for_loader();
-        printf("loaded %zu\n", asset_packs.icon_count);
+        printf("loaded %zu\n", count_loaded());
+        printf("apponly %zu\n", asset_packs.icon_count - count_loaded());
         report_all();
+    } else if(!strcmp(command, "app") && argc >= 5) {
+        asset_packs_set_active(argv[3]);
+        wait_for_loader();
+        FlipperApplication* app = calloc(1, sizeof(FlipperApplication));
+        for(int i = 4; i < argc && app->count < FAKE_APP_MAX; i++) fake_app_add(app, argv[i]);
+        asset_packs_app_loaded(app);
+        report_app("run", app);
+        asset_packs_app_unloaded();
+        report_app("gone", app);
+        // loaded again, then the pack's icons dropped while it runs (a pack switch)
+        asset_packs_app_loaded(app);
+        asset_packs_unload_icons();
+        report_app("dropped", app);
+        asset_packs_app_unloaded();
+        free(app);
     } else if(!strcmp(command, "cycle") && argc == 5) {
         asset_packs_set_active(argv[3]);
         wait_for_loader();

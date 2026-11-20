@@ -785,6 +785,56 @@ class HostLoaderTests(TempDirCase):
         )
         self.assertEqual(loaded, 2)
 
+    def write_icon(self, pack_name, path, width, height, seed, frames=1):
+        icons = os.path.join(self.root, "ext", "asset_packs", pack_name, "Icons")
+        if frames == 1:
+            os.makedirs(os.path.dirname(os.path.join(icons, path)), exist_ok=True)
+            make_png(self.p("i.png"), width, height, seed)
+            w, h, blob = pack.encode_png(self.p("i.png"))
+            with open(os.path.join(icons, path + ".bmx"), "wb") as f:
+                f.write(pack.bmx_pack(w, h, blob))
+            return
+        anim = os.path.join(icons, path)
+        os.makedirs(anim)
+        for i in range(frames):
+            make_png(self.p("f.png"), width, height, seed + i)
+            _, _, blob = pack.encode_png(self.p("f.png"))
+            with open(os.path.join(anim, pack.FRAME_NAME % i), "wb") as f:
+                f.write(blob)
+        with open(os.path.join(anim, "meta"), "wb") as f:
+            f.write(pack.anim_meta_pack(width, height, 4, frames))
+
+    def test_apps_on_the_sd_card_get_the_pack_icons_named_like_theirs(self):
+        self.write_icon("Apps", "Passport/passport_okay_46x49", 46, 49, 1)
+        self.write_icon("Apps", "Passport/passport_128x64", 128, 64, 2)
+        self.write_icon("Apps", "NFC/Custom_10x10", 12, 10, 3)       # another size is fine
+        self.write_icon("Apps", "MainMenu/Foo_10x10", 10, 10, 4)     # module icons stay stock
+        self.write_icon("Apps", "Anim/Spin_8x8", 8, 8, 5, frames=3)
+        result = self.run_host(
+            "app", "Apps",
+            "I_passport_okay1_46x49", "I_passport_okay3_46x49",  # one portrait for every level
+            "I_passport_bad1_46x49",                              # the pack has none
+            "I_passport_128x64", "I_Custom_10x10", "I_Foo_10x10",
+            "A_Spin_8x8:3", "I_Spin_8x8",                         # frame counts must match
+            "X_Custom_10x10",                                     # not an icon's name
+        )
+        self.assertEqual(result.returncode, 0, result.stderr[-1500:])
+        lines = result.stdout.splitlines()
+        run = {l.split()[1]: l.split()[2:] for l in lines if l.startswith("run ")}
+        self.assertEqual(run["I_passport_okay1_46x49"], ["R", "46x49", "1"])
+        self.assertEqual(run["I_passport_okay3_46x49"], ["R", "46x49", "1"])
+        self.assertEqual(run["I_passport_bad1_46x49"], ["S"])
+        self.assertEqual(run["I_passport_128x64"], ["R", "128x64", "1"])
+        self.assertEqual(run["I_Custom_10x10"], ["R", "12x10", "1"])
+        self.assertEqual(run["I_Foo_10x10"], ["S"])
+        self.assertEqual(run["A_Spin_8x8"], ["R", "8x8", "3"])
+        self.assertEqual(run["I_Spin_8x8"], ["S"])
+        self.assertEqual(run["X_Custom_10x10"], ["S"])
+        # once the app is gone, or the pack's icons are, nothing of it is replaced (and ASan saw
+        # no use of freed icons)
+        for when in ("gone", "dropped"):
+            self.assertEqual({l.split()[2] for l in lines if l.startswith(when + " ")}, {"S"}, when)
+
     def test_missing_pack_or_missing_icons_folder_is_harmless(self):
         for name in ("Nope", "../escape", "", "a/b"):
             result = self.run_host("verify", name)
@@ -2303,8 +2353,9 @@ class RealAssetsTests(TempDirCase):
         base = os.path.join(REPO_ROOT, "assets", "icons")
         index = pack.source_icon_index(base)
         # 245 static + 19 animated; nested folders such as BLE/BLE_HID must be included
-        # 264 + Archive/disk_10px + the control centre's 13 icons + the hint bar's 3 glyphs
-        self.assertEqual(len(index), 281)
+        # 264 + Archive/disk_10px + the control centre's 13 icons + the hint bar's 3 glyphs, and
+        # the passport's one background for its two pieces
+        self.assertEqual(len(index), 280)
         self.assertIn("BLE/BLE_HID/Ok_btn_9x9", index)
         self.assertEqual(index["BLE/BLE_HID/Ok_btn_9x9"], (9, 9, 1))
         hashes = {pack.icon_path_hash(p) for p in index}
@@ -2912,8 +2963,14 @@ class BleSeenTests(TempDirCase):
     """applications/system/ble_tools/ble_seen.c: what Tracker Detector, Find My Stuff and Crowd
     Meter know about the devices around. Built as-is under ASan/UBSan."""
 
-    AIRTAG_AWAY = "1EFF4C001219" + "10" + "AB" * 22 + "0100"     # Find My, long payload: away from owner
-    AIRTAG_HOME = "07FF4C0012020000"                                 # Find My, short: owner nearby
+    # Find My: long payload away from the owner, short with the owner near; the status byte's
+    # bits 4-5 say what sent it (1 AirTag, 2 another maker's accessory, 3 AirPods, 0 an iPhone...)
+    AIRTAG_AWAY = "1EFF4C001219" + "10" + "AB" * 22 + "0100"
+    AIRTAG_HOME = "07FF4C0012021000"
+    ACCESSORY_AWAY = "1EFF4C001219" + "24" + "AB" * 22 + "0100"
+    AIRPODS_AWAY = "1EFF4C001219" + "30" + "AB" * 22 + "0100"
+    IPHONE_AWAY = "1EFF4C001219" + "00" + "AB" * 22 + "0100"
+    FIND_MY_CUT = "0EFF4C001219" + "10" + "AB" * 8                # says long, is not: not a tag
     GOOGLE_UTP = "0D16AAFE41" + "CD" * 9                             # Google tag, unwanted-tracking mode
     GOOGLE_HOME = "0D16AAFE40" + "CD" * 9
     TILE = "0303EDFE"                                                # 16-bit UUID list with Tile
@@ -2961,14 +3018,37 @@ class BleSeenTests(TempDirCase):
             "?",
         ])
         self.assertEqual(out[:7], [
-            "010000000000 Find My tag separated=1 name= rssi=-60",
-            "020000000000 Find My tag separated=0 name= rssi=-60",
+            "010000000000 AirTag separated=1 name= rssi=-60",
+            "020000000000 AirTag separated=0 name= rssi=-60",
             "030000000000 Google tag separated=1 name= rssi=-60",
             "040000000000 Google tag separated=0 name= rssi=-60",
             "050000000000 Tile separated=1 name= rssi=-60",
             "060000000000 Named device separated=0 name=Headphone rssi=-60",
             "070000000000 AirPods separated=0 name= rssi=-60",
         ])
+
+    def test_find_my_says_what_sent_it(self):
+        # AirPods and iPhones away from their owners send the same advertisement as AirTags
+        out = self.run_seen([
+            f"H 010000000000 -60 0 {self.ACCESSORY_AWAY}",
+            f"H 020000000000 -60 0 {self.AIRPODS_AWAY}",
+            f"H 030000000000 -60 0 {self.IPHONE_AWAY}",
+            f"H 040000000000 -60 0 {self.FIND_MY_CUT}",
+            "?",
+        ])
+        self.assertEqual(out[:4], [
+            "010000000000 Find My tag separated=1 name= rssi=-60",
+            "020000000000 AirPods separated=0 name= rssi=-60",
+            "030000000000 Apple device separated=0 name= rssi=-60",
+            "040000000000 Apple device separated=0 name= rssi=-60",
+        ])
+        # and only tags are followed: AirPods with you for long are not a warning
+        lines = []
+        for minute in range(0, 12):
+            t = minute * 60000
+            lines += [f"H 010000000000 -70 {t} {self.AIRPODS_AWAY}", f"E {t} 60000 180000"]
+        lines += ["F 660000 600000"]
+        self.assertEqual(self.run_seen(lines), ["."])
 
     def test_a_name_does_not_hide_a_tracker(self):
         out = self.run_seen([f"H 010000000000 -60 0 {self.TILE}", f"H 010000000000 -60 10 {self.NAMED}", "?"])

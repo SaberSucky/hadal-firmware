@@ -1,3 +1,4 @@
+#include <asset_packs.h>
 #include <toolbox/boot_profile.h>
 #include "loader.h"
 #include "loader_i.h"
@@ -634,6 +635,9 @@ static LoaderMessageLoaderStatusResult loader_start_external_app(
             break;
         }
 
+        // the active asset pack's icons for the app's own copies of them, by name
+        asset_packs_app_loaded(loader->app.fap);
+
         loader->app.thread = flipper_application_alloc_thread(loader->app.fap, args);
         FuriString* app_name = furi_string_alloc();
         path_extract_filename_no_ext(path, app_name);
@@ -652,6 +656,7 @@ static LoaderMessageLoaderStatusResult loader_start_external_app(
     } while(0);
 
     if(result.value != LoaderStatusOk) {
+        asset_packs_app_unloaded();
         flipper_application_free(loader->app.fap);
         loader->app.fap = NULL;
         LoaderEvent event;
@@ -1021,6 +1026,7 @@ static void loader_do_app_closed(Loader* loader) {
     }
 
     if(loader->app.fap) {
+        asset_packs_app_unloaded(); // before its icons' memory goes
         flipper_application_free(loader->app.fap);
         loader->app.fap = NULL;
         loader->app.thread = NULL;

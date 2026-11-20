@@ -16,6 +16,7 @@ ROOT = os.path.join(HERE, "..", "..")
 sys.path.insert(0, HERE)
 
 from title_font import GLYPHS, glyph_rows  # noqa: E402
+import abyss_vector  # noqa: E402
 
 ORANGE = "#FF8200"
 INK = "#121212"
@@ -29,7 +30,8 @@ SKEW = math.tan(math.radians(-14))
 # Abyss, Hadal's anglerfish: drawn as a vector (abyss_vector.py; abyss_vector_small.py for the
 # 32-pixel cut, with bigger features), then set on pixel grids of 64, 48 and 32 and finished by
 # hand (abyss_pixels.json). Comic style: ink outline, flat cel shading, lit by its own light.
-PIXELS = json.load(open(os.path.join(HERE, "abyss_pixels.json")))
+with open(os.path.join(HERE, "abyss_pixels.json")) as _pixels:
+    PIXELS = json.load(_pixels)
 
 PALETTES = {
     # the deep: blue-grey body, Flipper orange light
@@ -76,6 +78,18 @@ def abyss(x, y, px, size="64", palette="deep", dark=False, glow_id="glow"):
         out.append(_squares(ps, px, colours[ch]))
     out.append("</g>")
     return "\n".join(out)
+
+
+def abyss_vector_art(x, y, size, palette="deep", dark=False, ids=""):
+    """Abyss as the vector drawing (abyss_vector.py), size pixels square at x, y: the mascot for
+    the web, the README and chat avatars. On a dark page he gets a light edge, like a sticker."""
+    p = "abyss" if palette == "deep" else "olive"
+    edge = "#E9E9E6" if dark else None
+    return (
+        f'<g transform="translate({x},{y}) scale({size / 400})">'
+        + abyss_vector.body(p, False, ids, edge)
+        + "</g>"
+    )
 
 
 def abyss_one_bit(size="48"):
@@ -190,7 +204,8 @@ def banner(theme="light"):
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">']
     parts.append(defs(paper))
     parts.append(f'<rect width="{w}" height="{h}" rx="28" fill="{paper}"/>')
-    parts.append(abyss(96, 66, 4.6, "64", palette, dark=dark))
+    # the vector Abyss: the professional face, where the screen's pixels are not the point
+    parts.append(abyss_vector_art(44, 24, 380, palette, dark=dark, ids="b"))
     word_x, word_y, word_scale = 480, 130, 1.08
     mark, word_w = wordmark(word_x, word_y, word_scale, ink=ink)
     parts.append(mark)
@@ -213,7 +228,12 @@ def avatar(dark=True):
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 {size} {size}">']
     parts.append(defs(paper))
     parts.append(f'<rect width="{size}" height="{size}" rx="112" fill="{paper}"/>')
-    parts.append(abyss(64, 64, 6, "64", "deep", dark=dark))
+    # centred on what is drawn (x 38-396, y 30-340 of his 400 box), with room all round
+    art = 430
+    scale = art / 400
+    parts.append(
+        abyss_vector_art(size / 2 - 217 * scale, size / 2 - 185 * scale, art, "deep", dark=dark, ids="a")
+    )
     parts.append("</svg>")
     return "\n".join(parts) + "\n"
 

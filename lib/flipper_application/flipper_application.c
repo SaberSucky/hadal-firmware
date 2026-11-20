@@ -237,6 +237,15 @@ const FlipperApplicationManifest* flipper_application_get_manifest(FlipperApplic
     return &app->manifest;
 }
 
+void flipper_application_for_each_object(
+    FlipperApplication* app,
+    size_t object_size,
+    FlipperApplicationObjectCallback callback,
+    void* context) {
+    furi_check(app);
+    elf_file_for_each_object(app->elf, object_size, callback, context);
+}
+
 FlipperApplicationLoadStatus flipper_application_map_to_memory(FlipperApplication* app) {
     furi_check(app);
 

@@ -62,7 +62,7 @@ int main(int argc, char** argv) {
     model.position = 3;
     model.dropdown_open = true;
     model.dropdown_index = 3;
-    model.dropdown_window = 0;
+    model.dropdown_window = 1; // the cursor kept in the box, as the input does
     preview_draw("list_dropdown_open", draw, NULL);
     model.dropdown_open = false;
 

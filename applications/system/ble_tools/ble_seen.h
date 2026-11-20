@@ -27,7 +27,7 @@ extern "C" {
 
 typedef enum {
     BleKindUnknown,
-    BleKindFindMy, /**< AirTag or another Find My network accessory */
+    BleKindFindMy, /**< a Find My network accessory that is not an AirTag (Chipolo, ...) */
     BleKindAirPods,
     BleKindApple,
     BleKindSmartTag,
@@ -36,6 +36,7 @@ typedef enum {
     BleKindSamsung,
     BleKindMicrosoft,
     BleKindNamed, /**< told its name, nothing else known */
+    BleKindAirTag,
     BleKindCount,
 } BleKind;
 

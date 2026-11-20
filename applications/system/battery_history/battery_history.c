@@ -15,7 +15,8 @@
 #define MAX_RECORDS  (2U * BATTERY_LOG_ROTATE_SIZE / sizeof(BatteryLogRecord))
 #define GRAPH_TOP    23
 #define GRAPH_BOTTOM 58
-#define GRAPH_WIDTH  128U
+#define GRAPH_X      2 // two clear columns either side of the graph
+#define GRAPH_WIDTH  124U
 
 typedef struct {
     uint32_t seconds;
@@ -107,10 +108,10 @@ static void draw_callback(Canvas* canvas, void* context) {
 
     canvas_set_font(canvas, FontPrimary);
     snprintf(text, sizeof(text), "Battery %u%%", now->charge);
-    canvas_draw_str(canvas, 0, 9, text);
+    canvas_draw_str(canvas, 2, 9, text); // two clear columns from the screen's edges
     canvas_set_font(canvas, FontSecondary);
     snprintf(text, sizeof(text), "< %s >", spans[app->span].name);
-    canvas_draw_str_aligned(canvas, 127, 9, AlignRight, AlignBottom, text);
+    canvas_draw_str_aligned(canvas, 125, 9, AlignRight, AlignBottom, text);
 
     if(now->flags & BatteryLogFlagCharging) {
         snprintf(text, sizeof(text), "Charging");
@@ -124,14 +125,14 @@ static void draw_callback(Canvas* canvas, void* context) {
             duration,
             (unsigned long)((app->estimate.percent_per_day_x10 + 5) / 10));
     } else if(app->count < 13) {
-        snprintf(text, sizeof(text), "Recording: back in a few hours");
+        snprintf(text, sizeof(text), "Recording: check back later");
     } else {
         snprintf(text, sizeof(text), "On battery too briefly to tell");
     }
-    canvas_draw_str(canvas, 0, 19, text);
+    canvas_draw_str(canvas, 2, 19, text);
 
     // grid: 100%, 50% and 0%
-    for(int x = 0; x < 128; x += 4) {
+    for(int x = GRAPH_X; x < GRAPH_X + (int)GRAPH_WIDTH; x += 4) {
         canvas_draw_dot(canvas, x, graph_y(100));
         canvas_draw_dot(canvas, x, graph_y(50));
         canvas_draw_dot(canvas, x, graph_y(0) + 1);
@@ -144,15 +145,16 @@ static void draw_callback(Canvas* canvas, void* context) {
             continue;
         }
         const int y = graph_y(app->charge[x]);
+        const int column = GRAPH_X + x;
         if(last_x >= 0) {
-            canvas_draw_line(canvas, last_x, last_y, x, y);
+            canvas_draw_line(canvas, last_x, last_y, column, y);
         } else {
-            canvas_draw_dot(canvas, x, y);
+            canvas_draw_dot(canvas, column, y);
         }
-        last_x = x;
+        last_x = column;
         last_y = y;
-        // charging: a band under the graph
-        if(app->charging[x]) canvas_draw_line(canvas, x, 61, x, 63);
+        // charging: a band under the graph, a row clear of it and of the screen's edge
+        if(app->charging[x]) canvas_draw_line(canvas, column, 61, column, 62);
     }
     furi_mutex_release(app->mutex);
 }

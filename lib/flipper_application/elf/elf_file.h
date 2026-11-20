@@ -115,6 +115,23 @@ void* elf_file_get_entry_point(ELFFile* elf_file);
  */
 void elf_file_call_fini(ELFFile* elf);
 
+/** Called for each object elf_file_for_each_object() finds: its symbol's name, where it is */
+typedef void (*ElfObjectCallback)(const char* name, const void* address, void* context);
+
+/**
+ * @brief Find the loaded file's data objects of one size, by its symbol table (load stage #3
+ * done). Reads the table a block at a time and only the names of objects of that size.
+ * @param elf_file
+ * @param object_size the objects' size in bytes
+ * @param callback called for each, with its name and its address in memory
+ * @param context
+ */
+void elf_file_for_each_object(
+    ELFFile* elf_file,
+    size_t object_size,
+    ElfObjectCallback callback,
+    void* context);
+
 /**
  * @brief Get ELF file API interface
  * @param elf_file 

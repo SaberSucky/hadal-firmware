@@ -33,6 +33,7 @@ PREVIEWS = {
     "submenu": [],
     "control_centre": [],
     "variable_item_list": [],
+    "font_metrics": [],
 }
 
 GUI_SOURCES = [

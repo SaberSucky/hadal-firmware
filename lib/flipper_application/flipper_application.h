@@ -137,6 +137,22 @@ FlipperApplicationLoadStatus flipper_application_map_to_memory(FlipperApplicatio
  */
 FuriThread* flipper_application_alloc_thread(FlipperApplication* app, const char* args);
 
+/** Called for each object flipper_application_for_each_object() finds */
+typedef void (*FlipperApplicationObjectCallback)(const char* name, const void* address, void* context);
+
+/** Find the mapped application's data objects of one size, by name and address in memory
+ * (after flipper_application_map_to_memory())
+ * @param app Application pointer
+ * @param object_size the objects' size in bytes
+ * @param callback called for each, with its symbol's name and its address
+ * @param context passed to callback
+ */
+void flipper_application_for_each_object(
+    FlipperApplication* app,
+    size_t object_size,
+    FlipperApplicationObjectCallback callback,
+    void* context);
+
 /** Check if application is a plugin (not a runnable standalone app)
  * @param app Application pointer
  * @return true if application is a plugin, false otherwise

@@ -5,6 +5,7 @@
  */
 #include "ble_tools.h"
 
+#include <gui/elements.h>
 #include <input/input.h>
 #include <stdio.h>
 
@@ -78,7 +79,7 @@ static void scroll_to_selection(TrackerDetector* app) {
 static void draw_list(Canvas* canvas, TrackerDetector* app, uint32_t now) {
     char text[40];
     canvas_set_font(canvas, FontPrimary);
-    canvas_draw_str(canvas, 2, 10, "Tracker Detector");
+    canvas_draw_str(canvas, 2, 9, "Tracker Detector"); // a clear row above the rule
     canvas_draw_line(canvas, 0, 12, 127, 12);
     canvas_set_font(canvas, FontSecondary);
 
@@ -97,7 +98,7 @@ static void draw_list(Canvas* canvas, TrackerDetector* app, uint32_t now) {
         const int y = 14 + (int)row * 12;
         const bool selected = app->top + row == app->selected;
         if(selected) {
-            canvas_draw_box(canvas, 0, y, 124, 12);
+            canvas_draw_rbox(canvas, 0, y, 124, 12, 2);
             canvas_set_color(canvas, ColorWhite);
         }
         // right: whether its owner is near, and how long it has been with you
@@ -107,14 +108,14 @@ static void draw_list(Canvas* canvas, TrackerDetector* app, uint32_t now) {
             "%s %lum",
             device->separated ? "away" : "owner",
             (unsigned long)(ble_seen_with_you_ms(device, now) / 60000));
-        canvas_draw_str_aligned(canvas, 122, y + 9, AlignRight, AlignBottom, text);
+        canvas_draw_str_aligned(canvas, 121, y + 9, AlignRight, AlignBottom, text);
         const size_t right = canvas_string_width(canvas, text);
         // left: what it is, marked when it follows you
         char label[BLE_SEEN_NAME_SIZE];
         ble_tools_label(device, label, sizeof(label));
         const bool following = ble_seen_is_following(device, now, FOLLOW_MS);
         snprintf(text, sizeof(text), "%s%s", following ? "! " : "", label);
-        ble_tools_draw_fit(canvas, 2, y + 9, text, 116 - right);
+        ble_tools_draw_fit(canvas, 3, y + 9, text, 113 - right);
         canvas_set_color(canvas, ColorBlack);
     }
     // scroll position
@@ -153,7 +154,8 @@ static void draw_warning(Canvas* canvas, TrackerDetector* app, uint32_t now) {
     canvas_draw_str_aligned(canvas, 64, 29, AlignCenter, AlignTop, "away from its owner and");
     canvas_draw_str_aligned(canvas, 64, 38, AlignCenter, AlignTop, "moving along with you");
     canvas_draw_line(canvas, 4, 50, 123, 50);
-    canvas_draw_str_aligned(canvas, 64, 53, AlignCenter, AlignTop, "OK: find it   Back: close");
+    // a clear row under the descenders, above the frame
+    elements_hints(canvas, 64, 60, AlignCenter, "ok=Find it;back=Close");
 }
 
 static void draw_callback(Canvas* canvas, void* context) {

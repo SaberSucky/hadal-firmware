@@ -33,8 +33,10 @@ void desktop_lock_clock_draw(Canvas* canvas, const DateTime* datetime, bool hour
     if(date_width > width) width = date_width;
     width += 8;
 
-    // a pale panel with a dark border, so it reads over any animation
-    const int32_t x = 0, y = 33, height = 31;
+    // a pale panel with a dark border, so it reads over any animation: two clear columns and a
+    // row from the screen's edges, and inside it the digits three rows under the top and the
+    // date's descenders a row above the bottom
+    const int32_t x = 2, y = 31, height = 32;
     canvas_set_color(canvas, ColorWhite);
     canvas_draw_rbox(canvas, x, y, width, height, 3);
     canvas_set_color(canvas, ColorBlack);

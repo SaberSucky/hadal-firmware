@@ -17,7 +17,7 @@ Fonts/<Slot>.u8f                        Primary, Secondary, Keyboard, BigNumbers
 ```
 
 The layout is compatible with the one used by other custom firmwares, so existing packs mostly work.
-An icon that Hadal does not have is ignored.
+An icon that neither Hadal nor any app uses simply never shows.
 
 ## What a pack can change
 
@@ -25,18 +25,24 @@ An icon that Hadal does not have is ignored.
   there instead of `/ext/dolphin`; the firmware's own system animations (SD card messages and so on)
   are always available. A new set starts at once if an animation is playing, otherwise when you
   next return to the desktop.
-- **Icons**: only on screens the firmware itself draws, which is the status bar, the desktop, the
-  main menu, the archive, the on-screen keyboard, the PIN screens and power screens. External apps
-  carry their own copy of the icons they use, so a pack cannot restyle them. Hadal can only replace
-  the 99 icons it actually keeps in flash; the rest of the 264 icon names are accepted by the packer
-  but have no effect.
+- **Icons**: on the screens the firmware itself draws (the status bar, the desktop, the archive,
+  the on-screen keyboard, the PIN and power screens), and in the apps on the SD card: an app
+  carries its own copy of each icon it uses, and when it starts Hadal looks those up by name
+  (`I_DolphinSuccess_91x55` takes the pack's `DolphinSuccess_91x55`, whatever folder it is in).
+  The main menu's icons are the apps' own and are never replaced.
+- **Passport**: `Passport/passport_128x64` is the passport's whole background, drawn in the layout
+  packs are made for (the portrait at 11,2; the name, mood and level from x 59; the experience bar
+  inside 58,44 to 122,50). A pack with one portrait for each mood (`passport_happy_46x49`,
+  `passport_okay_46x49`, `passport_bad_46x49`) has it shown at every level.
 - **Fonts**: every screen of every app, because text is drawn by the firmware.
 
 ## Matching icons
 
 An icon is matched by its path relative to `Icons/`, without the extension, for example
-`StatusBar/Battery_26x8`. Names end in the icon size, and a replacement **must have the same
-width, height and frame count**, otherwise it is skipped. Icons that are drawn with a mask
+`StatusBar/Battery_26x8`; an app's icons by the file name alone. Names end in the icon size; a
+replacement may be another size (up to 128×64), but an animation **must have the same frame
+count**, otherwise it is skipped. An icon the firmware does not have is kept for apps (up to 64
+of them). Icons that are drawn with a mask
 (`Foo_9x10` and `Foo_mask_9x10`) should be replaced together.
 
 ## File formats
@@ -56,15 +62,17 @@ width, height and frame count**, otherwise it is skipped. Icons that are drawn w
 
 ## Limits
 
-Icons from a pack are held in RAM: at most 24 KB in total, and at most 128×128 pixels and 32
+Icons from a pack are held in RAM: at most 24 KB in total, and at most 128×64 pixels and 32
 frames each. Fonts are at most 6 KB each and 12 KB together. Whatever does not fit is skipped, and
 the log says why.
 
 ## While an app runs
 
-The pack's icons are freed when an app starts, so that the app has the memory, and loaded again
-when you return to the desktop; for that moment, and while the app runs, firmware-drawn parts such
-as the status bar show the built-in icons. Fonts and animations stay as they are.
+A pack whose icons take 12 KB of RAM or less keeps them while an app runs, so they show in the
+app too. A larger one frees them when an app starts, so that the app has the memory, and loads
+them again when you return to the desktop; while that app runs everything shows the built-in
+icons. Fonts and animations stay as they are either way. Looking an app's icons up adds a moment
+to its start, and only when the pack has icons.
 
 ## If something goes wrong
 

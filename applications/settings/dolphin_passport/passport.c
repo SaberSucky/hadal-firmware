@@ -61,31 +61,28 @@ static void render_callback(Canvas* canvas, void* ctx) {
         xp_progress = xp_to_levelup * 64 / xp_for_current_level;
     }
 
-    // multipass
-    canvas_draw_icon(canvas, 0, 0, &I_passport_left_6x46);
-    canvas_draw_icon(canvas, 0, 46, &I_passport_bottom_128x18);
-    canvas_draw_line(canvas, 6, 0, 125, 0);
-    canvas_draw_line(canvas, 127, 2, 127, 47);
-    canvas_draw_dot(canvas, 126, 1);
+    // The card, then the portrait and the text over it. The layout is the one asset packs'
+    // passport backgrounds (Passport/passport_128x64) are drawn for, so theirs fit as well.
+    canvas_draw_icon(canvas, 0, 0, &I_passport_128x64);
 
-    // portrait
     // three portraits: the third from level 3 on
     furi_assert((stats->level > 0) && (stats->level <= DOLPHIN_LEVEL_MAX));
-    canvas_draw_icon(canvas, 9, 5, portraits[mood][MIN(stats->level, 3) - 1]);
-    canvas_draw_line(canvas, 58, 16, 123, 16);
-    canvas_draw_line(canvas, 58, 30, 123, 30);
-    canvas_draw_line(canvas, 58, 44, 123, 44);
+    canvas_draw_icon(canvas, 11, 2, portraits[mood][MIN(stats->level, 3) - 1]);
 
     const char* my_name = furi_hal_version_get_name_ptr();
     snprintf(level_str, 20, "Level: %hu", stats->level);
-    canvas_draw_str(canvas, 58, 12, my_name ? my_name : "Unknown");
-    canvas_draw_str(canvas, 58, 26, mood_str);
-    canvas_draw_str(canvas, 58, 40, level_str);
+    canvas_set_font(canvas, FontSecondary);
+    // each line a clear row away from the rules between them (assets/hadal_ui/passport.py)
+    canvas_draw_str(canvas, 60, 9, my_name ? my_name : "Unknown");
+    canvas_draw_str(canvas, 60, 21, mood_str);
+    canvas_draw_str(canvas, 60, 41, level_str);
 
+    // experience: the bar's well cleared, then filled as far as this level has come
+    const uint32_t filled = 61 - MIN(xp_progress * 61 / 64, 61U);
     canvas_set_color(canvas, ColorWhite);
-    canvas_draw_box(canvas, 123 - xp_progress, 47, xp_progress + 1, 6);
+    canvas_draw_box(canvas, 61, 45, 61, 5);
     canvas_set_color(canvas, ColorBlack);
-    canvas_draw_line(canvas, 123, 47, 123, 52);
+    if(filled) canvas_draw_box(canvas, 61, 45, filled, 5);
 }
 
 int32_t passport_app(void* p) {

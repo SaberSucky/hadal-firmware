@@ -8,6 +8,7 @@
 #include <gui/icon_i.h>
 #include <storage/storage.h>
 #include <toolbox/compress.h>
+#include <flipper_application/flipper_application.h>
 
 #define TAG "AssetPacks"
 
@@ -27,10 +28,13 @@
 /** Largest icon file accepted: header, a stored frame and some slack for other packers. */
 #define MAX_FILE_SIZE              (8u + 4u + ASSET_PACK_MAX_RAW_BYTES + 64u)
 #define BLOB_ALIGN                 4u
+/** Icons a pack may hold beyond the firmware's own: for apps on the SD card, by name */
+#define MAX_APP_ONLY_ICONS         64u
 
 typedef struct {
-    const Icon* original; /**< built-in icon, the key */
+    const Icon* original; /**< built-in icon, the key; NULL for one only apps use */
     const Icon* replacement; /**< one malloc: Icon, frame pointers, frame blobs */
+    uint32_t name_hash; /**< of its file name, "DolphinSuccess_91x55": how apps find it */
 } PackIcon;
 
 /** A loaded font. The font bytes u8g2 reads are `data`; `next` chains the graveyard. */
@@ -44,6 +48,11 @@ typedef struct {
     FuriMutex* mutex;
     PackIcon* icons; /**< sorted by original; guarded by mutex */
     size_t icon_count;
+    size_t ram_used; /**< what icons hold */
+    /** The running app's icons that the pack replaces, sorted by original (the app's own
+     * copy); the replacements belong to icons. Guarded by mutex. */
+    PackIcon* app_icons;
+    size_t app_icon_count;
     /** True when icons is non-empty. Written under the mutex, read without it by the draw hook. */
     atomic_bool active;
     /** Bumped whenever loaded icons are discarded, so a load that started earlier drops its result. */
@@ -98,6 +107,11 @@ static void discard_icons_locked(void) {
     size_t count = asset_packs.icon_count;
     asset_packs.icons = NULL;
     asset_packs.icon_count = 0;
+    asset_packs.ram_used = 0;
+    // the app's table points into the icons being freed
+    free(asset_packs.app_icons);
+    asset_packs.app_icons = NULL;
+    asset_packs.app_icon_count = 0;
     atomic_fetch_add_explicit(&asset_packs.generation, 1, memory_order_relaxed);
     free_icons(icons, count);
 }
@@ -183,11 +197,11 @@ void asset_packs_get_active(char* name, size_t size) {
 /* Drawing hook                                                                                */
 /* ------------------------------------------------------------------------------------------ */
 
-static const Icon* find_replacement_locked(const Icon* icon) {
-    size_t low = 0, high = asset_packs.icon_count;
+static const Icon* find_in_table(const PackIcon* table, size_t count, const Icon* icon) {
+    size_t low = 0, high = count;
     while(low < high) {
         size_t mid = low + (high - low) / 2;
-        const PackIcon* entry = &asset_packs.icons[mid];
+        const PackIcon* entry = &table[mid];
         if(entry->original == icon) return entry->replacement;
         if((uintptr_t)entry->original < (uintptr_t)icon) {
             low = mid + 1;
@@ -196,6 +210,14 @@ static const Icon* find_replacement_locked(const Icon* icon) {
         }
     }
     return NULL;
+}
+
+static const Icon* find_replacement_locked(const Icon* icon) {
+    const Icon* replacement = find_in_table(asset_packs.icons, asset_packs.icon_count, icon);
+    if(!replacement && asset_packs.app_icon_count) {
+        replacement = find_in_table(asset_packs.app_icons, asset_packs.app_icon_count, icon);
+    }
+    return replacement;
 }
 
 const Icon* asset_packs_icon_acquire(const Icon* icon) {
@@ -276,11 +298,27 @@ static const Icon* find_builtin_icon(const char* pack_path) {
     return NULL;
 }
 
-static bool already_loaded(const LoadState* state, const Icon* original) {
+/** The hash apps look an icon up by: of its file name alone, without the category folder */
+static uint32_t icon_name_hash(const char* pack_path) {
+    const char* slash = strrchr(pack_path, '/');
+    return asset_pack_path_hash(slash ? slash + 1 : pack_path);
+}
+
+/** The main menu's icons are the apps' own and stay the firmware's: none is taken for apps */
+static bool app_only_allowed(const char* pack_path) {
+    return strncmp(pack_path, "MainMenu/", 9) != 0;
+}
+
+/** Whether the icon is taken already: the same built-in one, or for apps the same name */
+static bool already_loaded(const LoadState* state, const Icon* original, uint32_t name_hash) {
+    size_t app_only = 0;
     for(size_t i = 0; i < state->icon_count; i++) {
-        if(state->icons[i].original == original) return true;
+        if(original && state->icons[i].original == original) return true;
+        if(!original && state->icons[i].name_hash == name_hash) return true;
+        if(!state->icons[i].original) app_only++;
     }
-    return false;
+    // room for this one: the table was sized for the built-in icons and this many more
+    return !original && app_only >= MAX_APP_ONLY_ICONS;
 }
 
 /** Whole file into a new buffer; NULL if missing, empty or larger than max_size. */
@@ -321,9 +359,11 @@ static size_t align_up(size_t value) {
 static void add_icon(
     LoadState* state,
     const Icon* original,
+    uint32_t name_hash,
     const uint8_t* const* blobs,
     const size_t* sizes,
     size_t frame_count,
+    uint8_t frame_rate,
     uint8_t width,
     uint8_t height) {
     size_t blob_bytes = 0;
@@ -343,12 +383,13 @@ static void add_icon(
     // A pack's icon may differ in size from the one it replaces (packs made for Momentum do this)
     FURI_CONST_ASSIGN(icon->width, width);
     FURI_CONST_ASSIGN(icon->height, height);
-    FURI_CONST_ASSIGN(icon->frame_count, original->frame_count);
-    FURI_CONST_ASSIGN(icon->frame_rate, original->frame_rate);
+    FURI_CONST_ASSIGN(icon->frame_count, frame_count);
+    FURI_CONST_ASSIGN(icon->frame_rate, original ? original->frame_rate : frame_rate);
     FURI_CONST_ASSIGN_PTR(icon->frames, frames);
 
     state->icons[state->icon_count].original = original;
     state->icons[state->icon_count].replacement = icon;
+    state->icons[state->icon_count].name_hash = name_hash;
     state->icon_count++;
 }
 
@@ -361,8 +402,12 @@ static bool take_budget(LoadState* state, size_t frame_count, size_t blob_bytes)
 }
 
 static void load_static_icon(LoadState* state, const char* file_path, const char* pack_path) {
+    // one the firmware does not have may still be an app's: it is kept for apps, by its name
     const Icon* original = find_builtin_icon(pack_path);
-    if(!original || original->frame_count != 1 || already_loaded(state, original)) return;
+    const uint32_t name_hash = icon_name_hash(pack_path);
+    if(original && original->frame_count != 1) return;
+    if(!original && !app_only_allowed(pack_path)) return;
+    if(already_loaded(state, original, name_hash)) return;
 
     size_t size = 0;
     uint8_t* data = read_file(state->storage, file_path, MAX_FILE_SIZE, &size);
@@ -391,14 +436,17 @@ static void load_static_icon(LoadState* state, const char* file_path, const char
     } else {
         const uint8_t* blobs[1] = {bmx.blob};
         const size_t sizes[1] = {bmx.blob_size};
-        add_icon(state, original, blobs, sizes, 1, bmx.width, bmx.height);
+        add_icon(state, original, name_hash, blobs, sizes, 1, 0, bmx.width, bmx.height);
     }
     free(data);
 }
 
 static void load_animated_icon(LoadState* state, const char* dir_path, const char* pack_path) {
     const Icon* original = find_builtin_icon(pack_path);
-    if(!original || original->frame_count < 2 || already_loaded(state, original)) return;
+    const uint32_t name_hash = icon_name_hash(pack_path);
+    if(original && original->frame_count < 2) return;
+    if(!original && !app_only_allowed(pack_path)) return;
+    if(already_loaded(state, original, name_hash)) return;
 
     char path[PATH_SIZE];
     if(!join_path(path, sizeof(path), dir_path, "meta")) return;
@@ -408,10 +456,12 @@ static void load_animated_icon(LoadState* state, const char* dir_path, const cha
     AssetPackAnimMeta meta;
     AssetPackStatus status = asset_pack_anim_meta_parse(meta_data, meta_size, &meta);
     free(meta_data);
-    // the frame count must match: the animation steps through the built-in icon's frames
+    // the frame count must match: the animation steps through the built-in icon's frames (an
+    // app's icon is matched the same way when the app loads)
     if(status != AssetPackOk || meta.width > ASSET_PACK_MAX_ICON_WIDTH ||
-       meta.height > ASSET_PACK_MAX_ICON_HEIGHT || meta.frame_count != original->frame_count ||
-       meta.frame_count > ASSET_PACK_MAX_ICON_FRAMES) {
+       meta.height > ASSET_PACK_MAX_ICON_HEIGHT || meta.frame_count < 2 ||
+       (original && meta.frame_count != original->frame_count) ||
+       meta.frame_count > ASSET_PACK_MAX_ICON_FRAMES || meta.frame_rate > UINT8_MAX) {
         FURI_LOG_W(TAG, "%s: skipped, meta does not match the built-in icon", pack_path);
         return;
     }
@@ -452,9 +502,11 @@ static void load_animated_icon(LoadState* state, const char* dir_path, const cha
         add_icon(
             state,
             original,
+            name_hash,
             (const uint8_t* const*)frames,
             sizes,
             frame_count,
+            meta.frame_rate,
             meta.width,
             meta.height);
     }
@@ -601,7 +653,8 @@ static int32_t loader_thread(void* context) {
        storage_common_exists(state.storage, icons_path)) {
         state.compress = compress_alloc(CompressTypeHeatshrink, &compress_config_heatshrink_default);
         state.scratch = malloc(ASSET_PACK_DECODE_BUFFER_SIZE);
-        state.icon_capacity = assets_icon_index_count; // an icon can be replaced at most once
+        // an icon can be replaced at most once; and some for apps only
+        state.icon_capacity = assets_icon_index_count + MAX_APP_ONLY_ICONS;
         state.icons = malloc(sizeof(PackIcon) * state.icon_capacity);
 
         scan_directory(&state, icons_path, "", 0);
@@ -639,6 +692,7 @@ static int32_t loader_thread(void* context) {
         size_t old_count = asset_packs.icon_count;
         asset_packs.icons = state.icons;
         asset_packs.icon_count = state.icon_count;
+        asset_packs.ram_used = state.ram_used;
         atomic_store_explicit(&asset_packs.active, true, memory_order_relaxed);
         free_icons(old, old_count); // nothing is drawing: the mutex is held
         state.icons = NULL;
@@ -722,6 +776,118 @@ void asset_packs_unload_icons(void) {
     furi_mutex_acquire(asset_packs.mutex, FuriWaitForever);
     asset_packs.icons_unloaded = true;
     discard_icons_locked();
+    furi_mutex_release(asset_packs.mutex);
+}
+
+void asset_packs_app_starting(void) {
+    ensure_init();
+
+    furi_mutex_acquire(asset_packs.mutex, FuriWaitForever);
+    // small: they stay, and show in the app too; a load still running may finish either way
+    if(asset_packs.ram_used > ASSET_PACK_APP_KEEP_RAM || atomic_load(&asset_packs.loading)) {
+        asset_packs.icons_unloaded = true;
+        discard_icons_locked();
+    }
+    furi_mutex_release(asset_packs.mutex);
+}
+
+/* An app's own icons: found by name in its symbol table */
+
+typedef struct {
+    unsigned generation; /**< the icons this scan matched against */
+    PackIcon* found;
+    size_t count;
+    size_t capacity;
+} AppScan;
+
+static const Icon* find_by_name_locked(const char* name) {
+    const uint32_t hash = asset_pack_path_hash(name);
+    for(size_t i = 0; i < asset_packs.icon_count; i++) {
+        if(asset_packs.icons[i].name_hash == hash) return asset_packs.icons[i].replacement;
+    }
+    return NULL;
+}
+
+/** "passport_happy2_46x49" as "passport_happy_46x49": packs made for other firmware have one
+ * portrait for each mood, where this firmware has one for each of the first levels */
+static bool passport_alias(const char* name, char* alias, size_t size) {
+    if(strncmp(name, "passport_", 9) != 0) return false;
+    const char* size_part = strrchr(name, '_');
+    if(!size_part || size_part - name < 11) return false;
+    const char* digit = size_part - 1;
+    if(*digit < '0' || *digit > '9') return false;
+    const int n = snprintf(alias, size, "%.*s%s", (int)(digit - name), name, size_part);
+    return n > 0 && (size_t)n < size;
+}
+
+static void app_icon_found(const char* symbol, const void* address, void* context) {
+    AppScan* scan = context;
+    if((symbol[0] != 'I' && symbol[0] != 'A') || symbol[1] != '_' || !symbol[2]) return;
+    const char* name = symbol + 2;
+    const Icon* original = address;
+
+    const Icon* replacement = NULL;
+    furi_mutex_acquire(asset_packs.mutex, FuriWaitForever);
+    if(atomic_load_explicit(&asset_packs.generation, memory_order_relaxed) == scan->generation) {
+        replacement = find_by_name_locked(name);
+        char alias[NAME_BUFFER_SIZE];
+        if(!replacement && passport_alias(name, alias, sizeof(alias))) {
+            replacement = find_by_name_locked(alias);
+        }
+        // an animation steps through the app's own frame count
+        if(replacement && replacement->frame_count != original->frame_count) replacement = NULL;
+    }
+    furi_mutex_release(asset_packs.mutex);
+    if(!replacement) return;
+
+    if(scan->count == scan->capacity) {
+        scan->capacity = scan->capacity ? scan->capacity * 2 : 16;
+        scan->found = realloc(scan->found, scan->capacity * sizeof(PackIcon)); //-V701
+    }
+    scan->found[scan->count].original = original;
+    scan->found[scan->count].replacement = replacement;
+    scan->found[scan->count].name_hash = 0;
+    scan->count++;
+}
+
+void asset_packs_app_loaded(FlipperApplication* app) {
+    furi_check(app);
+    ensure_init();
+    if(!atomic_load_explicit(&asset_packs.active, memory_order_relaxed)) return;
+
+    const uint32_t started = furi_get_tick();
+    AppScan scan = {
+        .generation = atomic_load_explicit(&asset_packs.generation, memory_order_relaxed),
+    };
+    flipper_application_for_each_object(app, sizeof(Icon), app_icon_found, &scan);
+    if(!scan.count) return;
+    sort_icons(scan.found, scan.count);
+
+    furi_mutex_acquire(asset_packs.mutex, FuriWaitForever);
+    // only if the icons it points into are the ones it was matched against
+    if(atomic_load_explicit(&asset_packs.generation, memory_order_relaxed) == scan.generation &&
+       asset_packs.icon_count) {
+        free(asset_packs.app_icons);
+        asset_packs.app_icons = scan.found;
+        asset_packs.app_icon_count = scan.count;
+        scan.found = NULL;
+    }
+    furi_mutex_release(asset_packs.mutex);
+
+    FURI_LOG_I(
+        TAG,
+        "%u of the app's icons from the pack, %lu ms",
+        (unsigned)scan.count,
+        (unsigned long)(furi_get_tick() - started));
+    free(scan.found);
+}
+
+void asset_packs_app_unloaded(void) {
+    ensure_init();
+    furi_mutex_acquire(asset_packs.mutex, FuriWaitForever);
+    free(asset_packs.app_icons);
+    asset_packs.app_icons = NULL;
+    asset_packs.app_icon_count = 0;
     furi_mutex_release(asset_packs.mutex);
 }
 

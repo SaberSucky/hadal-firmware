@@ -175,8 +175,9 @@ static bool desktop_custom_event_callback(void* context, uint32_t event) {
             animation_manager_unload_and_stall_animation(desktop->animation_manager);
         }
 
-        // Give the app the RAM the pack's icons hold. They come back when it is done.
-        asset_packs_unload_icons();
+        // A pack's icons stay for the app when they are small, so they show in it too; larger
+        // ones give the app their RAM and come back when it is done.
+        asset_packs_app_starting();
 
         desktop_auto_lock_inhibit(desktop);
 

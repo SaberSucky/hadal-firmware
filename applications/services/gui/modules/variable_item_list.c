@@ -10,15 +10,18 @@
 #define SCROLL_INTERVAL (333)
 
 // Controls: how an item's value is drawn, chosen from what the item is (see the header)
-#define VALUE_RIGHT       122 // the value area's right end
+#define VALUE_RIGHT       122 // the value area's right end: the selection's last column
+#define CONTROL_RIGHT     (VALUE_RIGHT - 3) // a control's last column: two clear inside the selection
 #define SWITCH_W          17
 #define SWITCH_H          9
 #define METER_MIN_VALUES  5 // a numeric value with this many steps or more gets a meter
 #define SEGMENTS_MAX      3
 #define SEGMENT_PAD       3 // either side of a segment's text
 #define SEGMENTS_WIDTH_MAX 64
-#define DROPDOWN_ROWS     4
-#define DROPDOWN_ROW_H    11
+#define DROPDOWN_ROWS     3
+// a dropdown row: its selection, two clear rows over the capitals and one under the descenders
+#define DROPDOWN_ROW_H    12
+#define TEXT_PAD          3 // either side of a text, inside what holds it
 
 typedef enum {
     VariableItemControlArrows, // < value >, as Flipper always drew it
@@ -147,27 +150,28 @@ static void variable_item_draw_switch(Canvas* canvas, int32_t x, int32_t y, bool
     canvas_set_color(canvas, ink);
 }
 
-/** Segments from x to the value area's end: the chosen one filled */
+/** Segments, ending at the control column: the chosen one a filled pill (a clear row over its
+ * capitals, one under its descenders, TEXT_PAD either side), the others plain, with dividers */
 static void variable_item_draw_segments(
     Canvas* canvas,
     const VariableItem* item,
-    int32_t y,
+    int32_t item_y,
     uint16_t total,
     Color ink) {
     const Color paper = ink == ColorBlack ? ColorWhite : ColorBlack;
-    int32_t x = VALUE_RIGHT - total;
+    int32_t x = CONTROL_RIGHT + 1 - total;
+    const int32_t top = item_y + 2, baseline = item_y + 11;
     canvas_set_color(canvas, ink);
-    canvas_draw_rframe(canvas, x, y, total, 11, 2);
     for(uint8_t i = 0; i < item->values_count; i++) {
         const uint16_t width = canvas_string_width(canvas, item->values_text[i]) + 2 * SEGMENT_PAD;
         if(i == item->current_value_index) {
-            canvas_draw_rbox(canvas, x, y, width, 11, 2);
+            canvas_draw_rbox(canvas, x, top, width, 12, 3);
             canvas_set_color(canvas, paper);
         } else if(i > 0 && i != item->current_value_index + 1) {
             // a divider, where neither side is the chosen one
-            canvas_draw_line(canvas, x, y + 2, x, y + 8);
+            canvas_draw_line(canvas, x, top + 3, x, top + 8);
         }
-        canvas_draw_str(canvas, x + SEGMENT_PAD, y + 9, item->values_text[i]);
+        canvas_draw_str(canvas, x + SEGMENT_PAD, baseline, item->values_text[i]);
         canvas_set_color(canvas, ink);
         x += width;
     }
@@ -192,7 +196,8 @@ static void variable_item_draw_meter(
 }
 
 /** The open dropdown: the item's choices in a box over the list, the one under the cursor
- * filled */
+ * filled. A clear pixel all round outside the box and inside its double-edged frame; each text
+ * TEXT_PAD from its selection's sides */
 static void variable_item_list_draw_dropdown(
     Canvas* canvas,
     const VariableItemListModel* model,
@@ -205,34 +210,42 @@ static void variable_item_list_draw_dropdown(
     }
     const uint8_t rows = MIN(item->values_count, DROPDOWN_ROWS);
     const bool scrolls = item->values_count > rows;
-    const int32_t width = MIN((int32_t)text_width + 10 + (scrolls ? 4 : 0), 108);
-    const int32_t height = rows * DROPDOWN_ROW_H + 3;
-    const int32_t x = 126 - width;
+    // columns, left to right: frame (2), clear, selection (text with TEXT_PAD each side), clear,
+    // and when it scrolls the scrollbar (3) and a clear one; then the frame (2)
+    const int32_t chrome = 2 + 1 + 2 * TEXT_PAD + 1 + (scrolls ? 4 : 0) + 2;
+    const int32_t width = MIN((int32_t)text_width + chrome, 112);
+    const int32_t right = 125;
+    const int32_t left = right - width + 1;
+    const int32_t select_left = left + 3;
+    const int32_t select_right = right - 3 - (scrolls ? 4 : 0);
+    const int32_t select_width = select_right - select_left + 1;
+    // rows: frame, clear, the rows, clear, frame
+    const int32_t height = rows * DROPDOWN_ROW_H + 4;
     int32_t y = item_y + 8 - height / 2;
-    y = CLAMP(y, 64 - height - ELEMENTS_HINT_BAR_HEIGHT, 0);
+    y = CLAMP(y, 64 - ELEMENTS_HINT_BAR_HEIGHT - 1 - height, 1);
 
     canvas_set_color(canvas, ColorWhite);
-    canvas_draw_box(canvas, x - 2, y - 1, width + 4, height + 2);
+    canvas_draw_box(canvas, left - 1, y - 1, width + 2, height + 2);
     canvas_set_color(canvas, ColorBlack);
-    canvas_draw_rframe(canvas, x, y, width, height, 3);
-    canvas_draw_rframe(canvas, x - 1, y, width + 2, height, 3); // a heavier side edge: it floats
+    canvas_draw_rframe(canvas, left, y, width, height, 3);
+    canvas_draw_rframe(canvas, left + 1, y, width - 2, height, 3); // a heavier side edge: it floats
 
     for(uint8_t row = 0; row < rows; row++) {
         const uint8_t index = model->dropdown_window + row;
         const int32_t row_y = y + 2 + row * DROPDOWN_ROW_H;
         if(index == model->dropdown_index) {
-            canvas_draw_rbox(canvas, x + 2, row_y, width - 4 - (scrolls ? 4 : 0), DROPDOWN_ROW_H - 1, 2);
+            canvas_draw_rbox(canvas, select_left, row_y, select_width, DROPDOWN_ROW_H, 3);
             canvas_set_color(canvas, ColorWhite);
         }
         FuriString* text = furi_string_alloc_set_str(item->values_text[index]);
-        elements_string_fit_width(canvas, text, width - 10 - (scrolls ? 4 : 0));
-        canvas_draw_str(canvas, x + 5, row_y + 8, furi_string_get_cstr(text));
+        elements_string_fit_width(canvas, text, select_width - 2 * TEXT_PAD);
+        canvas_draw_str(canvas, select_left + TEXT_PAD, row_y + 9, furi_string_get_cstr(text));
         furi_string_free(text);
         canvas_set_color(canvas, ColorBlack);
     }
     if(scrolls) {
         elements_scrollbar_pos(
-            canvas, x + width - 3, y + 2, height - 4, model->dropdown_index, item->values_count);
+            canvas, right - 2, y + 2, rows * DROPDOWN_ROW_H, model->dropdown_index, item->values_count);
     }
     elements_hint_bar(canvas, "ud=Choose;ok=Set;back=Cancel");
 }
@@ -289,10 +302,10 @@ static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
             uint16_t segments = 0;
             if(control == VariableItemControlSwitch) {
                 // the label has the room the arrows took
-                temp_w_default = VALUE_RIGHT - 2 - SWITCH_W - 4 - 6;
+                temp_w_default = CONTROL_RIGHT + 1 - SWITCH_W - 4 - 6;
             } else if(control == VariableItemControlSegments) {
                 segments = variable_item_segments_width(canvas, item, SEGMENTS_WIDTH_MAX);
-                temp_w_default = VALUE_RIGHT - segments - 4 - 6;
+                temp_w_default = CONTROL_RIGHT + 1 - segments - 4 - 6;
             }
 
             if(item->current_value_index == 0 && furi_string_empty(item->current_value_text)) {
@@ -315,24 +328,25 @@ static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
                 canvas_draw_icon(canvas, 110, item_text_y - 8, &I_Lock_7x8);
             } else if(control == VariableItemControlSwitch) {
                 variable_item_is_switch(item, &on);
-                variable_item_draw_switch(canvas, VALUE_RIGHT - 2, item_y + 4, on, ink);
+                variable_item_draw_switch(canvas, CONTROL_RIGHT + 1, item_y + 4, on, ink);
             } else if(control == VariableItemControlSegments) {
-                variable_item_draw_segments(canvas, item, item_y + 3, segments, ink);
+                variable_item_draw_segments(canvas, item, item_y, segments, ink);
             } else if(control == VariableItemControlDropdown) {
                 elements_scrollable_text_line_str(
                     canvas,
-                    (VALUE_RIGHT - 8 + temp_x_default) / 2,
+                    (CONTROL_RIGHT - 9 + temp_x_default) / 2,
                     item_text_y,
-                    VALUE_RIGHT - 8 - temp_x_default,
+                    CONTROL_RIGHT - 9 - temp_x_default,
                     furi_string_get_cstr(item->current_value_text),
                     scroll_counter,
                     false,
                     true);
                 // a chevron: OK opens the choices
-                canvas_draw_line(canvas, VALUE_RIGHT - 6, item_text_y - 5, VALUE_RIGHT - 3, item_text_y - 2);
-                canvas_draw_line(canvas, VALUE_RIGHT - 3, item_text_y - 2, VALUE_RIGHT, item_text_y - 5);
-                canvas_draw_line(canvas, VALUE_RIGHT - 6, item_text_y - 4, VALUE_RIGHT - 3, item_text_y - 1);
-                canvas_draw_line(canvas, VALUE_RIGHT - 3, item_text_y - 1, VALUE_RIGHT, item_text_y - 4);
+                const int32_t chevron = CONTROL_RIGHT - 6;
+                canvas_draw_line(canvas, chevron, item_text_y - 5, chevron + 3, item_text_y - 2);
+                canvas_draw_line(canvas, chevron + 3, item_text_y - 2, chevron + 6, item_text_y - 5);
+                canvas_draw_line(canvas, chevron, item_text_y - 4, chevron + 3, item_text_y - 1);
+                canvas_draw_line(canvas, chevron + 3, item_text_y - 1, chevron + 6, item_text_y - 4);
             } else {
                 if(control == VariableItemControlMeter) {
                     variable_item_draw_meter(canvas, item, temp_x_default + 7, 112, item_y + 13);

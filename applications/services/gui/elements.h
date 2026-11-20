@@ -288,8 +288,9 @@ void elements_text_box(
     const char* text,
     bool strip_to_dots);
 
-/** Height of the hint bar along the bottom of the screen, its dotted rule included */
-#define ELEMENTS_HINT_BAR_HEIGHT 11
+/** Height of the hint bar along the bottom of the screen, its dotted rule included: the rule,
+ * a clear row, the hints, a clear row */
+#define ELEMENTS_HINT_BAR_HEIGHT 12
 
 /** Draw a line of button hints: each hint is a button's glyph and what that button does.
  *

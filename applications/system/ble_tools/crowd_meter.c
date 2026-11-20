@@ -68,6 +68,7 @@ static Group group_of(BleKind kind) {
         return GroupSamsung;
     case BleKindMicrosoft:
         return GroupWindows;
+    case BleKindAirTag:
     case BleKindFindMy:
     case BleKindSmartTag:
     case BleKindTile:
@@ -115,7 +116,7 @@ static void draw_now(Canvas* canvas, CrowdMeter* app, uint32_t now) {
     canvas_draw_str(canvas, x, 31, "devices, last min");
 
     // the last 20 minutes, scaled to the busiest moment (at least 10), under the peak
-    canvas_draw_line(canvas, 0, 63, 127, 63);
+    canvas_draw_line(canvas, 2, 62, 125, 62); // two clear columns and a row from the edges
     if(app->history_count < 2) {
         const uint32_t running = now - app->started;
         if(running < SAMPLE_MS * 2) {
@@ -130,11 +131,11 @@ static void draw_now(Canvas* canvas, CrowdMeter* app, uint32_t now) {
     }
     for(size_t i = 0; i < app->history_count; i++) {
         const int h = app->history[i] * 16 / top;
-        const int column = 127 - (int)(app->history_count - 1 - i);
-        if(h) canvas_draw_line(canvas, column, 62, column, 62 - h);
+        const int column = 125 - (int)(app->history_count - 1 - i);
+        if(h) canvas_draw_line(canvas, column, 61, column, 61 - h);
     }
     snprintf(text, sizeof(text), "peak %u", (unsigned)app->peak);
-    canvas_draw_str(canvas, 0, 43, text);
+    canvas_draw_str(canvas, 2, 43, text);
 }
 
 static void draw_kinds(Canvas* canvas, CrowdMeter* app) {
@@ -146,10 +147,10 @@ static void draw_kinds(Canvas* canvas, CrowdMeter* app) {
     }
     for(size_t group = 0; group < GroupCount; group++) {
         const int y = 21 + (int)group * 10;
-        canvas_draw_str(canvas, 0, y, group_names[group]);
+        canvas_draw_str(canvas, 2, y, group_names[group]);
         snprintf(text, sizeof(text), "%u", (unsigned)app->groups[group]);
         canvas_draw_str_aligned(canvas, 64, y, AlignRight, AlignBottom, text);
-        const int width = app->groups[group] * 60 / top;
+        const int width = app->groups[group] * 58 / top; // ends two columns short of the edge
         if(width) canvas_draw_box(canvas, 67, y - 6, width, 5);
     }
 }
@@ -162,10 +163,10 @@ static void draw_callback(Canvas* canvas, void* context) {
         ble_tools_draw_unsupported(canvas);
     } else {
         canvas_set_font(canvas, FontPrimary);
-        canvas_draw_str(canvas, 2, 10, "Crowd Meter");
+        canvas_draw_str(canvas, 2, 9, "Crowd Meter");
         canvas_set_font(canvas, FontSecondary);
         canvas_draw_str_aligned(
-            canvas, 126, 10, AlignRight, AlignBottom, app->page == PageNow ? "< kinds >" : "< now >");
+            canvas, 125, 9, AlignRight, AlignBottom, app->page == PageNow ? "< kinds >" : "< now >");
         canvas_draw_line(canvas, 0, 12, 127, 12);
         if(app->page == PageNow) {
             draw_now(canvas, app, furi_get_tick());

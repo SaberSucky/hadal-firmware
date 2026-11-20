@@ -46,6 +46,28 @@ void asset_packs_unload_icons(void);
 /** Load the active pack's icons again after asset_packs_unload_icons(). No-op if not unloaded. */
 void asset_packs_reload_icons(void);
 
+/** Most icon RAM a pack may hold for its icons to stay while an app runs */
+#define ASSET_PACK_APP_KEEP_RAM (12u * 1024u)
+
+/**
+ * An app is about to start: the pack's icons stay if they are small (ASSET_PACK_APP_KEEP_RAM),
+ * so that they show in apps too, else they are freed to give the app the RAM, as
+ * asset_packs_unload_icons() does. asset_packs_reload_icons() brings them back afterwards.
+ */
+void asset_packs_app_starting(void);
+
+typedef struct FlipperApplication FlipperApplication;
+
+/**
+ * An app from the SD card is in memory: its own copies of icons (I_<name>, A_<name>) are drawn
+ * as the pack's icons of the same file name while it runs. Reads the app's symbol table; does
+ * nothing when the pack has no icons loaded.
+ */
+void asset_packs_app_loaded(FlipperApplication* app);
+
+/** The app is about to be freed: stop replacing its icons. Call before its memory goes. */
+void asset_packs_app_unloaded(void);
+
 /**
  * True if the firmware died while a pack was loading or soon after (see asset_packs_mark_stable()),
  * i.e. the pack is the likely cause. Clears that state, so it answers true only once. Call
