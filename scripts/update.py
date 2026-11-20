@@ -29,6 +29,8 @@ class Main(App):
     # bundled apps), and the apps of each app folder together. Their names are listed under
     # "Resources extra"; the Manifest in resources.ths still lists every file.
     BIG_RESOURCE_SIZE = 256 * 1024
+    SMALL_GROUP_SIZE = 32 * 1024
+    SMALL_GROUP = "misc"
     RESOURCE_ENTRY_NAME_MAX_LENGTH = 100
 
     WHITELISTED_STACK_TYPES = set(
@@ -209,6 +211,14 @@ class Main(App):
         # Last: firmwares that do not know it stop reading before it
         if self.resource_extras:
             file.writeKey("Resources extra", " ".join(self.resource_extras))
+            # what each holds: the updater skips one it unpacked last time, unchanged since
+            file.writeKey(
+                "Resources extra CRC",
+                " ".join(
+                    f"{self.crc(join(self.args.directory, name)):08X}"
+                    for name in self.resource_extras
+                ),
+            )
         file.save(join(self.args.directory, self.UPDATE_MANIFEST_NAME))
 
         return 0
@@ -263,27 +273,44 @@ class Main(App):
 
     def resource_group(self, name: str, size: int):
         """The extra archive a resource goes in, or None for resources.ths: a big file on its
-        own, an app with the other apps of its folder (an update then re-uploads only the
-        folders whose apps changed)"""
+        own, an app with the other apps of its folder, an app's data with the rest of it, and
+        anything else with the rest of its top folder. resources.ths keeps the Manifest (which
+        changes with every build) and the files at the root: an update re-uploads it, and
+        only the archives whose files changed"""
         if name == "Manifest":
             return None
         if size >= self.BIG_RESOURCE_SIZE:
             return os.path.splitext(name.rsplit("/", 1)[-1])[0]
         parts = name.split("/")
+        if len(parts) == 1:
+            return None
         if len(parts) >= 3 and parts[0] == "apps":
             return f"apps-{parts[1]}"
-        return None
+        if len(parts) >= 3 and parts[0] in ("apps_data", "asset_packs"):
+            return f"{parts[0]}-{parts[1]}"
+        return f"{parts[0]}-files"
+
+    def merge_small_groups(self, groups: dict, sizes: dict) -> dict:
+        """Folders of a few KB share one archive: each archive is one more file for qFlipper to
+        check and for the updater to open"""
+        merged = {}
+        for group, names in groups.items():
+            small = sum(sizes[n] for n in names) < self.SMALL_GROUP_SIZE
+            merged.setdefault(self.SMALL_GROUP if small else group, []).extend(names)
+        return merged
 
     def package_resources(self, srcdir: str, dst_name: str):
         try:
-            groups = {}
+            groups, sizes = {}, {}
             for root, _, files in os.walk(srcdir):
                 for f in files:
                     path = join(root, f)
                     name = os.path.relpath(path, srcdir).replace(os.sep, "/")
-                    group = self.resource_group(name, os.path.getsize(path))
+                    sizes[name] = os.path.getsize(path)
+                    group = self.resource_group(name, sizes[name])
                     if group:
                         groups.setdefault(group, []).append(name)
+            groups = self.merge_small_groups(groups, sizes)
             grouped = {name for names in groups.values() for name in names}
 
             def main_filter(tarinfo):
@@ -308,7 +335,7 @@ class Main(App):
 
             self.logger.info(
                 f"Resources compression ratio: {compressed_size * 100 / src_size:.2f}%"
-                f" ({len(groups)} more archives for big files and app folders)"
+                f" ({len(groups)} more archives: big files, app folders, data folders)"
             )
             return True
         except Exception as e:

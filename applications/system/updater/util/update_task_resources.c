@@ -16,6 +16,21 @@
 #define STAGED_MANIFEST  "resources.manifest" /* in the update folder */
 #define CARD_MANIFEST    EXT_PATH("Manifest")
 
+/* What the last install from this update folder unpacked, kept in the folder:
+ *
+ *     M <MD5 of /ext/Manifest as that install left it>
+ *     <extra archive> <its CRC, from update.fuf>
+ *     ...
+ *
+ * An extra archive the record lists with the CRC update.fuf gives it now is already on the card,
+ * and is not unpacked again: most of an update's time went on reading every archive and every
+ * file it holds, to find the few that changed. Only while the card's Manifest is still the one
+ * that install left (nothing else has installed resources since: another firmware, qFlipper's
+ * own resource install); otherwise, with no record, or with an older package, everything is
+ * checked as before. Deleting the update folder makes the next update check everything too. */
+#define INSTALLED_RECORD     ".installed"
+#define INSTALLED_RECORD_MAX (8U * 1024U)
+
 typedef struct {
     UpdateTask* update_task;
     TarArchive* archive;
@@ -141,20 +156,119 @@ static bool resources_unpack_cb(const char* name, bool is_directory, void* conte
     return true;
 }
 
-bool update_task_resources_next_extra(UpdateTask* update_task, size_t* offset, FuriString* path) {
-    const char* list = furi_string_get_cstr(update_task->manifest->resource_extras);
+// The next space-separated word of a list
+static bool resources_next_word(const FuriString* list_string, size_t* offset, FuriString* word) {
+    const char* list = furi_string_get_cstr(list_string);
     size_t start = *offset;
     while(list[start] == ' ') start++;
     if(!list[start]) return false;
     size_t end = start;
     while(list[end] && list[end] != ' ') end++;
-
-    FuriString* name = furi_string_alloc_set_str(list + start);
-    furi_string_left(name, end - start);
-    path_concat(furi_string_get_cstr(update_task->update_path), furi_string_get_cstr(name), path);
-    furi_string_free(name);
+    furi_string_set_strn(word, list + start, end - start);
     *offset = end;
     return true;
+}
+
+bool update_task_resources_next_extra(UpdateTask* update_task, size_t* offset, FuriString* path) {
+    FuriString* name = furi_string_alloc();
+    const bool found = resources_next_word(update_task->manifest->resource_extras, offset, name);
+    if(found) {
+        path_concat(
+            furi_string_get_cstr(update_task->update_path), furi_string_get_cstr(name), path);
+    }
+    furi_string_free(name);
+    return found;
+}
+
+static void resources_record_path(UpdateTask* update_task, FuriString* path) {
+    path_concat(furi_string_get_cstr(update_task->update_path), INSTALLED_RECORD, path);
+}
+
+/** The record's text, when the card is still as it says; otherwise empty. Then it is removed:
+ * an install that stops part way leaves none, and the next one checks everything */
+static void resources_record_take(UpdateTask* update_task, File* file, FuriString* record) {
+    Storage* storage = update_task->storage;
+    FuriString* path = furi_string_alloc();
+    FuriString* md5 = furi_string_alloc();
+    FuriString* expected = furi_string_alloc();
+    resources_record_path(update_task, path);
+    furi_string_reset(record);
+    do {
+        FileInfo info;
+        if(storage_common_stat(storage, furi_string_get_cstr(path), &info) != FSE_OK) break;
+        if(info.size == 0 || info.size > INSTALLED_RECORD_MAX) break;
+        if(!md5_string_calc_file(file, CARD_MANIFEST, md5, NULL)) break;
+        furi_string_printf(expected, "M %s\n", furi_string_get_cstr(md5));
+
+        char* text = malloc(info.size + 1);
+        size_t read = 0;
+        if(storage_file_open(file, furi_string_get_cstr(path), FSAM_READ, FSOM_OPEN_EXISTING)) {
+            read = storage_file_read(file, text, info.size);
+        }
+        storage_file_close(file);
+        text[read] = '\0';
+        if(read == info.size &&
+           strncmp(text, furi_string_get_cstr(expected), furi_string_size(expected)) == 0) {
+            furi_string_set_str(record, text);
+        }
+        free(text);
+    } while(false);
+    storage_common_remove(storage, furi_string_get_cstr(path));
+    furi_string_free(expected);
+    furi_string_free(md5);
+    furi_string_free(path);
+}
+
+/** The record's line for an extra archive: "<name> <CRC>\n", or empty without a CRC */
+static void resources_record_line(
+    UpdateTask* update_task,
+    size_t* name_offset,
+    size_t* crc_offset,
+    FuriString* line) {
+    FuriString* name = furi_string_alloc();
+    FuriString* crc = furi_string_alloc();
+    furi_string_reset(line);
+    if(resources_next_word(update_task->manifest->resource_extras, name_offset, name) &&
+       resources_next_word(update_task->manifest->resource_extras_crc, crc_offset, crc) &&
+       furi_string_size(crc) == 8) {
+        furi_string_printf(
+            line, "%s %s\n", furi_string_get_cstr(name), furi_string_get_cstr(crc));
+    }
+    furi_string_free(crc);
+    furi_string_free(name);
+}
+
+/** Whether the record lists this line (every line it has but the first follows a newline) */
+static bool resources_record_has(const FuriString* record, const FuriString* line) {
+    if(furi_string_empty(record) || furi_string_empty(line)) return false;
+    FuriString* needle = furi_string_alloc_printf("\n%s", furi_string_get_cstr(line));
+    const bool found = furi_string_search(record, needle) != FURI_STRING_FAILURE;
+    furi_string_free(needle);
+    return found;
+}
+
+/** Write the record of what is now on the card: lines, after the Manifest's MD5 */
+static void resources_record_save(UpdateTask* update_task, File* file, const FuriString* lines) {
+    if(furi_string_empty(lines)) return;
+    FuriString* path = furi_string_alloc();
+    FuriString* md5 = furi_string_alloc();
+    FuriString* head = furi_string_alloc();
+    resources_record_path(update_task, path);
+    if(md5_string_calc_file(file, CARD_MANIFEST, md5, NULL)) {
+        furi_string_printf(head, "M %s\n", furi_string_get_cstr(md5));
+        bool written = false;
+        if(storage_file_open(file, furi_string_get_cstr(path), FSAM_WRITE, FSOM_CREATE_ALWAYS)) {
+            const size_t head_size = furi_string_size(head), body = furi_string_size(lines);
+            written = storage_file_write(file, furi_string_get_cstr(head), head_size) ==
+                          head_size &&
+                      storage_file_write(file, furi_string_get_cstr(lines), body) == body;
+        }
+        storage_file_close(file);
+        if(!written) storage_common_remove(update_task->storage, furi_string_get_cstr(path));
+    }
+    furi_string_free(head);
+    furi_string_free(md5);
+    furi_string_free(path);
 }
 
 uint64_t update_task_resources_file_size(UpdateTask* update_task, const char* path) {
@@ -207,40 +321,69 @@ bool update_task_resources_install(UpdateTask* update_task, const char* archive_
             break;
         }
 
-        const uint32_t removed = resources_remove_stale(update_task, &index);
-
         ResourceUnpack unpack = {
             .update_task = update_task,
             .index = &index,
             .file = storage_file_alloc(storage),
             .path = furi_string_alloc(),
         };
-        // the bar runs once over all the archives, by their sizes
-        unpack.bytes_all = update_task_resources_total_size(update_task, archive_path);
+        // before anything on the card changes: which archives it already holds
+        FuriString* record = furi_string_alloc();
+        resources_record_take(update_task, unpack.file, record);
+
+        const uint32_t removed = resources_remove_stale(update_task, &index);
+
         FuriString* extra = furi_string_alloc();
+        FuriString* line = furi_string_alloc();
+        FuriString* lines = furi_string_alloc();
+        // the bar runs once over the archives to unpack, by their sizes
+        unpack.bytes_all = update_task_resources_file_size(update_task, archive_path);
+        for(size_t offset = 0, names = 0, crcs = 0;
+            update_task_resources_next_extra(update_task, &offset, extra);) {
+            resources_record_line(update_task, &names, &crcs, line);
+            if(!resources_record_has(record, line)) {
+                unpack.bytes_all +=
+                    update_task_resources_file_size(update_task, furi_string_get_cstr(extra));
+            }
+        }
+
         update_task_set_progress(update_task, UpdateTaskStageResourcesFileUnpack, 0);
         bool unpacked = resources_unpack(&unpack, archive_path);
-        // then the big files and the app folders, each in an archive of its own
-        for(size_t offset = 0;
+        // then the big files, the app folders and the data folders, each in an archive of its own
+        uint32_t skipped = 0;
+        for(size_t offset = 0, names = 0, crcs = 0;
             unpacked && update_task_resources_next_extra(update_task, &offset, extra);) {
-            unpacked = resources_unpack(&unpack, furi_string_get_cstr(extra));
+            resources_record_line(update_task, &names, &crcs, line);
+            if(resources_record_has(record, line)) {
+                skipped++;
+            } else {
+                unpacked = resources_unpack(&unpack, furi_string_get_cstr(extra));
+            }
+            furi_string_cat(lines, line);
         }
-        furi_string_free(extra);
-        storage_file_free(unpack.file);
-        furi_string_free(unpack.path);
 
         update_log(
-            "resources: %lu written, %lu unchanged, %lu removed%s",
+            "resources: %lu written, %lu unchanged, %lu removed, %lu archives already there%s",
             (unsigned long)unpack.written,
             (unsigned long)unpack.unchanged,
             (unsigned long)removed,
+            (unsigned long)skipped,
             unpacked ? "" : ", stopped part way");
-        if(!unpacked) break;
 
-        // Last: the Manifest that describes what is now on the card
-        storage_common_remove(storage, CARD_MANIFEST);
-        installed = storage_common_copy(storage, furi_string_get_cstr(staged), CARD_MANIFEST) ==
-                    FSE_OK;
+        if(unpacked) {
+            // Last: the Manifest that describes what is now on the card, then the record of it
+            storage_common_remove(storage, CARD_MANIFEST);
+            installed = storage_common_copy(
+                            storage, furi_string_get_cstr(staged), CARD_MANIFEST) == FSE_OK;
+            if(installed) resources_record_save(update_task, unpack.file, lines);
+        }
+
+        furi_string_free(lines);
+        furi_string_free(line);
+        furi_string_free(extra);
+        furi_string_free(record);
+        storage_file_free(unpack.file);
+        furi_string_free(unpack.path);
     } while(false);
 
     storage_common_remove(storage, furi_string_get_cstr(staged));

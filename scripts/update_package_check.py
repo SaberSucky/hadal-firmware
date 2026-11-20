@@ -417,7 +417,23 @@ def check_package(path, expect="any", ob_data=None, scratch=None, api_csv=API_CS
             report.fail(f"resources do not unpack: {e}")
         else:
             if extras:
-                report.ok(f"resources: {len(extras)} big files in archives of their own")
+                report.ok(f"resources: {len(extras)} more archives (big files, app and data folders)")
+                # the updater skips an archive it unpacked last time when this CRC is unchanged:
+                # a wrong one would leave old files on the card
+                crcs = m.get("Resources extra CRC", "").split()
+                if crcs:
+                    wrong = []
+                    for extra, crc in zip(extras, crcs):
+                        with open(os.path.join(folder, extra), "rb") as f:
+                            if f"{zlib.crc32(f.read()) & 0xFFFFFFFF:08X}" != crc.upper():
+                                wrong.append(extra)
+                    report.check(
+                        len(crcs) == len(extras) and not wrong,
+                        "resources: each extra archive's CRC is right",
+                        f"resources: CRCs do not match the archives ({len(crcs)} for {len(extras)}; {wrong[:3]})",
+                    )
+                else:
+                    report.info("resources: no archive CRCs, every update reads every archive")
             unsafe = [n for n in names if n.startswith("/") or ".." in n.split("/")]
             report.check(not unsafe, f"resources unpack to {len(names)} relative paths", f"resources contain unsafe paths: {unsafe[:3]}")
             # An update leaves a file on the card alone when it has the size and MD5 the new

@@ -186,7 +186,7 @@ static void draw_info(Canvas* canvas, FindMyStuff* app) {
         snprintf(
             text,
             sizeof(text),
-            "Find My, status %02X, %s",
+            "Find My %02X, %s",
             device->findmy_status,
             device->separated ? "away" : "owner near");
     } else if(device->model) {

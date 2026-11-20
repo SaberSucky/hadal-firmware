@@ -2964,11 +2964,13 @@ class BleSeenTests(TempDirCase):
     Meter know about the devices around. Built as-is under ASan/UBSan."""
 
     # Find My: long payload away from the owner, short with the owner near; the status byte's
-    # bits 4-5 say what sent it (1 AirTag, 2 another maker's accessory, 3 AirPods, 0 an iPhone...)
+    # bits 4-5 say what sent it (1 AirTag, 2 AirPods, 3 another maker's accessory, 0 an iPhone...)
     AIRTAG_AWAY = "1EFF4C001219" + "10" + "AB" * 22 + "0100"
     AIRTAG_HOME = "07FF4C0012021000"
-    ACCESSORY_AWAY = "1EFF4C001219" + "24" + "AB" * 22 + "0100"
-    AIRPODS_AWAY = "1EFF4C001219" + "30" + "AB" * 22 + "0100"
+    ACCESSORY_AWAY = "1EFF4C001219" + "34" + "AB" * 22 + "0100"
+    # E4: what an AirPods Pro case sent, near its owner and (the same status) away
+    AIRPODS_AWAY = "1EFF4C001219" + "E4" + "AB" * 22 + "0100"
+    AIRPODS_HOME = "07FF4C001202E400"
     IPHONE_AWAY = "1EFF4C001219" + "00" + "AB" * 22 + "0100"
     FIND_MY_CUT = "0EFF4C001219" + "10" + "AB" * 8                # says long, is not: not a tag
     GOOGLE_UTP = "0D16AAFE41" + "CD" * 9                             # Google tag, unwanted-tracking mode
@@ -3036,21 +3038,39 @@ class BleSeenTests(TempDirCase):
             f"H 020000000000 -60 0 {self.AIRPODS_AWAY}",
             f"H 030000000000 -60 0 {self.IPHONE_AWAY}",
             f"H 040000000000 -60 0 {self.FIND_MY_CUT}",
+            f"H 050000000000 -60 0 {self.AIRPODS_HOME}",
             "?",
         ])
-        self.assertEqual(out[:4], [
+        self.assertEqual(out[:5], [
             "010000000000 Find My tag separated=1 name= rssi=-60",
-            "020000000000 AirPods separated=0 name= rssi=-60",
+            "020000000000 Find My AirPods separated=1 name= rssi=-60",
             "030000000000 Apple device separated=0 name= rssi=-60",
             "040000000000 Apple device separated=0 name= rssi=-60",
+            "050000000000 Find My AirPods separated=0 name= rssi=-60",
         ])
-        # and only tags are followed: AirPods with you for long are not a warning
+
+    def test_airpods_away_from_their_owner_follow_like_a_tag(self):
+        # a case slipped into someone's bag tracks them as well as an AirTag would; with its
+        # owner near, or marked as yours, it is no warning
+        def with_you(adv, *extra):
+            lines = list(extra)
+            for minute in range(0, 12):
+                t = minute * 60000
+                lines += [f"H 010000000000 -70 {t} {adv}", f"E {t} 60000 180000"]
+            return self.run_seen(lines + ["F 660000 600000"])
+
+        self.assertEqual(with_you(self.AIRPODS_AWAY), ["010000000000", "."])
+        self.assertEqual(with_you(self.AIRPODS_HOME), ["."])
+        self.assertEqual(
+            with_you(self.AIRPODS_AWAY, "L 00:00:00:00:00:01 11 My AirPods case", "P"), ["."]
+        )
+
+    def test_an_iphone_away_from_its_owner_is_no_tracker(self):
         lines = []
         for minute in range(0, 12):
             t = minute * 60000
-            lines += [f"H 010000000000 -70 {t} {self.AIRPODS_AWAY}", f"E {t} 60000 180000"]
-        lines += ["F 660000 600000"]
-        self.assertEqual(self.run_seen(lines), ["."])
+            lines += [f"H 010000000000 -70 {t} {self.IPHONE_AWAY}", f"E {t} 60000 180000"]
+        self.assertEqual(self.run_seen(lines + ["F 660000 600000"]), ["."])
 
     # ---- the user's own devices (ble_mine.c) ----
 
@@ -3790,13 +3810,28 @@ class ResourceSplitTests(unittest.TestCase):
         self.big = update.Main.BIG_RESOURCE_SIZE
 
     def test_groups(self):
+        # resources.ths keeps the Manifest (new with every build) and the files at the root;
+        # everything else goes with the folder it is in, so a build re-uploads what changed
         group = self.main.resource_group
         self.assertIsNone(group("Manifest", 10**7))
-        self.assertIsNone(group("dolphin/L1_x/frames.bin", 1000))
-        self.assertIsNone(group("apps_data/nfc/assets/x.nfc", 1000))
+        self.assertIsNone(group("readme.txt", 1000))
+        self.assertEqual(group("dolphin/L1_x/frames.bin", 1000), "dolphin-files")
+        self.assertEqual(group("dolphin/manifest.txt", 1000), "dolphin-files")
+        self.assertEqual(group("infrared/assets/tv.ir", 1000), "infrared-files")
+        self.assertEqual(group("apps_data/nfc/assets/x.nfc", 1000), "apps_data-nfc")
+        self.assertEqual(group("asset_packs/Hadal/Icons/x.bmx", 1000), "asset_packs-Hadal")
         self.assertEqual(group("apps/GPIO/gpio.fap", 1000), "apps-GPIO")
         self.assertEqual(group("apps/GPIO/esp_flasher.fap", self.big), "esp_flasher")
         self.assertEqual(group("infrared/assets/tv.ir", self.big + 1), "tv")
+
+    def test_small_groups_share_an_archive(self):
+        small = self.main.SMALL_GROUP_SIZE
+        groups = {"a-files": ["a/1", "a/2"], "b-files": ["b/1"], "apps-GPIO": ["apps/GPIO/x.fap"]}
+        sizes = {"a/1": small // 2, "a/2": small // 2, "b/1": 10, "apps/GPIO/x.fap": 5}
+        merged = self.main.merge_small_groups(groups, sizes)
+        self.assertEqual(
+            merged, {"a-files": ["a/1", "a/2"], "misc": ["b/1", "apps/GPIO/x.fap"]}
+        )
 
     def test_archive_names_are_stable_and_safe(self):
         name = self.main.extra_archive_name

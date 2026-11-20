@@ -45,6 +45,8 @@ typedef struct {
     bool valid;
     /** More resource archives after resource_bundle, space-separated (big files, see update.py) */
     FuriString* resource_extras;
+    /** The CRC32 of each of them, in the same order, as 8 hex digits; empty in older packages */
+    FuriString* resource_extras_crc;
 } UpdateManifest;
 
 UpdateManifest* update_manifest_alloc(void);

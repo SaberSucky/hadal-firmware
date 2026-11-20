@@ -9,6 +9,7 @@ bool md5_calc_file(File* file, const char* path, unsigned char output[16], FS_Er
         if(file_error != NULL) {
             *file_error = storage_file_get_error(file);
         }
+        storage_file_close(file); // as the storage API asks, after a failed open too
         return false;
     }
 

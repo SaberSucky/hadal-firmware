@@ -1,7 +1,7 @@
 /**
  * Tracker Detector: warns when a tracker that is away from its owner (an AirTag or other Find My
- * accessory, a Google Find My Device tag, a SmartTag or a Tile) keeps travelling with you, and
- * helps find it. Your own trackers, marked with OK held (here or in Find My Stuff), never warn.
+ * accessory, AirPods on Find My, a Google Find My Device tag, a SmartTag or a Tile) keeps
+ * travelling with you, and helps find it. Your own trackers, marked with OK held (here or in Find My Stuff), never warn.
  * Needs the BLE Full radio stack.
  */
 #include "ble_tools.h"

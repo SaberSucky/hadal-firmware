@@ -1,6 +1,8 @@
 #include "crc32_calc.h"
 
-#define CRC_DATA_BUFFER_MAX_LEN 512
+// Large pieces: the card reads many sectors per command. The updater checks the firmware image
+// (800 KB) twice and the radio stack once per update.
+#define CRC_DATA_BUFFER_MAX_LEN 4096
 
 uint32_t crc32_calc_buffer(uint32_t crc, const void* buffer, size_t size) {
     crc = ~crc;

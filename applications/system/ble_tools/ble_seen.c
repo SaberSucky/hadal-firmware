@@ -9,12 +9,13 @@
 #define APPLE_FIND_MY_AWAY   0x19U /* payload length of the "away from owner" form */
 #define APPLE_FIND_MY_NEAR   0x02U /* payload length of the "owner nearby" form */
 /* The Find My status byte says what sent it, in bits 4-5: every Apple device on the network
- * sends the same advertisement, AirPods and iPhones too, not only tags */
+ * sends the same advertisement, AirPods and iPhones too, not only tags. An AirPods Pro case sends
+ * 0xE4 (type 2), as AirGuard has it too */
 #define FIND_MY_TYPE(status) (((status) >> 4) & 0x03U)
 #define FIND_MY_APPLE        0U /* an iPhone, iPad, Mac or Watch */
 #define FIND_MY_AIRTAG       1U
-#define FIND_MY_ACCESSORY    2U /* a Find My network accessory from another maker */
-#define FIND_MY_AIRPODS      3U
+#define FIND_MY_AIRPODS      2U
+#define FIND_MY_ACCESSORY    3U /* a Find My network accessory from another maker */
 #define APPLE_AIRPODS        0x07U
 #define UUID_SMARTTAG        0xFD5AU
 #define UUID_TILE            0xFEEDU
@@ -39,6 +40,7 @@ static const char* const kind_names[BleKindCount] = {
     [BleKindMicrosoft] = "Windows device",
     [BleKindNamed] = "Named device",
     [BleKindAirTag] = "AirTag",
+    [BleKindAirPodsFindMy] = "Find My AirPods",
 };
 
 /* AirPods and Beats say their model in the pairing broadcast (Apple type 0x07) */
@@ -67,8 +69,8 @@ const char* ble_kind_name(BleKind kind) {
 }
 
 bool ble_kind_is_tracker(BleKind kind) {
-    return kind == BleKindAirTag || kind == BleKindFindMy || kind == BleKindSmartTag ||
-           kind == BleKindTile || kind == BleKindGoogleFind;
+    return kind == BleKindAirTag || kind == BleKindFindMy || kind == BleKindAirPodsFindMy ||
+           kind == BleKindSmartTag || kind == BleKindTile || kind == BleKindGoogleFind;
 }
 
 // A weaker hint never overrides a stronger one (a tracker stays a tracker)
@@ -122,8 +124,10 @@ static void parse_find_my(BleSeen* device, const uint8_t* payload, uint8_t lengt
         device->separated = away;
         break;
     case FIND_MY_AIRPODS:
-        // headphones on the network: findable, but not a tag
-        set_kind(device, BleKindAirPods);
+        // headphones on the network: what makes them findable lets a case slipped into a bag
+        // follow its owner's target as well as a tag would (iPhones warn about them too)
+        set_kind(device, BleKindAirPodsFindMy);
+        device->separated = away;
         break;
     default:
         set_kind(device, BleKindApple);

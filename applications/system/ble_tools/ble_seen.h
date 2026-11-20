@@ -37,6 +37,10 @@ typedef enum {
     BleKindMicrosoft,
     BleKindNamed, /**< told its name, nothing else known */
     BleKindAirTag,
+    /** AirPods on the Find My network, away from their owner's iPhone or near it: they can be
+     * found, so like a tag they can follow someone (the kinds are numbered in the mine file:
+     * new ones go last) */
+    BleKindAirPodsFindMy,
     BleKindCount,
 } BleKind;
 
