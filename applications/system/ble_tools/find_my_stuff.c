@@ -1,15 +1,19 @@
 /**
  * Find My Stuff: lists the Bluetooth LE devices around, strongest first, and walks you to one with
  * a hotter / colder meter that clicks faster as you get closer. For your own earbuds, watch,
- * tracker or phone. Needs the BLE Full radio stack.
+ * tracker or phone: hold OK on one to mark it as yours, and yours come first, ticked (and never
+ * set Tracker Detector off). Needs the BLE Full radio stack.
  */
 #include "ble_tools.h"
 
+#include <gui/elements.h>
 #include <input/input.h>
 #include <stdio.h>
 
 #define CAPACITY  96U
-#define ROWS      4U
+#define ROWS      3U /* over the hint bar */
+#define ROW_H     12
+#define LIST_Y    14
 #define FORGET_MS (60U * 1000U)
 #define SORT_MS   1000U /* resorting less often keeps the list still enough to read */
 #define TICK_MS   250U
@@ -43,6 +47,7 @@ typedef struct {
     BleMeter meter;
     bool sound;
     uint32_t last_click;
+    BleMine mine;
 } FindMyStuff;
 
 static const BleSeen* device_at(const FindMyStuff* app, size_t row) {
@@ -65,7 +70,15 @@ static void scroll_to_selection(FindMyStuff* app) {
 }
 
 static void resort(FindMyStuff* app) {
+    // strongest first, and yours before the rest
     ble_seen_sort_by_signal(&app->table, app->order);
+    size_t mine_end = 0;
+    for(size_t i = 0; i < app->table.count; i++) {
+        if(!app->devices[app->order[i]].mine) continue;
+        const size_t value = app->order[i];
+        memmove(&app->order[mine_end + 1], &app->order[mine_end], (i - mine_end) * sizeof(size_t));
+        app->order[mine_end++] = value;
+    }
     size_t row = app->selected;
     if(app->has_selection) {
         for(size_t i = 0; i < app->table.count; i++) {
@@ -104,13 +117,18 @@ static void draw_list(Canvas* canvas, FindMyStuff* app) {
     for(size_t row = 0; row < ROWS; row++) {
         const BleSeen* device = device_at(app, app->top + row);
         if(!device) break;
-        const int y = 14 + (int)row * 12;
+        const int y = LIST_Y + (int)row * ROW_H;
         if(app->top + row == app->selected) {
-            canvas_draw_rbox(canvas, 0, y, 124, 12, 2);
+            canvas_draw_rbox(canvas, 0, y, 124, ROW_H, 2);
             canvas_set_color(canvas, ColorWhite);
         }
+        int32_t x = 3;
+        if(device->mine) {
+            ble_tools_draw_mine_mark(canvas, x, y + 9);
+            x += BLE_TOOLS_MINE_MARK_W;
+        }
         ble_tools_label(device, text, sizeof(text));
-        ble_tools_draw_fit(canvas, 3, y + 9, text, 99);
+        ble_tools_draw_fit(canvas, x, y + 9, text, 102 - x);
         // signal bars on the right
         const int level = bars((int8_t)(device->rssi_avg_x8 / 8));
         for(int bar = 0; bar < 4; bar++) {
@@ -124,11 +142,15 @@ static void draw_list(Canvas* canvas, FindMyStuff* app) {
         }
         canvas_set_color(canvas, ColorBlack);
     }
+    const int list_h = ROWS * ROW_H;
     if(app->table.count > ROWS) {
-        const int height = 48 * ROWS / (int)app->table.count;
-        const int y = 14 + (48 - height) * (int)app->top / (int)(app->table.count - ROWS);
+        const int height = list_h * ROWS / (int)app->table.count;
+        const int y = LIST_Y + (list_h - height) * (int)app->top / (int)(app->table.count - ROWS);
         canvas_draw_box(canvas, 126, y, 2, height);
     }
+    const BleSeen* selected = device_at(app, app->selected);
+    elements_hint_bar(
+        canvas, selected && selected->mine ? "ok=Find;ok=Hold: not mine" : "ok=Find;ok=Hold: mine");
 }
 
 static void draw_callback(Canvas* canvas, void* context) {
@@ -153,6 +175,19 @@ static void input_callback(InputEvent* event, void* context) {
 
 // Returns false to quit
 static bool handle_input(FindMyStuff* app, const InputEvent* event) {
+    if(event->type == InputTypeLong && event->key == InputKeyOk && app->mode == ModeList) {
+        // held: yours, or not any more; the selection stays with it as it moves in the list
+        BleSeen* device = (BleSeen*)device_at(app, app->selected);
+        if(device) {
+            char label[BLE_SEEN_NAME_SIZE];
+            ble_tools_label(device, label, sizeof(label));
+            ble_mine_set(&app->mine, device, !device->mine, label);
+            ble_tools_mine_save(&app->mine);
+            notification_message(app->notifications, &sequence_single_vibro);
+            resort(app);
+        }
+        return true;
+    }
     if(event->type != InputTypeShort && event->type != InputTypeRepeat) return true;
     if(app->mode == ModeLocate) {
         if(event->key == InputKeyBack) app->mode = ModeList;
@@ -191,7 +226,9 @@ static void take_reports(FindMyStuff* app, uint32_t now) {
     GapScannerReport report;
     const size_t sorted = app->table.count;
     while(ble_tools_scan_next(&app->scan, &report)) {
-        ble_seen_update(&app->table, report.address, report.rssi, report.data, report.data_len, now);
+        BleSeen* device =
+            ble_seen_update(&app->table, report.address, report.rssi, report.data, report.data_len, now);
+        if(device && device->count == 1) ble_mine_recognise(&app->mine, device);
         if(app->mode == ModeLocate &&
            memcmp(report.address, app->locate_addr, BLE_SEEN_ADDR_SIZE) == 0) {
             ble_meter_add(&app->meter, report.rssi, now);
@@ -217,6 +254,7 @@ int32_t find_my_stuff_app(void* p) {
     app->gui = furi_record_open(RECORD_GUI);
     gui_add_view_port(app->gui, app->view_port, GuiLayerFullscreen);
 
+    ble_tools_mine_load(&app->mine);
     // active: devices are asked their names, which is how you tell your earbuds from others
     app->supported = ble_tools_scan_start(&app->scan, true);
 
@@ -235,6 +273,7 @@ int32_t find_my_stuff_app(void* p) {
         take_reports(app, now);
         if(now - last_sort >= SORT_MS) {
             last_sort = now;
+            if(ble_mine_follow(&app->mine, &app->table, now)) ble_tools_mine_save(&app->mine);
             ble_seen_expire(&app->table, now, FORGET_MS, FORGET_MS);
             resort(app);
         }

@@ -2992,6 +2992,7 @@ class BleSeenTests(TempDirCase):
                 "-Wall", "-Wextra", "-Werror", "-I", app, "-o", cls.exe,
                 os.path.join(REPO_ROOT, "scripts", "host_tests", "ble_seen_host.c"),
                 os.path.join(app, "ble_seen.c"),
+                os.path.join(app, "ble_mine.c"),
             ]
         )
 
@@ -3049,6 +3050,77 @@ class BleSeenTests(TempDirCase):
             lines += [f"H 010000000000 -70 {t} {self.AIRPODS_AWAY}", f"E {t} 60000 180000"]
         lines += ["F 660000 600000"]
         self.assertEqual(self.run_seen(lines), ["."])
+
+    # ---- the user's own devices (ble_mine.c) ----
+
+    def heard(self, addr, rssi, start, end, adv=None, step=2000):
+        adv = adv or self.AIRTAG_AWAY
+        return [f"H {addr} {rssi} {t} {adv}" for t in range(start, end + 1, step)]
+
+    def test_mine_file_reads_writes_and_skips_what_is_not_a_device(self):
+        out = self.run_seen([
+            "L # my things",
+            "L AA:BB:CC:DD:EE:01 10 AirTag keys",
+            "L not a device",
+            "L AA:BB:CC:DD:EE:02 99 kind out of range",
+            "L aa:bb:cc:dd:ee:03 2 Buds\r",
+            "L AA:BB:CC:DD:EE:01 1 the same again",
+            "P", "W",
+        ])
+        self.assertEqual(out, ["AA:BB:CC:DD:EE:01 10 AirTag keys", "AA:BB:CC:DD:EE:03 2 Buds", "."])
+
+    def test_a_tracker_of_mine_never_warns_and_is_known_next_time(self):
+        lines = self.heard("010000000000", -60, 0, 660000, step=60000)
+        lines += ["M 010000000000 1 AirTag", "F 660000 600000", "W", "Q"]
+        out = self.run_seen(lines)
+        self.assertEqual(out[0], ".")                                   # not following: mine
+        self.assertEqual(out[1:3], ["00:00:00:00:00:01 10 AirTag", "."])  # file: most significant first
+        self.assertEqual(out[3], "010000000000 mine=1")
+        # read back from the file, it is recognised when first heard
+        out = self.run_seen(["L 00:00:00:00:00:01 10 AirTag", "P",
+                             *self.heard("010000000000", -60, 0, 0), "Q"])
+        self.assertEqual(out[0], "010000000000 mine=1")
+        # and unmarked, it is a stranger's again
+        out = self.run_seen([*self.heard("010000000000", -60, 0, 0), "M 010000000000 1 a",
+                             "M 010000000000 0 a", "W", "Q"])
+        self.assertEqual(out, [".", "010000000000 mine=0", "."])
+
+    def test_a_mark_follows_its_tracker_to_a_new_address(self):
+        lines = self.heard("010000000000", -60, 0, 60000)              # mine, until 60 s
+        lines += ["M 010000000000 1 Keys"]
+        lines += self.heard("020000000000", -63, 62000, 70000)          # then it, under a new address
+        lines += ["T 72000", "W", "Q", "F 1000000 600000"]
+        out = self.run_seen(lines)
+        self.assertEqual(out[0], "1")
+        self.assertEqual(out[1:3], ["00:00:00:00:00:02 10 Keys", "."])
+        self.assertIn("020000000000 mine=1", out)
+        self.assertEqual(out[-1], ".")                                  # neither address warns
+
+    def test_a_mark_stays_put_when_it_cannot_tell(self):
+        base = self.heard("010000000000", -60, 0, 60000) + ["M 010000000000 1 Keys"]
+        cases = {
+            # two of its kind turned up: no telling which
+            "two": self.heard("020000000000", -61, 62000, 70000) + self.heard("030000000000", -62, 63000, 70000),
+            # far stronger: another one, close by
+            "strong": self.heard("020000000000", -40, 62000, 70000),
+            # heard while it still was: another one
+            "together": self.heard("020000000000", -60, 50000, 70000),
+            # long after it fell silent
+            "late": self.heard("020000000000", -60, 90000, 98000),
+            # another kind
+            "kind": self.heard("020000000000", -60, 62000, 70000, adv=self.GOOGLE_UTP),
+        }
+        for name, extra in cases.items():
+            out = self.run_seen(base + extra + ["T 100000", "W"])
+            self.assertEqual(out[0], "0", name)
+            self.assertEqual(out[1], "00:00:00:00:00:01 10 Keys", name)
+
+    def test_mine_fuzz(self):
+        import subprocess
+
+        r = subprocess.run([self.exe, "fuzzmine", "3000", "7"], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+        self.assertEqual(r.stdout.strip(), "ok")
 
     def test_a_name_does_not_hide_a_tracker(self):
         out = self.run_seen([f"H 010000000000 -60 0 {self.TILE}", f"H 010000000000 -60 10 {self.NAMED}", "?"])

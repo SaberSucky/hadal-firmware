@@ -233,6 +233,6 @@ uint32_t ble_seen_with_you_ms(const BleSeen* device, uint32_t now) {
 }
 
 bool ble_seen_is_following(const BleSeen* device, uint32_t now, uint32_t threshold_ms) {
-    return ble_kind_is_tracker(device->kind) && device->separated &&
+    return ble_kind_is_tracker(device->kind) && device->separated && !device->mine &&
            ble_seen_with_you_ms(device, now) >= threshold_ms;
 }

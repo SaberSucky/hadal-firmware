@@ -1094,7 +1094,8 @@ uint16_t elements_hints(Canvas* canvas, int32_t x, int32_t y, Align horizontal, 
     }
     if(!count) return 0;
     uint8_t gap = HINT_GAP;
-    if(width + (count - 1) * gap > canvas_width(canvas)) gap = HINT_GAP_TIGHT;
+    // tighter when the line would come within a few pixels of the screen's edges
+    if(width + (count - 1) * gap > canvas_width(canvas) - 8) gap = HINT_GAP_TIGHT;
     width += (count - 1) * gap;
 
     if(horizontal == AlignCenter) {

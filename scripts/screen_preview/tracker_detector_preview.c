@@ -34,6 +34,8 @@ int main(int argc, char** argv) {
     preview_tick = 14 * MIN_MS;
     tracker_sort(app);
     scroll_to_selection(app);
+    app->devices[1].mine = true; // one of yours: ticked, last
+    tracker_sort(app);
     preview_draw("tracker_detector_list", draw_callback, app);
 
     app->selected = 4;

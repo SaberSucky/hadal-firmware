@@ -10,6 +10,7 @@
 #include <notification/notification_messages.h>
 
 #include "ble_seen.h"
+#include "ble_mine.h"
 
 /* ---- scanning ---- */
 
@@ -63,3 +64,16 @@ void ble_tools_draw_sound_hint(Canvas* canvas, bool sound);
 
 /** "Find My tag", a device's name, or its address */
 void ble_tools_label(const BleSeen* device, char* out, size_t size);
+
+/* ---- the user's own devices (ble_mine.h), on the SD card ---- */
+
+#define BLE_TOOLS_MINE_PATH EXT_PATH("apps_data/ble_tools/mine.txt")
+
+/** Read the user's devices; an empty list when there is no file */
+void ble_tools_mine_load(BleMine* mine);
+/** Write them back, if they changed since */
+void ble_tools_mine_save(BleMine* mine);
+/** Width of the mark drawn before one of the user's devices, its gap included */
+#define BLE_TOOLS_MINE_MARK_W 10
+/** A tick before one of the user's devices: x its left, y the text's baseline */
+void ble_tools_draw_mine_mark(Canvas* canvas, int32_t x, int32_t y);

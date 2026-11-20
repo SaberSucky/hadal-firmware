@@ -1,7 +1,8 @@
 /**
  * Tracker Detector: warns when a tracker that is away from its owner (an AirTag or other Find My
  * accessory, a Google Find My Device tag, a SmartTag or a Tile) keeps travelling with you, and
- * helps find it. Needs the BLE Full radio stack.
+ * helps find it. Your own trackers, marked with OK held (here or in Find My Stuff), never warn.
+ * Needs the BLE Full radio stack.
  */
 #include "ble_tools.h"
 
@@ -10,7 +11,9 @@
 #include <stdio.h>
 
 #define CAPACITY     48U
-#define ROWS         4U
+#define ROWS         3U /* over the hint bar */
+#define ROW_H        12
+#define LIST_Y       14
 #define FOLLOW_MS    (10U * 60U * 1000U) /* with you this long: a warning */
 #define FORGET_MS    (3U * 60U * 1000U) /* unheard this long: gone (its clock starts again) */
 #define SORT_MS   1000U /* resorting less often keeps the list still enough to read */
@@ -45,21 +48,27 @@ typedef struct {
     BleMeter meter;
     bool sound;
     uint32_t last_click;
+    BleMine mine;
 } TrackerDetector;
 
 static const BleSeen* tracker_at(const TrackerDetector* app, size_t row) {
     return row < app->table.count ? &app->devices[app->order[row]] : NULL;
 }
 
+/** Whether a goes after b: yours last, then the longest with you first */
+static bool tracker_after(const BleSeen* a, const BleSeen* b) {
+    if(a->mine != b->mine) return a->mine;
+    return a->first_seen > b->first_seen;
+}
+
 static void tracker_sort(TrackerDetector* app) {
-    // the longest with you first
     for(size_t i = 0; i < app->table.count; i++) {
         app->order[i] = i;
     }
     for(size_t i = 1; i < app->table.count; i++) {
         const size_t value = app->order[i];
         size_t j = i;
-        while(j > 0 && app->devices[app->order[j - 1]].first_seen > app->devices[value].first_seen) {
+        while(j > 0 && tracker_after(&app->devices[app->order[j - 1]], &app->devices[value])) {
             app->order[j] = app->order[j - 1];
             j--;
         }
@@ -95,35 +104,48 @@ static void draw_list(Canvas* canvas, TrackerDetector* app, uint32_t now) {
     for(size_t row = 0; row < ROWS; row++) {
         const BleSeen* device = tracker_at(app, app->top + row);
         if(!device) break;
-        const int y = 14 + (int)row * 12;
+        const int y = LIST_Y + (int)row * ROW_H;
         const bool selected = app->top + row == app->selected;
         if(selected) {
-            canvas_draw_rbox(canvas, 0, y, 124, 12, 2);
+            canvas_draw_rbox(canvas, 0, y, 124, ROW_H, 2);
             canvas_set_color(canvas, ColorWhite);
         }
-        // right: whether its owner is near, and how long it has been with you
-        snprintf(
-            text,
-            sizeof(text),
-            "%s %lum",
-            device->separated ? "away" : "owner",
-            (unsigned long)(ble_seen_with_you_ms(device, now) / 60000));
+        // right: yours, or whether its owner is near and how long it has been with you
+        if(device->mine) {
+            snprintf(text, sizeof(text), "mine");
+        } else {
+            snprintf(
+                text,
+                sizeof(text),
+                "%s %lum",
+                device->separated ? "away" : "owner",
+                (unsigned long)(ble_seen_with_you_ms(device, now) / 60000));
+        }
         canvas_draw_str_aligned(canvas, 121, y + 9, AlignRight, AlignBottom, text);
         const size_t right = canvas_string_width(canvas, text);
-        // left: what it is, marked when it follows you
+        // left: what it is, ticked when yours, marked when it follows you
         char label[BLE_SEEN_NAME_SIZE];
         ble_tools_label(device, label, sizeof(label));
+        int32_t x = 3;
+        if(device->mine) {
+            ble_tools_draw_mine_mark(canvas, x, y + 9);
+            x += BLE_TOOLS_MINE_MARK_W;
+        }
         const bool following = ble_seen_is_following(device, now, FOLLOW_MS);
         snprintf(text, sizeof(text), "%s%s", following ? "! " : "", label);
-        ble_tools_draw_fit(canvas, 3, y + 9, text, 113 - right);
+        ble_tools_draw_fit(canvas, x, y + 9, text, 116 - x - right);
         canvas_set_color(canvas, ColorBlack);
     }
     // scroll position
+    const int list_h = ROWS * ROW_H;
     if(app->table.count > ROWS) {
-        const int height = 48 * ROWS / (int)app->table.count;
-        const int y = 14 + (48 - height) * (int)app->top / (int)(app->table.count - ROWS);
+        const int height = list_h * ROWS / (int)app->table.count;
+        const int y = LIST_Y + (list_h - height) * (int)app->top / (int)(app->table.count - ROWS);
         canvas_draw_box(canvas, 126, y, 2, height);
     }
+    const BleSeen* selected = tracker_at(app, app->selected);
+    elements_hint_bar(
+        canvas, selected && selected->mine ? "ok=Find;ok=Hold: not mine" : "ok=Find;ok=Hold: mine");
 }
 
 static void draw_warning(Canvas* canvas, TrackerDetector* app, uint32_t now) {
@@ -155,7 +177,7 @@ static void draw_warning(Canvas* canvas, TrackerDetector* app, uint32_t now) {
     canvas_draw_str_aligned(canvas, 64, 38, AlignCenter, AlignTop, "moving along with you");
     canvas_draw_line(canvas, 4, 50, 123, 50);
     // a clear row under the descenders, above the frame
-    elements_hints(canvas, 64, 60, AlignCenter, "ok=Find it;back=Close");
+    elements_hints(canvas, 64, 60, AlignCenter, "ok=Find;back=Close;ok=Hold: mine");
 }
 
 static void draw_callback(Canvas* canvas, void* context) {
@@ -189,8 +211,41 @@ static void start_locating(TrackerDetector* app, const BleSeen* device) {
     app->sound = true;
 }
 
+static BleSeen* tracker_by_addr(TrackerDetector* app, const uint8_t* addr) {
+    for(size_t i = 0; i < app->table.count; i++) {
+        if(memcmp(app->devices[i].addr, addr, BLE_SEEN_ADDR_SIZE) == 0) return &app->devices[i];
+    }
+    return NULL;
+}
+
+/** Mark a device as yours, or not any more, and write the list */
+static void toggle_mine(TrackerDetector* app, BleSeen* device) {
+    char label[BLE_SEEN_NAME_SIZE];
+    ble_tools_label(device, label, sizeof(label));
+    ble_mine_set(&app->mine, device, !device->mine, label);
+    ble_tools_mine_save(&app->mine);
+    notification_message(app->notifications, &sequence_single_vibro);
+}
+
 // Returns false to quit
 static bool handle_input(TrackerDetector* app, const InputEvent* event) {
+    if(event->type == InputTypeLong && event->key == InputKeyOk && app->mode == ModeList) {
+        // held: yours, or not any more (from the warning: yours, and the warning goes)
+        BleSeen* device = app->warning ? tracker_by_addr(app, app->warned_addr) :
+                                         (BleSeen*)tracker_at(app, app->selected);
+        if(device) toggle_mine(app, device);
+        if(app->warning) {
+            app->warning = false;
+            notification_message(app->notifications, &sequence_reset_red);
+        }
+        tracker_sort(app);
+        // the selection goes with the device to its new place in the list
+        for(size_t row = 0; device && row < app->table.count; row++) {
+            if(tracker_at(app, row) == device) app->selected = row;
+        }
+        scroll_to_selection(app);
+        return true;
+    }
     if(event->type != InputTypeShort && event->type != InputTypeRepeat) return true;
     if(app->mode == ModeLocate) {
         if(event->key == InputKeyBack) app->mode = ModeList;
@@ -242,7 +297,9 @@ static void take_reports(TrackerDetector* app, uint32_t now) {
             known = memcmp(app->devices[i].addr, report.address, BLE_SEEN_ADDR_SIZE) == 0;
         }
         if(!known && !ble_kind_is_tracker(probe.kind)) continue;
-        ble_seen_update(&app->table, report.address, report.rssi, report.data, report.data_len, now);
+        BleSeen* device =
+            ble_seen_update(&app->table, report.address, report.rssi, report.data, report.data_len, now);
+        if(device && device->count == 1) ble_mine_recognise(&app->mine, device);
         if(app->mode == ModeLocate &&
            memcmp(report.address, app->locate_addr, BLE_SEEN_ADDR_SIZE) == 0) {
             ble_meter_add(&app->meter, report.rssi, now);
@@ -282,6 +339,7 @@ int32_t tracker_detector_app(void* p) {
     gui_add_view_port(app->gui, app->view_port, GuiLayerFullscreen);
 
     app->started = furi_get_tick();
+    ble_tools_mine_load(&app->mine);
     app->supported = ble_tools_scan_start(&app->scan, false);
 
     uint32_t last_tick = 0, last_sort = 0;
@@ -299,6 +357,8 @@ int32_t tracker_detector_app(void* p) {
         take_reports(app, now);
         if(now - last_sort >= SORT_MS) {
             last_sort = now;
+            // your trackers keep their marks when they change address
+            if(ble_mine_follow(&app->mine, &app->table, now)) ble_tools_mine_save(&app->mine);
             ble_seen_expire(&app->table, now, FORGET_MS, FORGET_MS);
             tracker_sort(app);
             scroll_to_selection(app);

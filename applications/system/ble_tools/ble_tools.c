@@ -1,6 +1,7 @@
 #include "ble_tools.h"
 
 #include <gui/elements.h>
+#include <storage/storage.h>
 #include <stdio.h>
 
 #define REPORT_QUEUE_LEN 48U
@@ -181,4 +182,48 @@ uint32_t ble_meter_click_interval(const BleMeter* meter, uint32_t now) {
     // -100 dBm: a click a second; -35 dBm and stronger: ten a second
     const int level = meter_level(meter->avg_x8 / 8, 90);
     return 1000 - (uint32_t)level * 10;
+}
+
+/* ---- the user's own devices ---- */
+
+#define MINE_DIR      EXT_PATH("apps_data/ble_tools")
+#define MINE_FILE_MAX 2048U // 32 lines of at most 41 characters
+
+void ble_tools_mine_load(BleMine* mine) {
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    File* file = storage_file_alloc(storage);
+    char* text = malloc(MINE_FILE_MAX);
+    size_t size = 0;
+    if(storage_file_open(file, BLE_TOOLS_MINE_PATH, FSAM_READ, FSOM_OPEN_EXISTING)) {
+        size = storage_file_read(file, text, MINE_FILE_MAX);
+    }
+    ble_mine_parse(mine, text, size);
+    free(text);
+    storage_file_free(file);
+    furi_record_close(RECORD_STORAGE);
+}
+
+void ble_tools_mine_save(BleMine* mine) {
+    if(!mine->changed) return;
+    char* text = malloc(MINE_FILE_MAX);
+    const size_t size = ble_mine_format(mine, text, MINE_FILE_MAX);
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    storage_simply_mkdir(storage, EXT_PATH("apps_data"));
+    storage_simply_mkdir(storage, MINE_DIR);
+    File* file = storage_file_alloc(storage);
+    if(storage_file_open(file, BLE_TOOLS_MINE_PATH, FSAM_WRITE, FSOM_CREATE_ALWAYS) &&
+       storage_file_write(file, text, size) == size) {
+        mine->changed = false;
+    }
+    storage_file_free(file);
+    furi_record_close(RECORD_STORAGE);
+    free(text);
+}
+
+void ble_tools_draw_mine_mark(Canvas* canvas, int32_t x, int32_t y) {
+    // a tick, 7 by 5, in the middle of the capitals' height
+    static const uint8_t tick[] = {0x40, 0x60, 0x31, 0x1B, 0x0E};
+    canvas_set_bitmap_mode(canvas, true);
+    canvas_draw_xbm(canvas, x, y - 6, 7, 5, tick);
+    canvas_set_bitmap_mode(canvas, false);
 }

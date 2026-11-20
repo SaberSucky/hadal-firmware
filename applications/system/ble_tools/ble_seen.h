@@ -50,6 +50,8 @@ typedef struct {
     uint8_t kind; /**< BleKind */
     bool separated; /**< a tracker away from its owner (see above) */
     bool alerted; /**< for the app: the user was told about it */
+    bool mine; /**< the user's own (ble_mine.h): never a warning */
+    bool handed_over; /**< its mark moved on to its next address (ble_mine_follow()) */
     char name[BLE_SEEN_NAME_SIZE];
 } BleSeen;
 
@@ -90,7 +92,7 @@ size_t ble_seen_count_recent(
 /** How long a device has been heard without a long gap */
 uint32_t ble_seen_with_you_ms(const BleSeen* device, uint32_t now);
 
-/** A tracker away from its owner that has stayed with you for threshold_ms */
+/** A tracker away from its owner that has stayed with you for threshold_ms, and is not yours */
 bool ble_seen_is_following(const BleSeen* device, uint32_t now, uint32_t threshold_ms);
 
 #ifdef __cplusplus

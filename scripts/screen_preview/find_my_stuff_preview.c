@@ -35,6 +35,8 @@ int main(int argc, char** argv) {
     preview_tick = 20000;
     app->selected = 1;
     resort(app);
+    app->devices[1].mine = true; // yours: ticked, first
+    resort(app);
     preview_draw("find_my_stuff_list", draw_callback, app);
 
     select_row(app, 0);
