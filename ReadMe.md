@@ -1,6 +1,12 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/logo/hadal-logo-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/logo/hadal-logo.png">
+  <img alt="Hadal Firmware: Abyss the anglerfish beside the name" src="assets/logo/hadal-logo.png">
+</picture>
+
 # Hadal Firmware
 
-**Custom firmware for the Flipper Zero that goes deeper.**
+**Custom firmware for the Flipper Zero that goes deeper.** Its mascot is Abyss, an anglerfish that lights its own way.
 
 Hadal is built on top of [Unleashed Firmware](https://github.com/DarkFlippers/unleashed-firmware), which itself is based on the [official Flipper Zero firmware](https://github.com/flipperdevices/flipperzero-firmware). It keeps everything Unleashed offers and adds features the Flipper normally can't do on its own, starting with Bluetooth LE scanning using only the Flipper's built-in radio. No ESP32 or other add-on board needed.
 
@@ -26,6 +32,15 @@ The Flipper ships with ST's "BLE Light" radio stack, which can only advertise an
 - Normal Bluetooth (phone app, Bluetooth remotes) keeps working, and scanning survives Bluetooth profile switches
 - `furi_hal_bt_scanner_*` API for apps
 
+### Control centre
+**Up** on the desktop opens the control centre, on the whole screen:
+
+- **Tiles** for what you switch often: lock, lock with PIN, Bluetooth, silent, dark mode, left-handed, Hadal Settings, dummy mode, and two apps of your choice (Settings → Hadal → Interface → Desktop Keys → Up panel app 1 and 2). A tile that is on is filled; the line along the bottom says what the selected one is and does
+- **Brightness and volume** as sliders: Up and Down move the selected one, OK on volume turns vibration on or off. They take effect as you move them and are saved when the panel closes
+- **The time and the battery** (with the charge level and whether it is charging) along the top
+- **Lock** locks the buttons only, even with a PIN set; **Lock with PIN** asks for it to unlock. With no PIN set, it opens the PIN settings
+- **Dark mode** shows the whole screen inverted, light pixels on dark, in every app; it is kept across restarts
+
 ### Hadal settings
 **Settings → Hadal** gathers what Hadal adds, in pages:
 
@@ -49,6 +64,7 @@ The Flipper ships with ST's "BLE Light" radio stack, which can only advertise an
 The dolphin goes up to **level 30**. The first three levels end where they always did (300 and 1,800 XP), so nobody's level changes; after that each level takes 1,500 XP and 100 more than the one before (level 30 starts at 77,401 XP). Animations made for "level 3" show at every level from 3 up, and the passport shows the level and how far it is to the next.
 
 ### Lists
+- Menus with a title show it in Hadal's own bold capitals over a dotted rule, and the selected entry sits on a rounded bar (the same in settings lists)
 - In every menu (the lists most apps and settings use), a selected entry too long for its row scrolls so all of it can be read, and **Left** and **Right** move a page at a time through a long list
 - In the file pickers apps open, **Right** goes into the selected folder, as **Left** comes out of one
 - Long text (Archive's Show, logs, info pages) pages with **Left** and **Right**
@@ -61,16 +77,21 @@ The on-screen keyboard has a symbols page: the **#** key beside **_** switches b
 ### Updates and crashes
 - **The update screen:** a bathyscaphe sinks towards the bottom of the Challenger Deep (10,935 m) as the update goes on, with a depth gauge, the ocean zone it has reached, marine snow rising past it, and the seabed coming up at the end
 - **Only what changed:** an update writes only the SD files that differ (each file's real size and MD5 are checked against the new package), instead of all ~1,700
+- **Faster uploads from qFlipper:** the files qFlipper sends in 1 KB pieces are written to the SD card 16 KB at a time, and checked and unpacked 4 KB at a time instead of 512 bytes. The bundled apps that seldom change travel in archives of their own (the big ones alone, the rest by app folder), byte for byte the same from one build to the next, and qFlipper does not upload a file the card already holds with the same checksum: after the first update, an update mostly sends only what changed
+- **qFlipper sees the Flipper come back:** the USB port comes up once, early in the start and with its final name, so qFlipper is not left waiting for the Flipper after an update
 - **Checked first:** before changing anything, the updater checks the battery, both images, that the firmware fits beside the radio stack, and that the option bytes cannot lock the chip. If something is wrong it stops with the reason, and the Flipper keeps its firmware
 - **Rollback:** a firmware that fails to start four times in a row is replaced by the last one that ran steadily (kept in `/ext/update/.hadal_rollback`), with your settings and files left as they are
 - **Crash reports:** after a crash, `/ext/crash/` gets a report: the thread, the message, where it happened and the call chain. `python3 scripts/crash_report.py <report>` names the functions
 - `update/hadal_update.log` on the SD card records every update
+- **Faster start:** each idle animation's frames are one file instead of one per frame (opening a file on the SD card means walking its folders again, which was most of the time an animation took to load), and the desktop brings up the USB port and the asset pack's folder before it loads the animation, once. Returning from an app reloads the animation the same quicker way
 - **Start-up timeline:** 30 seconds after each start, `/ext/apps_data/boot/timeline.txt` lists when each step of the start ended and how long it took (the hardware, the SD card, the radio, every start hook, the desktop). The `boot_profile` CLI command prints the same
 
 ### Asset packs
 **Settings → Hadal → Interface → Asset Pack** switches the animations, icons and fonts to those of a pack on the SD card (`/ext/asset_packs/<Name>/`), without reflashing. The folder layout is compatible with the one other custom firmwares use, and everything that loads it is written for Hadal. A pack that is missing or broken changes nothing, and one that crashes the firmware is turned off at the next start. See [documentation/AssetPacks.md](documentation/AssetPacks.md).
 
-- **Hadal** is the pack that ships with the firmware: deep-sea idle animations (an anglerfish lit by its own lure, that talks; a jellyfish; a bathyscaphe; a black smoker with tube worms and a crab), drawn as dark shapes in pale water, which is what the Flipper's screen shows best. Also status bar and main menu icons, a lighter interface font and instrument-panel clock numerals. It is generated by script (`assets/hadal_pack/build.py`)
+- **Hadal** is the pack that ships with the firmware: deep-sea idle animations (an anglerfish lit by its own lure, that talks; a jellyfish; a bathyscaphe; a black smoker with tube worms and a crab), drawn as dark shapes in pale water, which is what the Flipper's screen shows best, and a sonar ping for the loading spinner. It keeps the stock fonts and icons. It is generated by script (`assets/hadal_pack/build.py`)
+- **The main menu's module icons** (Sub-GHz, NFC, Infrared and the rest) stay as they are whatever pack is in use
+- **Packs made for Momentum** load whole: their fonts are taken when they are within a few pixels of the stock ones' size, and their icons when they are another size than the ones they replace. Packs another firmware installed (such as Momentum's Watch Dogs) are no longer deleted by Hadal's updater
 - The first-start and "firmware updated" slideshows are Hadal's own, and credit Unleashed
 
 ### Universal remotes
