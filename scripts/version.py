@@ -35,11 +35,6 @@ class GitVersion:
             or "unknown"
         )
 
-        version = (
-            os.environ.get("DIST_SUFFIX", None)
-            or "unknown"
-        )
-
         force_no_dirty = (
             os.environ.get("FORCE_NO_DIRTY", None)
             or ""
@@ -56,6 +51,10 @@ class GitVersion:
                 self._exec_git("log -1 --format=%cd --date=default").strip(),
                 "%a %b %d %H:%M:%S %Y %z",
             )
+
+        # The version the Flipper reports (About, qFlipper): set by CI, else Hadal and the date
+        # of the commit it was built from
+        version = os.environ.get("DIST_SUFFIX", None) or f"hadal-{commit_date:%Y%m%d}"
 
         return {
             "GIT_COMMIT": commit,
