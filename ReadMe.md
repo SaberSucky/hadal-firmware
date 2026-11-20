@@ -51,6 +51,9 @@ The dolphin goes up to **level 30**. The first three levels end where they alway
 ### Lists
 - In every menu (the lists most apps and settings use), a selected entry too long for its row scrolls so all of it can be read, and **Left** and **Right** move a page at a time through a long list
 - In the file pickers apps open, **Right** goes into the selected folder, as **Left** comes out of one
+- Long text (Archive's Show, logs, info pages) pages with **Left** and **Right**
+- Archive opens `.img` disk images in Mass Storage, and shows logs, CSV, JSON, config, INI, XML and YAML files as text
+- After a crash, the notice says where the report is (`crash/` on the SD card)
 
 ### Keyboard
 The on-screen keyboard has a symbols page: the **#** key beside **_** switches between letters and every printable ASCII symbol (`` ! @ # $ % ^ & * ( ) ~ ` | \ - + = [ ] { } ; : < > " ' , . / ? ``), with a space bar, for passwords, URLs and file names. As before, **Up** from the top row moves into the text, where **Left** and **Right** move the cursor.

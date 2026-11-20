@@ -1,4 +1,6 @@
 #include <furi_hal.h>
+#include <core/crash_report.h>
+#include <stdio.h>
 
 #include "../desktop_i.h"
 
@@ -23,7 +25,21 @@ void desktop_scene_fault_on_enter(void* context) {
         AlignCenter);
 
     char* message = (char*)furi_hal_rtc_get_fault_data();
-    popup_set_text(popup, message, 64, 37 + STATUS_BAR_Y_SHIFT, AlignCenter, AlignCenter);
+    // and where to find out more: the report the desktop writes once the card is there
+    static char text[64];
+    snprintf(
+        text,
+        sizeof(text),
+        "%s%sReport: SD/crash",
+        message ? message : "",
+        message && message[0] ? "\n" : "");
+    popup_set_text(
+        popup,
+        furi_crash_report_get() ? text : message,
+        64,
+        37 + STATUS_BAR_Y_SHIFT,
+        AlignCenter,
+        AlignCenter);
     popup_set_callback(popup, desktop_scene_fault_callback);
 
     view_dispatcher_switch_to_view(desktop->view_dispatcher, DesktopViewIdPopup);

@@ -90,6 +90,20 @@ static bool text_box_view_input_callback(InputEvent* event, void* context) {
         } else if(event->key == InputKeyUp) {
             text_box_process_up(text_box, scroll_speed);
             consumed = true;
+        } else if(event->key == InputKeyLeft || event->key == InputKeyRight) {
+            // a screen at a time, keeping a line of the last one for the eye to follow
+            int32_t page = 1;
+            with_view_model(
+                text_box->view,
+                TextBoxModel * model,
+                { page = model->lines_on_screen > 1 ? model->lines_on_screen - 1 : 1; },
+                false);
+            if(event->key == InputKeyRight) {
+                text_box_process_down(text_box, page);
+            } else {
+                text_box_process_up(text_box, page);
+            }
+            consumed = true;
         }
 
         text_box->button_held_for_ticks++;
