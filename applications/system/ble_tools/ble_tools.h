@@ -62,8 +62,16 @@ void ble_tools_draw_fit(Canvas* canvas, int32_t x, int32_t y, const char* text, 
 /** The meter's corner hint: what OK does to the clicks */
 void ble_tools_draw_sound_hint(Canvas* canvas, bool sound);
 
-/** "Find My tag", a device's name, or its address */
+/** "My phone", "AirPods Pro 2", a device's name, "Find My tag", or its address */
 void ble_tools_label(const BleSeen* device, char* out, size_t size);
+
+/** Whether a device is paired with this Flipper (a phone with the Flipper app), whatever address
+ * it uses now: asks the radio once a device, and sets BLE_TRAIT_PAIRED when it is */
+void ble_tools_check_paired(BleSeen* device);
+
+/** What every app does with a device it has just heard: whether it is paired, and whether it is
+ * one of the user's own */
+void ble_tools_recognise(const BleMine* mine, BleSeen* device);
 
 /* ---- the user's own devices (ble_mine.h), on the SD card ---- */
 

@@ -1,5 +1,5 @@
 entry,status,name,type,params
-Version,+,88.32,,
+Version,+,88.33,,
 Header,+,applications/drivers/subghz/cc1101_ext/cc1101_ext_interconnect.h,,
 Header,+,applications/services/applications.h,,
 Header,+,applications/services/bt/bt_service/bt.h,,
@@ -1485,6 +1485,7 @@ Function,+,furi_hal_bt_lock_core2,void,
 Function,+,furi_hal_bt_nvm_sram_sem_acquire,void,
 Function,+,furi_hal_bt_nvm_sram_sem_release,void,
 Function,+,furi_hal_bt_reinit,void,
+Function,+,furi_hal_bt_resolve_address,_Bool,"const uint8_t*, uint8_t*"
 Function,+,furi_hal_bt_scanner_is_active,_Bool,
 Function,+,furi_hal_bt_scanner_is_supported,_Bool,
 Function,+,furi_hal_bt_scanner_start,_Bool,"const GapScannerConfig*, GapScannerCallback, void*"

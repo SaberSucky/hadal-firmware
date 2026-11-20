@@ -3,7 +3,7 @@
  * @brief The user's own devices, marked as theirs in Tracker Detector or Find My Stuff: never a
  * warning, listed as theirs. Shared by both apps through one file on the SD card, a device a line:
  *
- *     AA:BB:CC:DD:EE:FF <kind> <label>
+ *     AA:BB:CC:DD:EE:FF <kind> [@<model><colour>] <label>
  *
  * Trackers, phones and earbuds change their address now and then so that they cannot be followed,
  * and a mark is kept by address. So while an app runs, a mark follows its device through such a
@@ -11,6 +11,13 @@
  * device of the same kind turns up where it was (as strong as it was), that is the same device
  * under its new address, and the mark moves to it. Between runs the mark stays with the last
  * address it knew; a tracker away from its owner keeps one address a day.
+ *
+ * Two kinds of device are known whatever their address:
+ * - a device paired with this Flipper (a phone with the Flipper app), whose addresses resolve with
+ *   the key it gave when pairing: the app sets BLE_TRAIT_PAIRED on it
+ * - AirPods (and Beats) marked as mine, by their model and colour, which they broadcast, when
+ *   they are as near as earbuds on you are (BLE_MINE_NEAR_DBM): a stranger's of the same model
+ *   and colour close by is taken for yours, which only changes what it is called
  *
  * No dependencies, for the host tests.
  */
@@ -29,10 +36,14 @@ extern "C" {
 #define BLE_MINE_GAP_MS (20U * 1000U)
 /** ...whose signal is within this many dB of its */
 #define BLE_MINE_RSSI_DB (10)
+/** AirPods are recognised by model and colour this strong or stronger: on you, or nearly */
+#define BLE_MINE_NEAR_DBM (-65)
 
 typedef struct {
     uint8_t addr[BLE_SEEN_ADDR_SIZE];
     uint8_t kind; /**< BleKind, when it was marked */
+    uint16_t model; /**< AirPods model (BleSeen.model), 0 for a device known by address alone */
+    uint8_t colour;
     char label[BLE_SEEN_NAME_SIZE];
 } BleMineEntry;
 
@@ -55,7 +66,8 @@ const BleMineEntry* ble_mine_find(const BleMine* mine, const uint8_t* addr);
  * oldest mark makes room when the list is full */
 void ble_mine_set(BleMine* mine, BleSeen* device, bool is_mine, const char* label);
 
-/** Whether a device just heard is one of mine: sets its flag from the list */
+/** Whether a device heard is one of mine (by address, as paired, or by AirPods model): sets its
+ * flag when it is; never clears it */
 void ble_mine_recognise(const BleMine* mine, BleSeen* device);
 
 /** Move marks along with devices that changed their address (see above); call every second or

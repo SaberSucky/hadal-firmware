@@ -228,7 +228,7 @@ static void take_reports(FindMyStuff* app, uint32_t now) {
     while(ble_tools_scan_next(&app->scan, &report)) {
         BleSeen* device =
             ble_seen_update(&app->table, report.address, report.rssi, report.data, report.data_len, now);
-        if(device && device->count == 1) ble_mine_recognise(&app->mine, device);
+        if(device) ble_tools_recognise(&app->mine, device);
         if(app->mode == ModeLocate &&
            memcmp(report.address, app->locate_addr, BLE_SEEN_ADDR_SIZE) == 0) {
             ble_meter_add(&app->meter, report.rssi, now);

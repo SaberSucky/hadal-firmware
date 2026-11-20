@@ -332,6 +332,18 @@ bool furi_hal_bt_scanner_stop(void);
  */
 bool furi_hal_bt_scanner_is_active(void);
 
+/** Whether an address heard while scanning is one of a device paired with the Flipper (a phone
+ * with the Flipper app), which changes its address now and then: such a device's resolvable
+ * private addresses are resolved with the key it gave when it paired. Not from the scanner's
+ * callback: it asks the radio stack.
+ *
+ * @param      address   the address, little-endian as reported by the scanner
+ * @param[out] identity  the device's fixed address, when it resolves
+ *
+ * @return     true if it is a paired device's
+ */
+bool furi_hal_bt_resolve_address(const uint8_t* address, uint8_t* identity);
+
 #ifdef __cplusplus
 }
 #endif

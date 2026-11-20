@@ -66,8 +66,26 @@ void ble_tools_draw_sound_hint(Canvas* canvas, bool sound) {
     elements_hints(canvas, 2, 61, AlignLeft, sound ? "ok=Mute" : "ok=Sound");
 }
 
+void ble_tools_check_paired(BleSeen* device) {
+    if(device->traits & BLE_TRAIT_CHECKED) return;
+    device->traits |= BLE_TRAIT_CHECKED;
+    uint8_t identity[BLE_SEEN_ADDR_SIZE];
+    if(furi_hal_bt_resolve_address(device->addr, identity)) device->traits |= BLE_TRAIT_PAIRED;
+}
+
+void ble_tools_recognise(const BleMine* mine, BleSeen* device) {
+    ble_tools_check_paired(device);
+    if(!device->mine) ble_mine_recognise(mine, device);
+}
+
 void ble_tools_label(const BleSeen* device, char* out, size_t size) {
-    if(device->name[0]) {
+    const char* model = device->model ? ble_model_name(device->model) : NULL;
+    if(device->traits & BLE_TRAIT_PAIRED) {
+        // the only devices that pair with a Flipper are phones (and computers) with its app
+        snprintf(out, size, "%s", device->name[0] ? device->name : "My phone");
+    } else if(model) {
+        snprintf(out, size, "%s", model);
+    } else if(device->name[0]) {
         snprintf(out, size, "%s", device->name);
     } else if(device->kind != BleKindUnknown) {
         snprintf(out, size, "%s", ble_kind_name(device->kind));

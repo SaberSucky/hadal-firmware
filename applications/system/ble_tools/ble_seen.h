@@ -40,6 +40,13 @@ typedef enum {
     BleKindCount,
 } BleKind;
 
+/** What else an advertisement told about its device (BleSeen.traits) */
+#define BLE_TRAIT_BEACON     (1U << 0) /**< a beacon: iBeacon, Eddystone, AltBeacon */
+#define BLE_TRAIT_FAST_PAIR  (1U << 1) /**< Google Fast Pair: earbuds, a speaker, a watch */
+#define BLE_TRAIT_NEARBY     (1U << 2) /**< Google Nearby / Quick Share: an Android phone */
+#define BLE_TRAIT_PAIRED     (1U << 3) /**< paired with this Flipper (set by the app) */
+#define BLE_TRAIT_CHECKED    (1U << 4) /**< the app asked whether it is paired */
+
 typedef struct {
     uint8_t addr[BLE_SEEN_ADDR_SIZE];
     int8_t rssi; /**< last, dBm */
@@ -51,6 +58,10 @@ typedef struct {
     bool separated; /**< a tracker away from its owner (see above) */
     bool alerted; /**< for the app: the user was told about it */
     bool mine; /**< the user's own (ble_mine.h): never a warning */
+    uint8_t apple_type; /**< the last Apple Continuity message type, 0 for none */
+    uint8_t traits; /**< BLE_TRAIT_* */
+    uint16_t model; /**< AirPods / Beats model from the pairing broadcast, 0 when unknown */
+    uint8_t colour; /**< and their colour */
     bool handed_over; /**< its mark moved on to its next address (ble_mine_follow()) */
     char name[BLE_SEEN_NAME_SIZE];
 } BleSeen;
@@ -62,6 +73,8 @@ typedef struct {
 } BleSeenTable;
 
 const char* ble_kind_name(BleKind kind);
+/** "AirPods Pro 2" for an AirPods model (BleSeen.model), NULL when it is not one known */
+const char* ble_model_name(uint16_t model);
 bool ble_kind_is_tracker(BleKind kind);
 
 /** Learn what a device is from one advertisement (raw AD structures) */

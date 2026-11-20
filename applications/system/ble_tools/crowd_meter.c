@@ -1,10 +1,11 @@
 /**
- * Crowd Meter: how busy a place is, from the Bluetooth LE devices heard around (phones, watches,
- * earbuds, trackers), with a graph of the last 20 minutes and what kinds of device they are.
- * Counts devices, not people: one person often carries two or three. Needs the BLE Full radio
- * stack.
+ * Crowd Meter: how many people are around, from the Bluetooth LE devices heard: phones, and
+ * earbuds or watches beyond the phones, not trackers, beacons, televisions or computers, and not
+ * your own (ble_crowd.h). With a graph of the last 20 minutes and what the devices are. An
+ * estimate: a phone that keeps quiet is not heard. Needs the BLE Full radio stack.
  */
 #include "ble_tools.h"
+#include "ble_crowd.h"
 
 #include <input/input.h>
 #include <stdio.h>
@@ -15,6 +16,7 @@
 #define SAMPLE_MS    (10U * 1000U)
 #define HISTORY      124U /* one sample a column: 20 minutes */
 #define TICK_MS      500U
+#define NEAR_DBM     (-70) /* "near you": a few metres, in the open */
 
 typedef enum {
     PageNow,
@@ -22,22 +24,6 @@ typedef enum {
     PageCount,
 } Page;
 
-typedef enum {
-    GroupApple,
-    GroupSamsung,
-    GroupWindows,
-    GroupTrackers,
-    GroupOther,
-    GroupCount,
-} Group;
-
-static const char* const group_names[GroupCount] = {
-    [GroupApple] = "Apple",
-    [GroupSamsung] = "Samsung",
-    [GroupWindows] = "Windows",
-    [GroupTrackers] = "Trackers",
-    [GroupOther] = "Other",
-};
 
 typedef struct {
     Gui* gui;
@@ -52,49 +38,24 @@ typedef struct {
     bool supported;
     uint32_t started;
     Page page;
-    size_t now_count;
+    BleCrowd crowd;
     size_t peak;
-    uint16_t groups[GroupCount];
-    uint16_t history[HISTORY]; /**< newest last */
+    uint16_t history[HISTORY]; /**< people, newest last */
     size_t history_count;
+    BleMine mine;
 } CrowdMeter;
 
-static Group group_of(BleKind kind) {
-    switch(kind) {
-    case BleKindApple:
-    case BleKindAirPods:
-        return GroupApple;
-    case BleKindSamsung:
-        return GroupSamsung;
-    case BleKindMicrosoft:
-        return GroupWindows;
-    case BleKindAirTag:
-    case BleKindFindMy:
-    case BleKindSmartTag:
-    case BleKindTile:
-    case BleKindGoogleFind:
-        return GroupTrackers;
-    default:
-        return GroupOther;
-    }
-}
-
-static const char* crowd_word(size_t count) {
-    return count < 5 ? "Quiet" : count < 15 ? "A few people" : count < 40 ? "Busy" : "Crowded";
+static const char* crowd_word(size_t people) {
+    return people < 3 ? "Quiet" : people < 8 ? "A few people" : people < 20 ? "Busy" : "Crowded";
 }
 
 static void count_now(CrowdMeter* app, uint32_t now) {
-    uint16_t by_kind[BleKindCount];
-    app->now_count = ble_seen_count_recent(&app->table, now, WINDOW_MS, by_kind);
-    if(app->now_count > app->peak) app->peak = app->now_count;
-    memset(app->groups, 0, sizeof(app->groups));
-    for(size_t kind = 0; kind < BleKindCount; kind++) {
-        app->groups[group_of((BleKind)kind)] += by_kind[kind];
-    }
+    ble_crowd_count(&app->table, now, WINDOW_MS, NEAR_DBM, &app->crowd);
+    if(app->crowd.people > app->peak) app->peak = app->crowd.people;
 }
 
 static void add_sample(CrowdMeter* app) {
-    const uint16_t value = (uint16_t)app->now_count;
+    const uint16_t value = app->crowd.people;
     if(app->history_count < HISTORY) {
         app->history[app->history_count++] = value;
     } else {
@@ -105,15 +66,17 @@ static void add_sample(CrowdMeter* app) {
 
 static void draw_now(Canvas* canvas, CrowdMeter* app, uint32_t now) {
     char text[24];
-    // the count, and what it means
-    snprintf(text, sizeof(text), "%u%s", (unsigned)app->now_count, app->now_count >= CAPACITY ? "+" : "");
+    // the estimate, and what it means
+    const size_t people = app->crowd.people;
+    snprintf(text, sizeof(text), "%u%s", (unsigned)people, app->table.count >= CAPACITY ? "+" : "");
     canvas_set_font(canvas, FontBigNumbers);
     canvas_draw_str(canvas, 2, 30, text);
     const int x = 6 + canvas_string_width(canvas, text);
     canvas_set_font(canvas, FontPrimary);
-    canvas_draw_str(canvas, x, 22, crowd_word(app->now_count));
+    canvas_draw_str(canvas, x, 22, crowd_word(people));
     canvas_set_font(canvas, FontSecondary);
-    canvas_draw_str(canvas, x, 31, "devices, last min");
+    snprintf(text, sizeof(text), "people, %u near you", (unsigned)app->crowd.people_near);
+    canvas_draw_str(canvas, x, 31, text);
 
     // the last 20 minutes, scaled to the busiest moment (at least 10), under the peak
     canvas_draw_line(canvas, 2, 62, 125, 62); // two clear columns and a row from the edges
@@ -138,19 +101,31 @@ static void draw_now(Canvas* canvas, CrowdMeter* app, uint32_t now) {
     canvas_draw_str(canvas, 2, 43, text);
 }
 
+/** What was heard: the devices behind the estimate, and what was left out */
 static void draw_kinds(Canvas* canvas, CrowdMeter* app) {
+    static const struct {
+        BleRole role;
+        const char* name;
+    } rows[] = {
+        {BleRolePhone, "Phones"},
+        {BleRoleWearable, "Worn"},
+        {BleRoleThing, "Things"},
+        {BleRoleUnknown, "Unknown"},
+    };
     char text[8];
     canvas_set_font(canvas, FontSecondary);
-    uint16_t top = 1;
-    for(size_t group = 0; group < GroupCount; group++) {
-        if(app->groups[group] > top) top = app->groups[group];
+    uint16_t top = app->crowd.mine ? app->crowd.mine : 1;
+    for(size_t i = 0; i < COUNT_OF(rows); i++) {
+        if(app->crowd.by_role[rows[i].role] > top) top = app->crowd.by_role[rows[i].role];
     }
-    for(size_t group = 0; group < GroupCount; group++) {
-        const int y = 21 + (int)group * 10;
-        canvas_draw_str(canvas, 2, y, group_names[group]);
-        snprintf(text, sizeof(text), "%u", (unsigned)app->groups[group]);
+    for(size_t i = 0; i <= COUNT_OF(rows); i++) {
+        const bool yours = i == COUNT_OF(rows);
+        const uint16_t value = yours ? app->crowd.mine : app->crowd.by_role[rows[i].role];
+        const int y = 22 + (int)i * 10;
+        canvas_draw_str(canvas, 2, y, yours ? "Yours" : rows[i].name);
+        snprintf(text, sizeof(text), "%u", (unsigned)value);
         canvas_draw_str_aligned(canvas, 64, y, AlignRight, AlignBottom, text);
-        const int width = app->groups[group] * 58 / top; // ends two columns short of the edge
+        const int width = value * 58 / top; // ends two columns short of the edge
         if(width) canvas_draw_box(canvas, 67, y - 6, width, 5);
     }
 }
@@ -197,6 +172,7 @@ int32_t crowd_meter_app(void* p) {
 
     // passive: only listens, and devices are not asked anything
     app->started = furi_get_tick();
+    ble_tools_mine_load(&app->mine);
     app->supported = ble_tools_scan_start(&app->scan, false);
 
     uint32_t last_tick = 0, last_sample = app->started;
@@ -217,7 +193,10 @@ int32_t crowd_meter_app(void* p) {
         furi_mutex_acquire(app->mutex, FuriWaitForever);
         GapScannerReport report;
         while(ble_tools_scan_next(&app->scan, &report)) {
-            ble_seen_update(&app->table, report.address, report.rssi, report.data, report.data_len, now);
+            BleSeen* device =
+                ble_seen_update(&app->table, report.address, report.rssi, report.data, report.data_len, now);
+            // your own phone and earbuds are you, not the crowd
+            if(device) ble_tools_recognise(&app->mine, device);
         }
         if(now - last_tick >= TICK_MS) {
             last_tick = now;

@@ -136,6 +136,11 @@ bool furi_hal_bt_scanner_stop(void) {
 bool furi_hal_bt_scanner_is_active(void) {
     return false;
 }
+bool furi_hal_bt_resolve_address(const uint8_t* address, uint8_t* identity) {
+    UNUSED(address);
+    UNUSED(identity);
+    return false; // nothing is paired on a PC
+}
 
 /* ---- the previews ---- */
 

@@ -14,7 +14,12 @@
  *   T <ms>                                             follow address changes: print how many moved
  *   W                                                  print the mine file, then "."
  *   Q                                                  print every device: <addr> mine=<0|1>, then "."
- *   (a device heard for the first time is recognised from the list)
+ *   A <addr 12 hex>                                    the device is paired with this Flipper
+ *   (every device heard that is not yet mine is recognised from the list)
+ * People (ble_crowd.c):
+ *   K <ms> <window> <near dBm>                         print "phones worn things unknown mine
+ *                                                      people near"
+ *   O <addr 12 hex>                                    print the device's role and its label
  * argv: [capacity]   or   fuzz N SEED   or   fuzzmine N SEED
  */
 #include <stdio.h>
@@ -23,6 +28,7 @@
 
 #include "ble_seen.h"
 #include "ble_mine.h"
+#include "ble_crowd.h"
 
 static int hex_bytes(const char* hex, uint8_t* out, size_t max) {
     size_t n = 0;
@@ -104,7 +110,35 @@ int main(int argc, char** argv) {
             hex_bytes(hex, addr, 6);
             const int len = hex_bytes(adv, data, sizeof(data));
             BleSeen* d = ble_seen_update(&table, addr, (int8_t)rssi, data, (uint8_t)len, (uint32_t)ms);
-            if(d && d->count == 1) ble_mine_recognise(&mine, d);
+            if(d && !d->mine) ble_mine_recognise(&mine, d);
+        } else if(line[0] == 'A' && sscanf(line + 2, "%15s", hex) == 1) {
+            hex_bytes(hex, addr, 6);
+            for(size_t i = 0; i < table.count; i++) {
+                if(memcmp(table.devices[i].addr, addr, 6) == 0) {
+                    table.devices[i].traits |= BLE_TRAIT_PAIRED;
+                    ble_mine_recognise(&mine, &table.devices[i]);
+                }
+            }
+        } else if(line[0] == 'K' && sscanf(line + 2, "%lu %lu %d", &ms, &a, &rssi) == 3) {
+            BleCrowd crowd;
+            ble_crowd_count(&table, (uint32_t)ms, (uint32_t)a, rssi, &crowd);
+            printf(
+                "%u %u %u %u %u %u %u\n",
+                crowd.by_role[BleRolePhone],
+                crowd.by_role[BleRoleWearable],
+                crowd.by_role[BleRoleThing],
+                crowd.by_role[BleRoleUnknown],
+                crowd.mine,
+                crowd.people,
+                crowd.people_near);
+        } else if(line[0] == 'O' && sscanf(line + 2, "%15s", hex) == 1) {
+            hex_bytes(hex, addr, 6);
+            for(size_t i = 0; i < table.count; i++) {
+                const BleSeen* d = &table.devices[i];
+                if(memcmp(d->addr, addr, 6) != 0) continue;
+                const char* model = d->model ? ble_model_name(d->model) : NULL;
+                printf("%s %s\n", ble_role_name(ble_role(d)), model ? model : ble_kind_name(d->kind));
+            }
         } else if(line[0] == 'L' && line[1] == ' ') {
             const size_t n = strlen(line + 2);
             if(mine_length + n < sizeof(mine_text)) {

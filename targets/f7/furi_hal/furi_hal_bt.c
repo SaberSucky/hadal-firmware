@@ -433,6 +433,15 @@ bool furi_hal_bt_scanner_is_active(void) {
     return gap_scanner_is_active();
 }
 
+bool furi_hal_bt_resolve_address(const uint8_t* address, uint8_t* identity) {
+    furi_check(address);
+    furi_check(identity);
+    // only a resolvable private address (its top two bits 01) can be resolved, and only by a
+    // running radio stack that holds the keys of the devices paired with the Flipper
+    if((address[5] & 0xC0) != 0x40 || !furi_hal_bt_is_alive()) return false;
+    return aci_gap_resolve_private_addr(address, identity) == BLE_STATUS_SUCCESS;
+}
+
 bool furi_hal_bt_extra_beacon_set_data(const uint8_t* data, uint8_t len) {
     return gap_extra_beacon_set_data(data, len);
 }

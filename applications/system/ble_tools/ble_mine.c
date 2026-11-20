@@ -38,6 +38,22 @@ static void parse_line(BleMine* mine, const char* line, size_t length) {
     }
     entry.kind = (uint8_t)kind;
     if(pos < length && line[pos] == ' ') pos++;
+    // an AirPods pair's model and colour: "@" and six hex digits
+    if(pos + 7 <= length && line[pos] == '@') {
+        uint32_t value = 0;
+        bool hex = true;
+        for(size_t i = 1; i <= 6 && hex; i++) {
+            const int digit = hex_value(line[pos + i]);
+            hex = digit >= 0;
+            value = value << 4 | (uint32_t)(digit < 0 ? 0 : digit);
+        }
+        if(hex && (pos + 7 == length || line[pos + 7] == ' ')) {
+            entry.model = (uint16_t)(value >> 8);
+            entry.colour = (uint8_t)value;
+            pos += 7;
+            if(pos < length) pos++;
+        }
+    }
     size_t n = 0;
     while(pos < length && n < BLE_SEEN_NAME_SIZE - 1) {
         const char c = line[pos++];
@@ -66,10 +82,12 @@ size_t ble_mine_format(const BleMine* mine, char* out, size_t size) {
     out[0] = '\0';
     for(size_t i = 0; i < mine->count; i++) {
         const BleMineEntry* e = &mine->entries[i];
+        char signature[10] = "";
+        if(e->model) snprintf(signature, sizeof(signature), "@%04X%02X ", e->model, e->colour);
         const int n = snprintf(
             out + used,
             size - used,
-            "%02X:%02X:%02X:%02X:%02X:%02X %u %s\n",
+            "%02X:%02X:%02X:%02X:%02X:%02X %u %s%s\n",
             e->addr[5],
             e->addr[4],
             e->addr[3],
@@ -77,6 +95,7 @@ size_t ble_mine_format(const BleMine* mine, char* out, size_t size) {
             e->addr[1],
             e->addr[0],
             (unsigned)e->kind,
+            signature,
             e->label);
         if(n < 0 || (size_t)n >= size - used) {
             out[used] = '\0'; // only whole lines
@@ -112,13 +131,27 @@ void ble_mine_set(BleMine* mine, BleSeen* device, bool is_mine, const char* labe
         memset(entry, 0, sizeof(BleMineEntry));
         memcpy(entry->addr, device->addr, BLE_SEEN_ADDR_SIZE);
         entry->kind = device->kind;
+        entry->model = device->model;
+        entry->colour = device->colour;
         snprintf(entry->label, sizeof(entry->label), "%s", label ? label : "");
     }
     mine->changed = true;
 }
 
 void ble_mine_recognise(const BleMine* mine, BleSeen* device) {
-    device->mine = ble_mine_find(mine, device->addr) != NULL;
+    if((device->traits & BLE_TRAIT_PAIRED) || ble_mine_find(mine, device->addr)) {
+        device->mine = true;
+        return;
+    }
+    // AirPods: a pair marked as mine, by model and colour, as near as they are on you
+    if(!device->model || device->rssi_avg_x8 / 8 < BLE_MINE_NEAR_DBM) return;
+    for(size_t i = 0; i < mine->count; i++) {
+        const BleMineEntry* entry = &mine->entries[i];
+        if(entry->model == device->model && entry->colour == device->colour) {
+            device->mine = true;
+            return;
+        }
+    }
 }
 
 /** Devices that keep one address are not followed: a stranger's device could take a mark */

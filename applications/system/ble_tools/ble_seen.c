@@ -20,6 +20,10 @@
 #define UUID_TILE            0xFEEDU
 #define UUID_TILE_OLD        0xFEECU
 #define UUID_EDDYSTONE       0xFEAAU
+#define UUID_FAST_PAIR       0xFE2CU
+#define UUID_GOOGLE_NEARBY   0xFEF3U
+#define UUID_ALTBEACON       0xBEACU
+#define APPLE_IBEACON        0x02U
 #define GOOGLE_FMDN          0x40U
 #define GOOGLE_FMDN_UNWANTED 0x41U
 
@@ -36,6 +40,27 @@ static const char* const kind_names[BleKindCount] = {
     [BleKindNamed] = "Named device",
     [BleKindAirTag] = "AirTag",
 };
+
+/* AirPods and Beats say their model in the pairing broadcast (Apple type 0x07) */
+static const struct {
+    uint16_t model;
+    const char* name;
+} models[] = {
+    {0x0220, "AirPods"},
+    {0x0F20, "AirPods 2"},
+    {0x1320, "AirPods 3"},
+    {0x0E20, "AirPods Pro"},
+    {0x1420, "AirPods Pro 2"},
+    {0x2420, "AirPods Pro 2"},
+    {0x0A20, "AirPods Max"},
+};
+
+const char* ble_model_name(uint16_t model) {
+    for(size_t i = 0; i < sizeof(models) / sizeof(models[0]); i++) {
+        if(models[i].model == model) return models[i].name;
+    }
+    return NULL;
+}
 
 const char* ble_kind_name(BleKind kind) {
     return kind < BleKindCount ? kind_names[kind] : kind_names[BleKindUnknown];
@@ -56,7 +81,14 @@ static void set_kind(BleSeen* device, BleKind kind) {
 }
 
 static void parse_service(BleSeen* device, uint16_t uuid, const uint8_t* value, uint8_t length) {
-    if(uuid == UUID_SMARTTAG) {
+    if(uuid == UUID_FAST_PAIR) {
+        device->traits |= BLE_TRAIT_FAST_PAIR;
+    } else if(uuid == UUID_GOOGLE_NEARBY) {
+        device->traits |= BLE_TRAIT_NEARBY;
+    } else if(uuid == UUID_EDDYSTONE && length >= 1 && value[0] != GOOGLE_FMDN &&
+              value[0] != GOOGLE_FMDN_UNWANTED) {
+        device->traits |= BLE_TRAIT_BEACON; // UID, URL, TLM, EID frames
+    } else if(uuid == UUID_SMARTTAG) {
         set_kind(device, BleKindSmartTag);
         device->separated = true; // it does not say
     } else if(uuid == UUID_TILE || uuid == UUID_TILE_OLD) {
@@ -78,6 +110,7 @@ static void parse_find_my(BleSeen* device, const uint8_t* payload, uint8_t lengt
         return;
     }
     const bool away = form == APPLE_FIND_MY_AWAY;
+    device->apple_type = APPLE_FIND_MY;
     switch(FIND_MY_TYPE(payload[1])) {
     case FIND_MY_AIRTAG:
         set_kind(device, BleKindAirTag);
@@ -116,12 +149,26 @@ void ble_seen_parse(BleSeen* device, const uint8_t* data, uint8_t length) {
             set_kind(device, BleKindNamed);
         } else if(type == 0xFF && value_length >= 2) {
             const uint16_t company = value[0] | (value[1] << 8);
+            if(value_length >= 4 && value[2] == 0xBE && value[3] == 0xAC) {
+                device->traits |= BLE_TRAIT_BEACON; // AltBeacon, whoever made it
+            }
             if(company == APPLE_COMPANY && value_length >= 5 && value[2] == APPLE_FIND_MY) {
                 parse_find_my(device, value + 3, value_length - 3);
             } else if(company == APPLE_COMPANY && value_length >= 3 && value[2] == APPLE_AIRPODS) {
                 set_kind(device, BleKindAirPods);
+                device->apple_type = APPLE_AIRPODS;
+                // length, prefix, model (2), status, batteries (2), lid, colour
+                if(value_length >= 12 && value[3] >= 9) {
+                    device->model = (uint16_t)(value[5] << 8 | value[6]);
+                    device->colour = value[11];
+                }
+            } else if(company == APPLE_COMPANY && value_length >= 3 && value[2] == APPLE_IBEACON) {
+                set_kind(device, BleKindApple);
+                device->apple_type = APPLE_IBEACON;
+                device->traits |= BLE_TRAIT_BEACON;
             } else if(company == APPLE_COMPANY) {
                 set_kind(device, BleKindApple);
+                if(value_length >= 3) device->apple_type = value[2];
             } else if(company == SAMSUNG_COMPANY) {
                 set_kind(device, BleKindSamsung);
             } else if(company == MICROSOFT_COMPANY) {
@@ -132,7 +179,8 @@ void ble_seen_parse(BleSeen* device, const uint8_t* data, uint8_t length) {
         } else if((type == 0x02 || type == 0x03) && value_length >= 2) {
             for(uint8_t i = 0; i + 1 < value_length; i += 2) {
                 const uint16_t uuid = value[i] | (value[i + 1] << 8);
-                if(uuid == UUID_TILE || uuid == UUID_TILE_OLD || uuid == UUID_SMARTTAG) {
+                if(uuid == UUID_TILE || uuid == UUID_TILE_OLD || uuid == UUID_SMARTTAG ||
+                   uuid == UUID_FAST_PAIR || uuid == UUID_GOOGLE_NEARBY) {
                     parse_service(device, uuid, NULL, 0);
                 }
             }

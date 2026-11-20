@@ -23,9 +23,9 @@ HERE = os.path.join(ROOT, "scripts", "screen_preview")
 
 # preview driver -> the app sources it needs besides the one it includes
 PREVIEWS = {
-    "tracker_detector": ["applications/system/ble_tools/ble_seen.c", "applications/system/ble_tools/ble_tools.c"],
-    "find_my_stuff": ["applications/system/ble_tools/ble_seen.c", "applications/system/ble_tools/ble_tools.c"],
-    "crowd_meter": ["applications/system/ble_tools/ble_seen.c", "applications/system/ble_tools/ble_tools.c"],
+    "tracker_detector": ["applications/system/ble_tools/ble_seen.c", "applications/system/ble_tools/ble_mine.c", "applications/system/ble_tools/ble_crowd.c", "applications/system/ble_tools/ble_tools.c"],
+    "find_my_stuff": ["applications/system/ble_tools/ble_seen.c", "applications/system/ble_tools/ble_mine.c", "applications/system/ble_tools/ble_crowd.c", "applications/system/ble_tools/ble_tools.c"],
+    "crowd_meter": ["applications/system/ble_tools/ble_seen.c", "applications/system/ble_tools/ble_mine.c", "applications/system/ble_tools/ble_crowd.c", "applications/system/ble_tools/ble_tools.c"],
     "battery_history": ["applications/system/battery_history/battery_stats.c"],
     "updater_descent": ["applications/system/updater/views/updater_descent.c"],
     "lock_clock": ["applications/services/desktop/helpers/desktop_lock_clock.c"],

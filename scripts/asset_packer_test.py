@@ -2993,6 +2993,7 @@ class BleSeenTests(TempDirCase):
                 os.path.join(REPO_ROOT, "scripts", "host_tests", "ble_seen_host.c"),
                 os.path.join(app, "ble_seen.c"),
                 os.path.join(app, "ble_mine.c"),
+                os.path.join(app, "ble_crowd.c"),
             ]
         )
 
@@ -3114,6 +3115,69 @@ class BleSeenTests(TempDirCase):
             out = self.run_seen(base + extra + ["T 100000", "W"])
             self.assertEqual(out[0], "0", name)
             self.assertEqual(out[1], "00:00:00:00:00:01 10 Keys", name)
+
+    # AirPods Pro (0x0E20), colour 2, in the pairing broadcast; an iPhone's Nearby message; a
+    # Samsung phone; an iBeacon; a Windows computer
+    AIRPODS_PRO = "1EFF4C00071901" + "0E20" + "55AA1105" + "02" + "00" + "00" * 16
+    IPHONE = "0AFF4C0010050118445566"
+    SAMSUNG = "0BFF7500" + "42" * 8
+    IBEACON = "1AFF4C000215" + "11" * 16 + "00010002C5"
+    WINDOWS = "0BFF0600" + "01" * 8
+    FLAGS_ONLY = "020106"
+
+    def test_airpods_say_their_model_and_are_known_by_it(self):
+        out = self.run_seen([
+            f"H 010000000000 -50 0 {self.AIRPODS_PRO}", "O 010000000000",
+            "M 010000000000 1 My AirPods", "W",
+            # the same pair under another address, on you; and a stranger's, across the room
+            f"H 090000000000 -52 1000 {self.AIRPODS_PRO}",
+            f"H 0a0000000000 -85 1000 {self.AIRPODS_PRO}", "Q",
+        ])
+        self.assertEqual(out[0], "Worn AirPods Pro")
+        self.assertEqual(out[1:3], ["00:00:00:00:00:01 2 @0E2002 My AirPods", "."])
+        self.assertIn("090000000000 mine=1", out)
+        self.assertIn("0a0000000000 mine=0", out)
+        # the signature survives the file
+        out = self.run_seen(["L 00:00:00:00:00:01 2 @0E2002 My AirPods", "P", "W",
+                             f"H 0b0000000000 -50 0 {self.AIRPODS_PRO}", "Q"])
+        self.assertEqual(out[:2], ["00:00:00:00:00:01 2 @0E2002 My AirPods", "."])
+        self.assertIn("0b0000000000 mine=1", out)
+
+    def test_a_paired_phone_is_mine(self):
+        out = self.run_seen([f"H 4a0000000040 -60 0 {self.IPHONE}", "A 4a0000000040", "Q"])
+        self.assertEqual(out[0], "4a0000000040 mine=1")
+
+    def test_people_are_phones_and_what_is_worn_beyond_them(self):
+        lines = []
+        for i, adv in enumerate([self.IPHONE] * 3 + [self.SAMSUNG] + [self.AIRPODS_PRO] * 2 +
+                                [self.AIRTAG_AWAY, self.IBEACON, self.WINDOWS] + [self.FLAGS_ONLY] * 2):
+            lines.append(f"H {i + 1:012x} -60 1000 {adv}")
+        lines += ["K 2000 60000 -70"]
+        # 4 phones, 2 worn, 3 things, 2 unknown: 4 people
+        self.assertEqual(self.run_seen(lines), ["4 2 3 2 0 4 4"])
+        # earbuds beyond the phones are people too (their phones are quiet)
+        lines = [f"H 000000000001 -60 1000 {self.IPHONE}"]
+        lines += [f"H {i + 2:012x} -60 1000 {self.AIRPODS_PRO}" for i in range(3)]
+        self.assertEqual(self.run_seen(lines + ["K 2000 60000 -70"]), ["1 3 0 0 0 3 3"])
+
+    def test_a_phone_under_two_addresses_is_one_person(self):
+        out = self.run_seen([
+            *self.heard("000000000001", -60, 0, 30000, adv=self.IPHONE),
+            *self.heard("000000000002", -62, 34000, 50000, adv=self.IPHONE),
+            # two phones heard at the same time are two
+            *self.heard("000000000003", -61, 0, 50000, adv=self.IPHONE),
+            "K 50000 60000 -70",
+        ])
+        self.assertEqual(out, ["2 0 0 0 0 2 2"])
+
+    def test_mine_is_not_the_crowd_and_near_is_near(self):
+        out = self.run_seen([
+            f"H 000000000001 -55 1000 {self.IPHONE}", "M 000000000001 1 phone",
+            f"H 000000000002 -60 1000 {self.IPHONE}",
+            f"H 000000000003 -85 1000 {self.IPHONE}",
+            "K 2000 60000 -70",
+        ])
+        self.assertEqual(out, ["2 0 0 0 1 2 1"])
 
     def test_mine_fuzz(self):
         import subprocess

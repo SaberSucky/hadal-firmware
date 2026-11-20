@@ -38,9 +38,9 @@ App(
     entry_point="crowd_meter_app",
     requires=["gui"],
     stack_size=2 * 1024,
-    sources=["crowd_meter.c", "ble_seen.c", "ble_mine.c", "ble_tools.c"],
+    sources=["crowd_meter.c", "ble_seen.c", "ble_mine.c", "ble_crowd.c", "ble_tools.c"],
     fap_category="Bluetooth",
     fap_icon="crowd_meter_10px.png",
     fap_version="0.1",
-    fap_description="How busy a place is, from the Bluetooth devices around, with a 20 minute graph",
+    fap_description="How many people are around, from the Bluetooth devices around, with a 20 minute graph",
 )
