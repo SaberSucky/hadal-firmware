@@ -140,8 +140,10 @@ FuriThread* flipper_application_alloc_thread(FlipperApplication* app, const char
 /** Called for each object flipper_application_for_each_object() finds */
 typedef void (*FlipperApplicationObjectCallback)(const char* name, const void* address, void* context);
 
-/** Find the mapped application's data objects of one size, by name and address in memory
- * (after flipper_application_map_to_memory())
+/** Find the application's data objects of one size, by name and address in memory: after
+ * flipper_application_preload() and before flipper_application_map_to_memory(), which closes its
+ * file (after that it finds nothing). Their contents are not relocated yet: only plain values
+ * such as an Icon's size and frame count can be read
  * @param app Application pointer
  * @param object_size the objects' size in bytes
  * @param callback called for each, with its symbol's name and its address

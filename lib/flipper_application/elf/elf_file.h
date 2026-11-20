@@ -119,8 +119,10 @@ void elf_file_call_fini(ELFFile* elf);
 typedef void (*ElfObjectCallback)(const char* name, const void* address, void* context);
 
 /**
- * @brief Find the loaded file's data objects of one size, by its symbol table (load stage #3
- * done). Reads the table a block at a time and only the names of objects of that size.
+ * @brief Find the file's data objects of one size, by its symbol table: after the section table
+ * is loaded (their memory and addresses are then final) and before elf_file_load_sections(),
+ * which closes the file; after that it finds nothing. Reads the table a block at a time, and only
+ * the names of objects of that size.
  * @param elf_file
  * @param object_size the objects' size in bytes
  * @param callback called for each, with its name and its address in memory

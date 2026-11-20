@@ -1047,7 +1047,8 @@ void elf_file_for_each_object(
     void* context) {
     furi_check(elf);
     furi_check(callback);
-    if(!elf->symbol_table || !elf->symbol_count) return;
+    // the file is closed once the sections are loaded (elf_file_load_sections())
+    if(!elf->fd || !elf->symbol_table || !elf->symbol_count) return;
 
     Elf32_Sym* symbols = malloc(ELF_SYMBOL_BLOCK * sizeof(Elf32_Sym));
     FuriString* name = furi_string_alloc();

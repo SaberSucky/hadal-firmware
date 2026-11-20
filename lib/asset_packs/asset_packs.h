@@ -59,8 +59,9 @@ void asset_packs_app_starting(void);
 typedef struct FlipperApplication FlipperApplication;
 
 /**
- * An app from the SD card is in memory: its own copies of icons (I_<name>, A_<name>) are drawn
- * as the pack's icons of the same file name while it runs. Reads the app's symbol table; does
+ * An app from the SD card is being loaded: its own copies of icons (I_<name>, A_<name>) are drawn
+ * as the pack's icons of the same file name while it runs. Reads the app's symbol table, so call
+ * it after flipper_application_preload() and before flipper_application_map_to_memory(); does
  * nothing when the pack has no icons loaded.
  */
 void asset_packs_app_loaded(FlipperApplication* app);

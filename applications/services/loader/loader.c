@@ -617,6 +617,10 @@ static LoaderMessageLoaderStatusResult loader_start_external_app(
             }
         }
 
+        // the active asset pack's icons for the app's own copies of them, by name: read from its
+        // symbol table now, while its file is open (mapping it closes the file)
+        asset_packs_app_loaded(loader->app.fap);
+
         FlipperApplicationLoadStatus load_status =
             flipper_application_map_to_memory(loader->app.fap);
         if(load_status != FlipperApplicationLoadStatusSuccess) {
@@ -634,9 +638,6 @@ static LoaderMessageLoaderStatusResult loader_start_external_app(
                 LoaderStatusErrorInternal, error_message, "Plugin %s is not runnable", path);
             break;
         }
-
-        // the active asset pack's icons for the app's own copies of them, by name
-        asset_packs_app_loaded(loader->app.fap);
 
         loader->app.thread = flipper_application_alloc_thread(loader->app.fap, args);
         FuriString* app_name = furi_string_alloc();
