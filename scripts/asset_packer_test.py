@@ -3074,6 +3074,13 @@ class BleSeenTests(TempDirCase):
 
     # ---- the user's own devices (ble_mine.c) ----
 
+    def test_a_mark_is_forgotten_by_its_place_in_the_list(self):
+        out = self.run_seen([
+            "L 00:00:00:00:00:01 10 Keys", "L 00:00:00:00:00:02 2 @0E2002 My AirPods",
+            "L 00:00:00:00:00:03 3 My phone", "P", "X 1", "X 9", "W",
+        ])
+        self.assertEqual(out, ["00:00:00:00:00:01 10 Keys", "00:00:00:00:00:03 3 My phone", "."])
+
     def heard(self, addr, rssi, start, end, adv=None, step=2000):
         adv = adv or self.AIRTAG_AWAY
         return [f"H {addr} {rssi} {t} {adv}" for t in range(start, end + 1, step)]
@@ -3670,6 +3677,19 @@ class SubGhzTextTests(unittest.TestCase):
         new = self.run_host("", "with", "315000000")
         self.assertTrue(new.startswith("Filetype: Flipper SubGhz Setting File\nVersion: 1\n"))
         self.assertIn("Frequency: 315000000\n", new)
+
+    def test_hopper_frequencies(self):
+        self.assertEqual(self.run_host(self.USER, "hopper").split(), ["433920000"])
+        out = self.run_host(self.USER, "hop", "868350000")
+        lines = out.split("\n")
+        # after the last hopper line, the plain frequencies untouched
+        self.assertEqual(lines[lines.index("Hopper_frequency: 433920000") + 1], "Hopper_frequency: 868350000")
+        self.assertEqual(self.run_host(out, "hopper").split(), ["433920000", "868350000"])
+        self.assertEqual(self.run_host(self.USER, "hop", "433920000"), self.USER)
+        out = self.run_host(self.USER, "unhop", "433920000")
+        self.assertNotIn("Hopper_frequency", out)
+        self.assertIn("Frequency: 433920000", out)
+        self.assertIn("Custom_preset_name: FM95", out)
 
     def test_remove_keeps_everything_else(self):
         out = self.run_host(self.USER, "without", "433920000")

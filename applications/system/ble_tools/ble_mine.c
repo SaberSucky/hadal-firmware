@@ -138,6 +138,12 @@ void ble_mine_set(BleMine* mine, BleSeen* device, bool is_mine, const char* labe
     mine->changed = true;
 }
 
+void ble_mine_forget(BleMine* mine, size_t index) {
+    if(index >= mine->count) return;
+    remove_at(mine, index);
+    mine->changed = true;
+}
+
 void ble_mine_recognise(const BleMine* mine, BleSeen* device) {
     if((device->traits & BLE_TRAIT_PAIRED) || ble_mine_find(mine, device->addr)) {
         device->mine = true;

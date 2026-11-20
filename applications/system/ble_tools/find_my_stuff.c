@@ -2,7 +2,8 @@
  * Find My Stuff: lists the Bluetooth LE devices around, strongest first, and walks you to one with
  * a hotter / colder meter that clicks faster as you get closer. For your own earbuds, watch,
  * tracker or phone: hold OK on one to mark it as yours, and yours come first, ticked (and never
- * set Tracker Detector off). Needs the BLE Full radio stack.
+ * set Tracker Detector off). Left lists every device marked as yours, near or not, where holding
+ * OK forgets one. Needs the BLE Full radio stack.
  */
 #include "ble_tools.h"
 
@@ -22,6 +23,7 @@ typedef enum {
     ModeList,
     ModeLocate,
     ModeInfo, /**< what is known about the selected device */
+    ModeYours, /**< every device marked as the user's, heard or not: to forget one */
 } Mode;
 
 typedef struct {
@@ -49,6 +51,8 @@ typedef struct {
     bool sound;
     uint32_t last_click;
     BleMine mine;
+    size_t yours_selected;
+    size_t yours_top;
 } FindMyStuff;
 
 static const BleSeen* device_at(const FindMyStuff* app, size_t row) {
@@ -152,8 +156,67 @@ static void draw_list(Canvas* canvas, FindMyStuff* app) {
     const BleSeen* selected = device_at(app, app->selected);
     elements_hint_bar(
         canvas,
-        selected && selected->mine ? "ok=Find;ok=Hold: not mine;right=Info" :
-                                     "ok=Find;ok=Hold: mine;right=Info");
+        selected && selected->mine ? "ok=Find;ok=Hold: unmark;left=Yours" :
+                                     "ok=Find;ok=Hold: mine;left=Yours");
+}
+
+// The device heard under a mark's address, or NULL
+static const BleSeen* heard_mine(const FindMyStuff* app, const BleMineEntry* entry) {
+    for(size_t i = 0; i < app->table.count; i++) {
+        if(memcmp(app->devices[i].addr, entry->addr, BLE_SEEN_ADDR_SIZE) == 0) {
+            return &app->devices[i];
+        }
+    }
+    return NULL;
+}
+
+static void draw_yours(Canvas* canvas, FindMyStuff* app) {
+    char text[BLE_SEEN_NAME_SIZE + 4];
+    canvas_set_font(canvas, FontPrimary);
+    canvas_draw_str(canvas, 2, 9, "Yours");
+    canvas_set_font(canvas, FontSecondary);
+    snprintf(text, sizeof(text), "%u marked", (unsigned)app->mine.count);
+    canvas_draw_str_aligned(canvas, 125, 9, AlignRight, AlignBottom, text);
+    canvas_draw_line(canvas, 0, 12, 127, 12);
+
+    if(!app->mine.count) {
+        canvas_draw_str_aligned(canvas, 64, 24, AlignCenter, AlignTop, "Nothing marked yet");
+        canvas_draw_str_aligned(canvas, 64, 36, AlignCenter, AlignTop, "Hold OK on a device");
+        elements_hint_bar(canvas, "back=List");
+        return;
+    }
+    for(size_t row = 0; row < ROWS; row++) {
+        const size_t index = app->yours_top + row;
+        if(index >= app->mine.count) break;
+        const BleMineEntry* entry = &app->mine.entries[index];
+        const int y = LIST_Y + (int)row * ROW_H;
+        if(index == app->yours_selected) {
+            canvas_draw_rbox(canvas, 0, y, 124, ROW_H, 2);
+            canvas_set_color(canvas, ColorWhite);
+        }
+        const char* label = entry->label[0] ? entry->label : ble_kind_name(entry->kind);
+        ble_tools_draw_fit(canvas, 3, y + 9, label, 92);
+        if(heard_mine(app, entry)) {
+            canvas_draw_str_aligned(canvas, 121, y + 9, AlignRight, AlignBottom, "near");
+        }
+        canvas_set_color(canvas, ColorBlack);
+    }
+    const int list_h = ROWS * ROW_H;
+    if(app->mine.count > ROWS) {
+        const int height = list_h * ROWS / (int)app->mine.count;
+        const int y = LIST_Y +
+                      (list_h - height) * (int)app->yours_top / (int)(app->mine.count - ROWS);
+        canvas_draw_box(canvas, 126, y, 2, height);
+    }
+    elements_hint_bar(canvas, "ok=Hold: forget;back=List");
+}
+
+// After a mark is forgotten: the devices heard are told again which are the user's
+static void yours_recognise_again(FindMyStuff* app) {
+    for(size_t i = 0; i < app->table.count; i++) {
+        app->devices[i].mine = false;
+        ble_tools_recognise(&app->mine, &app->devices[i]);
+    }
 }
 
 /** Everything known about the selected device, as heard: what it is, what it said, how strong */
@@ -224,6 +287,8 @@ static void draw_callback(Canvas* canvas, void* context) {
         ble_tools_draw_sound_hint(canvas, app->sound);
     } else if(app->mode == ModeInfo) {
         draw_info(canvas, app);
+    } else if(app->mode == ModeYours) {
+        draw_yours(canvas, app);
     } else {
         draw_list(canvas, app);
     }
@@ -237,6 +302,35 @@ static void input_callback(InputEvent* event, void* context) {
 
 // Returns false to quit
 static bool handle_input(FindMyStuff* app, const InputEvent* event) {
+    if(app->mode == ModeYours) {
+        if(event->type == InputTypeLong && event->key == InputKeyOk &&
+           app->yours_selected < app->mine.count) {
+            ble_mine_forget(&app->mine, app->yours_selected);
+            ble_tools_mine_save(&app->mine);
+            yours_recognise_again(app);
+            notification_message(app->notifications, &sequence_single_vibro);
+            if(app->yours_selected >= app->mine.count && app->yours_selected) {
+                app->yours_selected--;
+            }
+            resort(app);
+        } else if(event->type == InputTypeShort || event->type == InputTypeRepeat) {
+            if(event->key == InputKeyBack || event->key == InputKeyRight) {
+                app->mode = ModeList;
+            } else if(event->key == InputKeyUp && app->yours_selected) {
+                app->yours_selected--;
+            } else if(event->key == InputKeyDown && app->yours_selected + 1 < app->mine.count) {
+                app->yours_selected++;
+            }
+        }
+        if(app->yours_selected < app->yours_top) app->yours_top = app->yours_selected;
+        if(app->yours_selected >= app->yours_top + ROWS) {
+            app->yours_top = app->yours_selected - ROWS + 1;
+        }
+        if(app->yours_top + ROWS > app->mine.count) {
+            app->yours_top = app->mine.count > ROWS ? app->mine.count - ROWS : 0;
+        }
+        return true;
+    }
     if(event->type == InputTypeLong && event->key == InputKeyOk && app->mode == ModeList) {
         // held: yours, or not any more; the selection stays with it as it moves in the list
         BleSeen* device = (BleSeen*)device_at(app, app->selected);
@@ -271,6 +365,11 @@ static bool handle_input(FindMyStuff* app, const InputEvent* event) {
         break;
     case InputKeyRight:
         if(device_at(app, app->selected)) app->mode = ModeInfo;
+        break;
+    case InputKeyLeft:
+        app->mode = ModeYours;
+        app->yours_selected = 0;
+        app->yours_top = 0;
         break;
     case InputKeyOk: {
         const BleSeen* device = device_at(app, app->selected);

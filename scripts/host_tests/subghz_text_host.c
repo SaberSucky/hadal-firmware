@@ -3,7 +3,9 @@
  *
  * argv: hash [CHUNK]           stdin: a record; prints its hash, fed CHUNK bytes at a time
  *       list                   stdin: setting_user; prints "<hz>..." then "standard <0|1>"
- *       with HZ | without HZ | standard 0|1    stdin: setting_user; prints the new text
+ *       hopper                 stdin: setting_user; prints the hopper frequencies
+ *       with HZ | without HZ | hop HZ | unhop HZ | standard 0|1
+ *                              stdin: setting_user; prints the new text
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,6 +44,14 @@ int main(int argc, char** argv) {
         const size_t count = subghz_freqs_list(text, freqs, 64);
         for(size_t i = 0; i < count; i++) printf("%u\n", (unsigned)freqs[i]);
         printf("standard %d\n", subghz_freqs_standard(text));
+    } else if(!strcmp(argv[1], "hopper")) {
+        uint32_t freqs[64];
+        const size_t count = subghz_freqs_list_hopper(text, freqs, 64);
+        for(size_t i = 0; i < count; i++) printf("%lu\n", (unsigned long)freqs[i]);
+    } else if(!strcmp(argv[1], "hop") && argc > 2) {
+        out = subghz_freqs_with_hopper(text, (uint32_t)strtoul(argv[2], NULL, 10));
+    } else if(!strcmp(argv[1], "unhop") && argc > 2) {
+        out = subghz_freqs_without_hopper(text, (uint32_t)strtoul(argv[2], NULL, 10));
     } else if(!strcmp(argv[1], "with") && argc > 2) {
         out = subghz_freqs_with(text, (uint32_t)strtoul(argv[2], NULL, 10));
     } else if(!strcmp(argv[1], "without") && argc > 2) {

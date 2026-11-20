@@ -38,8 +38,26 @@ int main(int argc, char** argv) {
     app->devices[1].mine = true; // yours: ticked, first
     resort(app);
     preview_draw("find_my_stuff_list", draw_callback, app);
+    select_row(app, 0); // yours: the hint offers to unmark it
+    preview_draw("find_my_stuff_list_mine", draw_callback, app);
+    select_row(app, 1);
     app->mode = ModeInfo;
     preview_draw("find_my_stuff_info", draw_callback, app);
+    // every device marked as yours, near or not
+    app->mode = ModeYours;
+    preview_draw("find_my_stuff_yours_empty", draw_callback, app);
+    memcpy(app->mine.entries[0].addr, app->devices[1].addr, BLE_SEEN_ADDR_SIZE);
+    snprintf(app->mine.entries[0].label, BLE_SEEN_NAME_SIZE, "AirPods Pro");
+    app->mine.entries[1].kind = BleKindAirTag;
+    app->mine.entries[1].addr[0] = 0x99;
+    snprintf(app->mine.entries[2].label, BLE_SEEN_NAME_SIZE, "My phone");
+    app->mine.entries[2].addr[0] = 0x98;
+    snprintf(app->mine.entries[3].label, BLE_SEEN_NAME_SIZE, "Keys");
+    app->mine.entries[3].addr[0] = 0x97;
+    app->mine.count = 4;
+    app->yours_selected = 1;
+    preview_draw("find_my_stuff_yours", draw_callback, app);
+    app->mine.count = 0;
     app->mode = ModeList;
 
     select_row(app, 0);

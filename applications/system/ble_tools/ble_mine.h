@@ -66,6 +66,9 @@ const BleMineEntry* ble_mine_find(const BleMine* mine, const uint8_t* addr);
  * oldest mark makes room when the list is full */
 void ble_mine_set(BleMine* mine, BleSeen* device, bool is_mine, const char* label);
 
+/** Forget the mark at index (see BleMine.entries): the device is no longer the user's */
+void ble_mine_forget(BleMine* mine, size_t index);
+
 /** Whether a device heard is one of mine (by address, as paired, or by AirPods model): sets its
  * flag when it is; never clears it */
 void ble_mine_recognise(const BleMine* mine, BleSeen* device);

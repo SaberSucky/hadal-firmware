@@ -11,6 +11,7 @@
  *   L <text>                                           a line of the mine file (read with P)
  *   P                                                  read the lines given so far
  *   M <addr 12 hex> <0|1> <label>                      mark a device in the table, or unmark it
+ *   X <index>                                          forget the mark at index of the list
  *   T <ms>                                             follow address changes: print how many moved
  *   W                                                  print the mine file, then "."
  *   Q                                                  print every device: <addr> mine=<0|1>, then "."
@@ -154,6 +155,8 @@ int main(int argc, char** argv) {
             for(size_t i = 0; i < table.count; i++) {
                 if(memcmp(table.devices[i].addr, addr, 6) == 0) ble_mine_set(&mine, &table.devices[i], rssi != 0, name);
             }
+        } else if(line[0] == 'X' && sscanf(line + 2, "%lu", &ms) == 1) {
+            ble_mine_forget(&mine, (size_t)ms);
         } else if(line[0] == 'T' && sscanf(line + 2, "%lu", &ms) == 1) {
             printf("%u\n", (unsigned)ble_mine_follow(&mine, &table, (uint32_t)ms));
         } else if(line[0] == 'W') {

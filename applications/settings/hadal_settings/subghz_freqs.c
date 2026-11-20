@@ -38,9 +38,13 @@ static bool line_key(const Line* line, const char* key, const char** value) {
     return true;
 }
 
-static bool line_frequency(const Line* line, uint32_t* hz) {
+#define KEY_FREQUENCY "Frequency"
+#define KEY_HOPPER    "Hopper_frequency"
+
+// A "<key>: <hz>" line's frequency
+static bool line_hz(const Line* line, const char* key, uint32_t* hz) {
     const char* value;
-    if(!line_key(line, "Frequency", &value)) return false;
+    if(!line_key(line, key, &value)) return false;
     char* end;
     const unsigned long parsed = strtoul(value, &end, 10);
     if(end == value) return false;
@@ -48,15 +52,23 @@ static bool line_frequency(const Line* line, uint32_t* hz) {
     return true;
 }
 
-size_t subghz_freqs_list(const char* text, uint32_t* out, size_t max) {
+static size_t list_key(const char* text, const char* key, uint32_t* out, size_t max) {
     size_t count = 0;
     Line line;
     const char* cursor = text ? text : "";
     while(count < max && next_line(&cursor, &line)) {
         uint32_t hz;
-        if(line_frequency(&line, &hz)) out[count++] = hz;
+        if(line_hz(&line, key, &hz)) out[count++] = hz;
     }
     return count;
+}
+
+size_t subghz_freqs_list(const char* text, uint32_t* out, size_t max) {
+    return list_key(text, KEY_FREQUENCY, out, max);
+}
+
+size_t subghz_freqs_list_hopper(const char* text, uint32_t* out, size_t max) {
+    return list_key(text, KEY_HOPPER, out, max);
 }
 
 bool subghz_freqs_standard(const char* text) {
@@ -83,28 +95,28 @@ static char* append(char* out, size_t* length, const char* data, size_t size) {
     return out;
 }
 
-char* subghz_freqs_with(const char* text, uint32_t hz) {
+static char* with_key(const char* text, const char* key, uint32_t hz) {
     text = base(text);
     uint32_t existing[256];
-    const size_t count = subghz_freqs_list(text, existing, 256);
+    const size_t count = list_key(text, key, existing, 256);
     for(size_t i = 0; i < count; i++) {
         if(existing[i] == hz) return strdup(text);
     }
-    char added[40];
-    snprintf(added, sizeof(added), "Frequency: %lu\n", (unsigned long)hz);
+    char added[48];
+    snprintf(added, sizeof(added), "%s: %lu\n", key, (unsigned long)hz);
     const size_t text_length = strlen(text);
     char* out = malloc(text_length + strlen(added) + 2);
     if(!out) return NULL;
     size_t length = 0;
     out[0] = '\0';
 
-    // after the last frequency there is, or at the end
+    // after the last line with the key, or at the end
     const char* after_last = NULL;
     Line line;
     const char* cursor = text;
     while(next_line(&cursor, &line)) {
         uint32_t f;
-        if(line_frequency(&line, &f)) after_last = cursor;
+        if(line_hz(&line, key, &f)) after_last = cursor;
     }
     const char* split = after_last ? after_last : text + text_length;
     append(out, &length, text, (size_t)(split - text));
@@ -114,7 +126,7 @@ char* subghz_freqs_with(const char* text, uint32_t hz) {
     return out;
 }
 
-char* subghz_freqs_without(const char* text, uint32_t hz) {
+static char* without_key(const char* text, const char* key, uint32_t hz) {
     text = base(text);
     char* out = malloc(strlen(text) + 1);
     if(!out) return NULL;
@@ -124,11 +136,27 @@ char* subghz_freqs_without(const char* text, uint32_t hz) {
     const char* cursor = text;
     while(next_line(&cursor, &line)) {
         uint32_t f;
-        if(line_frequency(&line, &f) && f == hz) continue;
+        if(line_hz(&line, key, &f) && f == hz) continue;
         append(out, &length, line.start, line.length);
         append(out, &length, "\n", 1);
     }
     return out;
+}
+
+char* subghz_freqs_with(const char* text, uint32_t hz) {
+    return with_key(text, KEY_FREQUENCY, hz);
+}
+
+char* subghz_freqs_without(const char* text, uint32_t hz) {
+    return without_key(text, KEY_FREQUENCY, hz);
+}
+
+char* subghz_freqs_with_hopper(const char* text, uint32_t hz) {
+    return with_key(text, KEY_HOPPER, hz);
+}
+
+char* subghz_freqs_without_hopper(const char* text, uint32_t hz) {
+    return without_key(text, KEY_HOPPER, hz);
 }
 
 char* subghz_freqs_set_standard(const char* text, bool on) {
