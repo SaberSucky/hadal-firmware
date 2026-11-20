@@ -22,9 +22,9 @@ sys.path.insert(0, os.path.join(REPO, "scripts"))
 
 import anims  # noqa: E402
 import boot  # noqa: E402
+import creatures  # noqa: E402
 import fontstyle  # noqa: E402
 import icons  # noqa: E402
-import updater_art  # noqa: E402
 from flipper.assets import pack  # noqa: E402
 from pixel import contact_sheet  # noqa: E402
 
@@ -59,7 +59,7 @@ def animation_frames(kind):
         jaws = [1, 3, 5, 4, 2, 4, 5, 2]
         active = [anims.anglerfish_frame(p, LOOP, jaw=jaws[p], talking_bubbles=1 + p % 3) for p in range(LOOP)]
         return passive + active
-    fn = {"jelly": anims.jellyfish_frame, "bathy": anims.bathyscaphe_frame, "vent": anims.vent_frame}[kind]
+    fn = {"jelly": creatures.jellyfish_frame, "bathy": creatures.bathyscaphe_frame, "vent": creatures.vent_frame}[kind]
     return [fn(p, LOOP) for p in range(LOOP)]
 
 
@@ -203,16 +203,6 @@ def slideshow_frames():
     return boot.first_start_frames(), boot.update_frames()
 
 
-UPDATER_ICON = os.path.join(REPO, "assets", "icons", "Update", "Updating_32x40.png")
-
-
-def install_updater_icon():
-    """The icon on the on-device update screen. The updater draws it from the firmware's own
-    icon table, so it replaces the source icon instead of living in the asset pack."""
-    updater_art.updating_32x40().save(UPDATER_ICON)
-    print("updater icon written")
-
-
 def install_slideshow():
     first, update = slideshow_frames()
     for folder, frames in (("first_start", first), ("update_default", update)):
@@ -259,7 +249,6 @@ def main():
     if args.install:
         build(PACK_DIR, args.previews)
         install_slideshow()
-        install_updater_icon()
     else:
         out = args.out or os.path.join(tempfile.mkdtemp(prefix="hadal_pack_"), PACK_NAME)
         build(out, args.previews)

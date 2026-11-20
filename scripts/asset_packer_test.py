@@ -1336,17 +1336,6 @@ class HadalPackTests(TempDirCase):
                     same = im.convert("L").tobytes() == frame.image.convert("L").tobytes()
                     self.assertTrue(same, f"{folder}/{name} differs from what the scripts generate")
 
-    def test_the_committed_update_icon_is_what_the_scripts_generate(self):
-        from PIL import Image
-
-        sys.path.insert(0, HADAL_ART_DIR)
-        import updater_art
-
-        with Image.open(self.build.UPDATER_ICON) as im:
-            self.assertEqual((im.mode, im.size), ("1", (32, 40)))
-            same = im.convert("L").tobytes() == updater_art.updating_32x40().image.convert("L").tobytes()
-        self.assertTrue(same, "assets/icons/Update/Updating_32x40.png is not what updater_art.py draws")
-
     def test_the_pack_validates_clean(self):
         index = pack.source_icon_index(os.path.join(REPO_ROOT, "assets", "icons"))
         report = pack.validate_pack(HADAL_PACK_DIR, index, REPO_ROOT)
@@ -1383,12 +1372,12 @@ class HadalPackTests(TempDirCase):
 
     def test_every_animation_loops_without_a_jump(self):
         # frame `loop` of a loop would be frame 0 again: the scenes are periodic in the loop
-        anims = self.build.anims
+        anims, creatures = self.build.anims, self.build.creatures
         for name, fn in (
             ("angler", lambda p: anims.anglerfish_frame(p, self.build.LOOP)),
-            ("jelly", lambda p: anims.jellyfish_frame(p, self.build.LOOP)),
-            ("bathy", lambda p: anims.bathyscaphe_frame(p, self.build.LOOP)),
-            ("vent", lambda p: anims.vent_frame(p, self.build.LOOP)),
+            ("jelly", lambda p: creatures.jellyfish_frame(p, self.build.LOOP)),
+            ("bathy", lambda p: creatures.bathyscaphe_frame(p, self.build.LOOP)),
+            ("vent", lambda p: creatures.vent_frame(p, self.build.LOOP)),
         ):
             first, wrapped = fn(0), fn(self.build.LOOP)
             self.assertTrue(first.image.tobytes() == wrapped.image.tobytes(), f"{name} jumps at the loop point")

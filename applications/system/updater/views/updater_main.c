@@ -8,11 +8,16 @@
 
 #include "../updater_i.h"
 #include "updater_main.h"
+#include "updater_descent.h"
+
+// the snow, the propeller and the light move at this pace
+#define UPDATER_MAIN_FRAME_MS (250U)
 
 struct UpdaterMainView {
     View* view;
     ViewDispatcher* view_dispatcher;
     FuriPubSubSubscription* subscription;
+    FuriTimer* frame_timer;
     void* context;
 };
 
@@ -22,6 +27,7 @@ typedef struct {
     FuriString* status;
     uint8_t progress, rendered_progress;
     bool failed;
+    uint32_t frame;
 } UpdaterProgressModel;
 
 void updater_main_model_set_state(
@@ -93,14 +99,18 @@ static void updater_main_draw_callback(Canvas* canvas, void* _model) {
         canvas_draw_icon(canvas, 7, 54, &I_Ok_btn_9x9);
         canvas_draw_icon(canvas, 75, 55, &I_Pin_back_arrow_10x8);
     } else {
-        canvas_draw_str_aligned(canvas, 42, 5, AlignLeft, AlignTop, "HADAL");
-        canvas_set_font(canvas, FontSecondary);
-        canvas_draw_str_aligned(canvas, 42, 17, AlignLeft, AlignTop, "Updating firmware");
-        canvas_draw_str_aligned(
-            canvas, 64, 51, AlignCenter, AlignTop, furi_string_get_cstr(model->status));
-        canvas_draw_icon(canvas, 4, 5, &I_Updating_32x40);
-        elements_progress_bar(canvas, 42, 29, 80, (float)model->progress / 100);
+        updater_descent_draw(
+            canvas, model->progress, furi_string_get_cstr(model->status), model->frame);
     }
+}
+
+static void updater_main_frame_callback(void* context) {
+    UpdaterMainView* main_view = context;
+    with_view_model(
+        main_view->view,
+        UpdaterProgressModel * model,
+        { model->frame++; },
+        !model->failed);
 }
 
 UpdaterMainView* updater_main_alloc(void) {
@@ -119,11 +129,17 @@ UpdaterMainView* updater_main_alloc(void) {
     view_set_input_callback(main_view->view, updater_main_input);
     view_set_draw_callback(main_view->view, updater_main_draw_callback);
 
+    main_view->frame_timer =
+        furi_timer_alloc(updater_main_frame_callback, FuriTimerTypePeriodic, main_view);
+    furi_timer_start(main_view->frame_timer, furi_ms_to_ticks(UPDATER_MAIN_FRAME_MS));
+
     return main_view;
 }
 
 void updater_main_free(UpdaterMainView* main_view) {
     furi_assert(main_view);
+    furi_timer_stop(main_view->frame_timer);
+    furi_timer_free(main_view->frame_timer);
     with_view_model(
         main_view->view, UpdaterProgressModel * model, { furi_string_free(model->status); }, false);
     view_free(main_view->view);

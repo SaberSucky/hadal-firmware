@@ -1,11 +1,10 @@
 """The first-start slideshow and the "firmware updated" slideshow: full screens, 128x64.
 
-A small anglerfish tells the story from one side of the screen and a speech bubble from the other,
-the way the stock slideshow does. The water is dark; the bubble is pale with dark text, in the
-firmware's own fonts so that it matches the rest of the interface.
+The anglerfish (angler.py) peeks in from one side of the screen and a speech bubble tells the story
+from the other, the way the stock slideshow does. The water is pale with dark specks; the bubble is
+pale with dark text, in the firmware's own fonts so that it matches the rest of the interface.
 """
 
-import math
 import os
 import sys
 
@@ -14,7 +13,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "..", "scripts"))
 
 from flipper.assets import pack, u8g2font  # noqa: E402
 from PIL import Image, ImageDraw  # noqa: E402
-from pixel import BAYER4, Canvas  # noqa: E402
+from pixel import Canvas  # noqa: E402
 
 _FONTS = {}
 
@@ -45,110 +44,10 @@ def line_width(line, slot="Secondary"):
 # ---------------------------------------------------------------------------
 
 
-def _bezier(p0, p1, p2, steps=12):
-    out = []
-    for s in range(steps + 1):
-        u = s / steps
-        out.append(
-            (
-                round((1 - u) ** 2 * p0[0] + 2 * (1 - u) * u * p1[0] + u * u * p2[0]),
-                round((1 - u) ** 2 * p0[1] + 2 * (1 - u) * u * p1[1] + u * u * p2[1]),
-            )
-        )
-    return out
-
-
-def mascot_layer(eye="open", mouth="smile", glow=2, fin=0):
-    """The anglerfish's head facing right, cut off by the left edge of the screen. Returns a
-    canvas where lit pixels are the pale parts, plus a silhouette canvas to dim what is behind."""
-    pale = Canvas(128, 64)
-    body = Canvas(128, 64)
-
-    # head
-    body.ellipse(-14, 10, 48, 62, fill=True, outline=True)
-    pale.ellipse(-14, 10, 48, 62, fill=False, outline=True)
-    pale.dither(0, 44, 36, 58, 3, offset=(1, 0))  # paler throat
-    pale.dither(0, 14, 24, 24, 1)  # speckled brow
-
-    # the lure
-    stalk = _bezier((24, 11), (30, -6), (47, 3))
-    pale.polyline(stalk)
-    bx, by = 47, 3
-    for y in range(by - 9, by + 10):
-        for x in range(bx - 9, bx + 10):
-            d = math.hypot(x - bx, y - by)
-            if 3 <= d <= glow + 5 and BAYER4[y % 4][x % 4] < round(7 * (1 - d / (glow + 6))):
-                pale.dot(x, y)
-    pale.ellipse(bx - 2, by - 2, bx + 2, by + 2, fill=True, outline=True)
-
-    # fin
-    flap = [(10, 44), (2, 52 - fin), (14, 54)]
-    body.polygon(flap)
-    pale.polygon(flap, fill=False, outline=True)
-
-    # eye
-    if eye == "squint":
-        pale.polyline([(23, 29), (29, 23), (35, 29)])
-        pale.polyline([(24, 30), (29, 25), (34, 30)])
-    elif eye == "shades":
-        pale.rect(20, 20, 39, 31)  # dark lenses in a pale frame, with a glint on each
-        pale.line(29, 21, 29, 30)
-        pale.line(22, 28, 24, 22)
-        pale.line(32, 28, 34, 22)
-        pale.line(20, 22, 12, 20)  # the arm of the glasses
-    else:
-        pale.ellipse(23, 19, 37, 33, fill=False, outline=True)
-        px = 31 if eye == "look" else 29
-        pale.ellipse(px - 2, 24, px + 2, 28, fill=True, outline=False)
-        body.ellipse(px - 2, 24, px + 2, 28, fill=True, outline=False)
-        pale.dot(px + 1, 24, False)
-
-    # mouth: a wide mouth with fangs that opens when it talks
-    open_by = {"smile": 0, "talk": 4, "wide": 7}[mouth]
-    upper = [(30, 40), (48, 37)]
-    lower = [(30, 45), (51, 46 + open_by)]
-    for px, py in [(x, y) for x in range(31, 53) for y in range(34, 56 + open_by)]:
-        if _in_quad([upper[0], upper[1], lower[1], lower[0]], px, py):
-            pale.dot(px, py, False)
-    pale.polyline(upper)
-    pale.polyline(lower)
-    pale.polyline([lower[1], (47, 53 + open_by), (32, 56)])
-    for k in range(3):
-        ux = 35 + k * 5
-        uy = round(40 + (37 - 40) * (ux - 30) / 18)
-        pale.line(ux, uy, ux, uy + 3)
-        lx = 37 + k * 5
-        ly = round(45 + (46 + open_by - 45) * (lx - 30) / 21)
-        pale.line(lx, ly, lx, ly - 3)
-    return pale, body
-
-
-def _in_quad(poly, x, y):
-    inside = False
-    n = len(poly)
-    for i in range(n):
-        x0, y0 = poly[i]
-        x1, y1 = poly[(i + 1) % n]
-        if (y0 > y) != (y1 > y) and x < (x1 - x0) * (y - y0) / (y1 - y0) + x0:
-            inside = not inside
-    return inside
-
-
 def _flipped(canvas):
     c = Canvas(canvas.width, canvas.height)
     c.image = canvas.image.transpose(Image.FLIP_LEFT_RIGHT)
     c.draw = ImageDraw.Draw(c.image)
-    return c
-
-
-def sea(seed):
-    c = Canvas(128, 64, lit=True)
-    # drifting specks
-    import random
-
-    rng = random.Random(seed)
-    for _ in range(26):
-        c.dot(rng.randrange(128), rng.randrange(64), False)
     return c
 
 
@@ -166,17 +65,45 @@ def bubble(canvas, x, y, lines, slot="Secondary", leading=11, tail=None):
     return width, height
 
 
+# the slideshow's poses, in the anglerfish's terms (angler.py)
+_JAW = {"smile": 1, "talk": 3, "wide": 4}
+
+
+def fish_layers(side, mouth="smile", eye="open", glow=2, fin=0):
+    """The anglerfish peeking in from one side of the screen, facing the middle: (ink, mask) as
+    128x64 canvases."""
+    import angler
+
+    ink, mask = angler.anglerfish(jaw=_JAW.get(mouth, 1), glow=min(3, glow), tail=fin % 3 - 1, eye=eye)
+    full_ink, full_mask = Canvas(128, 64), Canvas(128, 64)
+    x, y = 84, 12
+    full_ink.paste(ink, x, y)
+    full_mask.paste(mask, x, y)
+    if side == "left":
+        full_ink, full_mask = _flipped(full_ink), _flipped(full_mask)
+    return full_ink, full_mask
+
+
+def pale_sea(seed):
+    """Pale water with dark specks of marine snow."""
+    import random
+
+    c = Canvas(128, 64)
+    rng = random.Random(seed)
+    for _ in range(30):
+        c.dot(rng.randrange(128), rng.randrange(64))
+    return c
+
+
+def place_fish(scene, side, **pose):
+    ink, mask = fish_layers(side, **pose)
+    scene.paste(mask, 0, 0, mode="erase")
+    scene.paste(ink, 0, 0, mode="over")
+
+
 def story_frame(index, side, lines, **pose):
-    scene = sea(index + 40)
-    pale, body = mascot_layer(**pose)
-    if side == "right":
-        pale, body = _flipped(pale), _flipped(body)
-    for y in range(64):
-        for x in range(128):
-            if body.get(x, y):
-                scene.dot(x, y, True)
-            if pale.get(x, y):
-                scene.dot(x, y, False)
+    scene = pale_sea(index + 40)
+    place_fish(scene, side, **pose)
     width = max(line_width(line) for line in lines) + 10
     height = 11 * len(lines) + 4
     x = 127 - width - 1 if side == "left" else 1
@@ -223,53 +150,42 @@ def update_frames():
     frames = []
 
     # 1: headline and the mascot
-    scene = sea(90)
-    pale, body = mascot_layer(eye="open", mouth="smile", glow=3)
-    for y in range(64):
-        for x in range(128):
-            if body.get(x, y):
-                scene.dot(x, y, True)
-            if pale.get(x, y):
-                scene.dot(x, y, False)
+    scene = pale_sea(90)
+    place_fish(scene, "right", eye="open", mouth="smile", glow=3)
     big = stock_font("Primary")
     text = "HADAL"
-    x = 126 - big.text_width(text) - 2
     for dx in (0, 1):  # a doubled stroke for weight
-        big.draw_text(scene.image, x + dx, 22, text, lit=1)
-    text_lines(scene, 70, 36, ["Firmware", "Updated"], "Primary", 11, lit=False)
+        big.draw_text(scene.image, 4 + dx, 22, text, lit=0)
+    scene.line(4, 25, 4 + big.text_width(text) + 1, 25)
+    text_lines(scene, 4, 38, ["Firmware", "updated"], "Primary", 11, lit=True)
     _next_button(scene)
     frames.append(scene)
 
     # 2: what it is
-    scene = sea(91)
-    pale, body = mascot_layer(eye="look", mouth="talk", glow=2)
-    pale, body = _flipped(pale), _flipped(body)
-    for y in range(64):
-        for x in range(128):
-            if body.get(x, y):
-                scene.dot(x, y, True)
-            if pale.get(x, y):
-                scene.dot(x, y, False)
+    scene = pale_sea(91)
+    place_fish(scene, "right", eye="look", mouth="talk", glow=2)
     bubble(scene, 2, 2, ["Hadal is free", "and open source", "(GPL). Beware", "of scammers"])
     _next_button(scene)
     frames.append(scene)
 
     # 3: where to get it
-    scene = sea(92)
-    text_lines(scene, 8, 12, ["Source and updates:"], "Secondary", 11, lit=False)
-    scene.rect(6, 17, 84, 49, lit=False)
-    scene.rect(7, 18, 83, 48, lit=False)
-    text_lines(scene, 12, 28, ["github.com/", "SaberSucky/", "hadal-firmware"], "Secondary", 9, lit=False)
+    scene = pale_sea(92)
+    text_lines(scene, 8, 12, ["Source and updates:"], "Secondary", 11, lit=True)
+    scene.rect(6, 17, 84, 49, lit=False, fill=True)
+    scene.rect(6, 17, 84, 49)
+    scene.rect(7, 18, 83, 48)
+    text_lines(scene, 12, 28, ["github.com/", "SaberSucky/", "hadal-firmware"], "Secondary", 9, lit=True)
     # a few bubbles rising on the right
     for bx, by, r in ((100, 58, 2), (108, 46, 1), (104, 36, 3), (114, 26, 1), (98, 22, 1)):
-        scene.ellipse(bx - r, by - r, bx + r, by + r, lit=False, fill=False, outline=True)
+        scene.ellipse(bx - r, by - r, bx + r, by + r, lit=False, fill=True)
+        scene.ellipse(bx - r, by - r, bx + r, by + r, fill=False)
     _next_button(scene)
     frames.append(scene)
 
     # 4: credit where it is due
-    scene = sea(93)
-    text_lines(scene, 8, 14, ["Built on the shoulders of"], "Secondary", 11, lit=False)
-    text_lines(scene, 8, 27, ["Unleashed firmware", "by DarkFlippers,", "and the Flipper team"], "Secondary", 11, lit=False)
+    scene = pale_sea(93)
+    text_lines(scene, 8, 14, ["Built on the shoulders of"], "Secondary", 11, lit=True)
+    text_lines(scene, 8, 27, ["Unleashed firmware", "by DarkFlippers,", "and the Flipper team"], "Secondary", 11, lit=True)
     _next_button(scene, "OK")
     frames.append(scene)
     return frames

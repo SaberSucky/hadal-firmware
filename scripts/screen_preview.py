@@ -27,6 +27,7 @@ PREVIEWS = {
     "find_my_stuff": ["applications/system/ble_tools/ble_seen.c", "applications/system/ble_tools/ble_tools.c"],
     "crowd_meter": ["applications/system/ble_tools/ble_seen.c", "applications/system/ble_tools/ble_tools.c"],
     "battery_history": ["applications/system/battery_history/battery_stats.c"],
+    "updater_descent": ["applications/system/updater/views/updater_descent.c"],
 }
 
 GUI_SOURCES = [
