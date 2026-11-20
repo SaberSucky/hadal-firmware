@@ -2615,5 +2615,72 @@ class DfuRangeTests(TempDirCase):
         self.assertLessEqual(want_end, 0x080CE000, "the firmware must end below the Full stack")
 
 
+class MainMenuListTests(TempDirCase):
+    """applications/services/loader/loader_menu_list.c: the main menu file the user arranges
+    (Hadal Settings > Interface > Main Menu). Built as-is under ASan/UBSan and fuzzed."""
+
+    @classmethod
+    def setUpClass(cls):
+        import subprocess
+
+        if not _have_sanitizer("address,undefined"):
+            raise unittest.SkipTest("gcc with AddressSanitizer is not available")
+        cls.build_dir = tempfile.mkdtemp(prefix="mml_")
+        cls.exe = os.path.join(cls.build_dir, "menu_list_host")
+        loader = os.path.join(REPO_ROOT, "applications", "services", "loader")
+        subprocess.check_call(
+            [
+                "gcc", "-std=gnu11", "-g", "-O1", "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
+                "-Wall", "-Wextra", "-Werror", "-I", loader, "-o", cls.exe,
+                os.path.join(REPO_ROOT, "scripts", "host_tests", "menu_list_host.c"),
+                os.path.join(loader, "loader_menu_list.c"),
+            ]
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.build_dir, True)
+
+    def parse(self, text):
+        import subprocess
+
+        data = text.encode() if isinstance(text, str) else text
+        r = subprocess.run([self.exe], input=data, capture_output=True)
+        self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+        return [tuple(line.split(" ", 1)) for line in r.stdout.decode().splitlines()]
+
+    def test_order_kinds_comments_and_spaces(self):
+        got = self.parse("# my menu\r\n  NFC  \n\nApps\n/ext/apps/Tools/clock.fap\r\nSettings\nSub-GHz\n")
+        self.assertEqual(got, [("N", "NFC"), ("A", "Apps"), ("P", "/ext/apps/Tools/clock.fap"), ("S", "Settings"), ("N", "Sub-GHz")])
+
+    def test_settings_is_always_there(self):
+        self.assertEqual(self.parse(""), [("S", "Settings")])
+        self.assertEqual(self.parse("NFC\n"), [("N", "NFC"), ("S", "Settings")])
+
+    def test_duplicates_kept_once(self):
+        self.assertEqual(self.parse("NFC\nNFC\nSettings\nSettings\n"), [("N", "NFC"), ("S", "Settings")])
+
+    def test_full_list_keeps_settings(self):
+        lines = [f"App {i}" for i in range(200)] + ["Settings"]
+        got = self.parse("\n".join(lines))
+        self.assertEqual(len(got), 64)
+        self.assertEqual(got[-1], ("S", "Settings"))
+        got = self.parse("\n".join(lines[:200]))
+        self.assertEqual(len(got), 64)
+        self.assertEqual(got[-1], ("S", "Settings"))
+
+    def test_long_and_binary_lines_skipped(self):
+        got = self.parse(b"x" * 300 + b"\nNFC\nbad\x00line\nSettings")
+        self.assertEqual(got, [("N", "NFC"), ("S", "Settings")])
+
+    def test_fuzz(self):
+        import subprocess
+
+        for seed in ("3", "77"):
+            r = subprocess.run([self.exe, "fuzz", "3000", seed], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+            self.assertIn("ok 3000", r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

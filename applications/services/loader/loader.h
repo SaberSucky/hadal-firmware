@@ -21,6 +21,13 @@ extern "C" {
  */
 #define LOADER_MENU_STYLE_PREFIX "menu_style_"
 
+/**
+ * @brief The main menu as the user arranged it: one entry per line (an app name, an app's path
+ * on the SD card, "Apps" or "Settings"). Without it the menu has its built-in order. The format
+ * is described in loader_menu_list.h.
+ */
+#define LOADER_MAIN_MENU_PATH "/ext/apps_data/loader/main_menu.txt"
+
 typedef struct Loader Loader;
 
 typedef enum {
