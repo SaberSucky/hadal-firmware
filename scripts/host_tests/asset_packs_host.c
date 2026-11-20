@@ -368,6 +368,13 @@ int main(int argc, char** argv) {
         printf("after reselect %d\n", marker_exists());
         asset_packs_set_active(NULL);
         printf("after deselect %d\n", marker_exists());
+    } else if(!strcmp(command, "appstart") && argc == 4) {
+        // a finished loader keeps its thread (a 6 KB stack on the Flipper) until an app starts
+        asset_packs_set_active(argv[3]);
+        wait_for_loader();
+        printf("loader kept %d\n", asset_packs.loader != NULL);
+        asset_packs_app_starting();
+        printf("loader after app start %d\n", asset_packs.loader != NULL);
     } else if(!strcmp(command, "crash")) {
         char path[512];
         snprintf(path, sizeof(path), "%s/int/.asset_pack_loading", host_storage_root);

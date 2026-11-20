@@ -64,6 +64,8 @@ static int32_t infrared_scene_universal_common_task_callback(void* context) {
 
 void infrared_scene_universal_common_on_enter(void* context) {
     InfraredApp* infrared = context;
+    infrared_brute_force_device_reset(infrared->found_device); // a fresh search
+
     view_set_orientation(view_stack_get_view(infrared->view_stack), ViewOrientationVertical);
     view_stack_add_view(infrared->view_stack, button_panel_get_view(infrared->button_panel));
 
@@ -172,6 +174,7 @@ static void infrared_scene_universal_common_handle_popup_input(
             infrared_signal_set_signal(
                 infrared->current_signal,
                 infrared_brute_force_device_get_signal(infrared->found_device, 0));
+            infrared_brute_force_device_reset(infrared->found_device); // copied: not held on
             scene_manager_next_scene(scene_manager, InfraredSceneUniversalSave);
         } else {
             scene_manager_next_scene(scene_manager, InfraredSceneUniversalSaveDevice);
@@ -289,7 +292,8 @@ void infrared_scene_universal_common_on_exit(void* context) {
     view_stack_remove_view(infrared->view_stack, button_panel_get_view(button_panel));
     infrared_set_sending_tick(infrared, false);
     infrared_brute_force_reset(infrared->brute_force);
-    // Free any device collected by the Remote Finder but not carried into a save scene
-    infrared_brute_force_device_reset(infrared->found_device);
+    // The device the Remote Finder collected is not reset here: going on to the save scene
+    // runs this first, and the remote was saved empty. Reset on entering instead; the save
+    // scenes free it when they are done.
     button_panel_reset(button_panel);
 }

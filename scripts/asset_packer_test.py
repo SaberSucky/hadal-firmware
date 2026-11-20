@@ -856,6 +856,12 @@ class HostLoaderTests(TempDirCase):
         loaded, replaced = self.parse_verify(result)
         self.assertEqual(set(replaced), {pack.icon_path_hash(p) for p in self.small_loadable})
 
+    def test_a_finished_loader_is_freed_when_an_app_starts(self):
+        result = self.run_host("appstart", "Small")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr[-800:])
+        self.assertIn("loader kept 1", result.stdout)
+        self.assertIn("loader after app start 0", result.stdout)
+
     def test_crash_marker_is_reported_once(self):
         result = self.run_host("crash")
         self.assertEqual(result.returncode, 0)

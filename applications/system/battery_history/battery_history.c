@@ -60,18 +60,30 @@ static size_t read_records(Storage* storage, const char* path, BatteryLogRecord*
     return count;
 }
 
+// Records a log file holds, at most max
+static size_t records_in(Storage* storage, const char* path, size_t max) {
+    File* file = storage_file_alloc(storage);
+    uint64_t count = 0;
+    if(storage_file_open(file, path, FSAM_READ, FSOM_OPEN_EXISTING)) {
+        count = storage_file_size(file) / sizeof(BatteryLogRecord);
+    }
+    storage_file_free(file);
+    return count < max ? (size_t)count : max;
+}
+
 static void load(BatteryHistory* app) {
-    app->records = malloc(sizeof(BatteryLogRecord) * (MAX_RECORDS + 1));
     Storage* storage = furi_record_open(RECORD_STORAGE);
-    // the newer file first, so that it is never cut for the older one
-    const size_t newer = read_records(storage, BATTERY_LOG_PATH, app->records, MAX_RECORDS);
-    BatteryLogRecord* older = malloc(sizeof(BatteryLogRecord) * (MAX_RECORDS - newer + 1));
-    const size_t older_count = read_records(storage, BATTERY_LOG_OLD_PATH, older, MAX_RECORDS - newer);
+    // As much room as the logs fill (it was always the most they could, 32 KB, and another
+    // 16-32 KB to put them in order): the newer file is never cut for the older one, the older
+    // goes first, each read straight into its place
+    const size_t newer = records_in(storage, BATTERY_LOG_PATH, MAX_RECORDS);
+    const size_t older = records_in(storage, BATTERY_LOG_OLD_PATH, MAX_RECORDS - newer);
+    app->records = malloc(sizeof(BatteryLogRecord) * (older + newer + 1));
+    const size_t older_count = read_records(storage, BATTERY_LOG_OLD_PATH, app->records, older);
+    const size_t newer_count =
+        read_records(storage, BATTERY_LOG_PATH, app->records + older_count, newer);
     furi_record_close(RECORD_STORAGE);
-    memmove(app->records + older_count, app->records, newer * sizeof(BatteryLogRecord));
-    memcpy(app->records, older, older_count * sizeof(BatteryLogRecord));
-    free(older);
-    app->count = older_count + newer;
+    app->count = older_count + newer_count;
 
     // and the reading now, so that the graph reaches the right edge
     const BatteryLogRecord now = {

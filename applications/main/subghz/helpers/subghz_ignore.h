@@ -15,6 +15,9 @@
 #define SUBGHZ_AUTOSAVE_FOLDER EXT_PATH("subghz/autosave")
 
 /** The ignored signals' hashes, at most max; the number read */
+/** Add a hash to a list in RAM (once; full, the oldest makes room): the newest are kept */
+void subghz_ignore_remember(uint32_t* hashes, size_t* count, size_t max, uint32_t hash);
+
 size_t subghz_ignore_load(Storage* storage, uint32_t* hashes, size_t max);
 
 /** Add a signal to the list, with a label for whoever reads the file */

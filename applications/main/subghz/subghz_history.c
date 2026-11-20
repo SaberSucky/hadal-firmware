@@ -437,6 +437,9 @@ bool subghz_history_add_to_history(
         flipper_format_free(item->flipper_string);
         SubGhzHistoryItemArray_remove_v(instance->history->data, added, added + 1);
         furi_string_free(text);
+        // the transmit block was widened for this signal before it was dropped: back to what
+        // the signals kept need (an ignored Nice FloR-S held 15 KB instead of 4.5 KB)
+        subghz_history_tx_block_refresh(instance);
         return false;
     }
 

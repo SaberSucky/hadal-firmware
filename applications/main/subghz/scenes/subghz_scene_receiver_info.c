@@ -39,7 +39,12 @@ static void subghz_scene_receiver_info_ignore(SubGhz* subghz) {
     subghz_ignore_add(storage, hash, furi_string_get_cstr(label));
     furi_record_close(RECORD_STORAGE);
     furi_string_free(label);
-    subghz_history_apply_filters(subghz);
+    // onto the list in RAM: reading the file back took a 4 KB block just when Read had filled
+    // the RAM with signals
+    size_t count = subghz->ignored_count;
+    subghz_ignore_remember(subghz->ignored, &count, SUBGHZ_IGNORE_MAX, hash);
+    subghz->ignored_count = count;
+    subghz_history_set_ignored(subghz->history, subghz->ignored, subghz->ignored_count);
     for(uint16_t i = subghz_history_get_item(subghz->history); i > 0; i--) {
         if(subghz_history_get_signal_hash(subghz->history, i - 1) == hash) {
             subghz_history_delete_item(subghz->history, i - 1);

@@ -81,7 +81,14 @@ char* infrared_learned_bump(
     InfraredLearnedWeight weight) {
     if(!name_ok(library) || !name_ok(button)) return NULL;
 
-    Line* lines = malloc(sizeof(Line) * (INFRARED_LEARNED_MAX_LINES + 1));
+    // as many lines as the text has (and the one added), not always the most it may hold: 201
+    // lines took 14 KB on every "it worked" and resend
+    size_t capacity = 2;
+    for(const char* p = text; p && *p; p++) {
+        if(*p == '\n') capacity++;
+    }
+    if(capacity > INFRARED_LEARNED_MAX_LINES + 1) capacity = INFRARED_LEARNED_MAX_LINES + 1;
+    Line* lines = malloc(sizeof(Line) * capacity);
     if(!lines) return NULL;
     size_t count = 0;
     bool found = false;
@@ -125,7 +132,19 @@ char* infrared_learned_bump(
     }
 
     const size_t line_max = 2 * INFRARED_LEARNED_NAME_SIZE + 24;
-    char* out = malloc(count * line_max + 1);
+    // the text's exact size, measured first
+    size_t size = 1;
+    for(size_t i = 0; i < count; i++) {
+        size += (size_t)snprintf(
+            NULL,
+            0,
+            "%s %s %08lX %lu\n",
+            lines[i].library,
+            lines[i].button,
+            (unsigned long)lines[i].key,
+            (unsigned long)lines[i].score);
+    }
+    char* out = malloc(size);
     if(out) {
         size_t length = 0;
         out[0] = '\0';

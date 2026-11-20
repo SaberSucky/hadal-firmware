@@ -231,7 +231,9 @@ static char* ir_bf_learned_read(Storage* storage) {
     char* text = NULL;
     if(storage_file_open(file, IR_BF_LEARNED_PATH, FSAM_READ, FSOM_OPEN_EXISTING)) {
         const uint64_t size = storage_file_size(file);
-        if(size <= IR_BF_LEARNED_MAX_SIZE) {
+        // short of RAM, the order the user's choices taught is left out, not the remote
+        if(size <= IR_BF_LEARNED_MAX_SIZE &&
+           memmgr_heap_get_max_free_block() > (size_t)size + IR_BF_MEMORY_RESERVE) {
             text = malloc((size_t)size + 1);
             const size_t read = storage_file_read(file, text, (size_t)size);
             text[read] = '\0';
@@ -312,18 +314,22 @@ static void ir_bf_record_finish(
             kept[k] = *candidate;
         }
     }
+    // each block goes as soon as it is done with: a button of hundreds of codes held its order,
+    // its candidates, what it kept and its positions all at once
+    free(order);
+    InfraredBruteForceCandidateArray_clear(record->candidates);
+    InfraredBruteForceCandidateArray_init(record->candidates);
 
     ir_bf_learned_front(kept, kept_count, learned_text, library, name);
 
+    // one allocation of the right size, not doubling up to it
     SignalPositionArray_reset(record->signals);
+    SignalPositionArray_reserve(record->signals, kept_count);
     for(size_t k = 0; k < kept_count; k++) {
         SignalPositionArray_push_back(record->signals, kept[k].position);
     }
 
     free(kept);
-    free(order);
-    InfraredBruteForceCandidateArray_clear(record->candidates);
-    InfraredBruteForceCandidateArray_init(record->candidates);
 }
 
 InfraredErrorCode infrared_brute_force_calculate_messages(InfraredBruteForce* brute_force) {
@@ -386,13 +392,14 @@ InfraredErrorCode infrared_brute_force_calculate_messages(InfraredBruteForce* br
                 .is_raw = infrared_signal_is_raw(signal),
                 .key = ir_bf_signal_key(signal, decoder),
             };
-            // A button with hundreds of codes grows its list by reallocating; with the RAM nearly
+            // A button with hundreds of codes grows its list by reallocating, and finishing it
+            // takes as much again (its order, what it keeps, its positions); with the RAM nearly
             // gone that failed, and a failed allocation stops the Flipper. Short of RAM, the
             // button keeps the codes it has (most-used first still comes from them).
             const size_t held = InfraredBruteForceCandidateArray_size(record->candidates);
             if(held % IR_BF_MEMORY_CHECK_STEP == 0 &&
                memmgr_heap_get_max_free_block() <
-                   held * sizeof(InfraredBruteForceCandidate) * 2 + IR_BF_MEMORY_RESERVE) {
+                   held * sizeof(InfraredBruteForceCandidate) * 4 + IR_BF_MEMORY_RESERVE) {
                 FURI_LOG_W(
                     TAG,
                     "Low on RAM: %s keeps %zu codes",

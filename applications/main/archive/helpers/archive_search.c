@@ -62,11 +62,16 @@ size_t archive_search(
             }
         }
         storage_dir_close(dir);
+        // a folder searched is done with: its path goes now, not when the search ends (up to
+        // 256 paths, 15-20 KB, were held to the end)
+        furi_string_free(folder);
+        *SearchFolders_get(pending, next) = NULL;
     }
     storage_file_free(dir);
 
     for(size_t i = 0; i < SearchFolders_size(pending); i++) {
-        furi_string_free(*SearchFolders_get(pending, i));
+        FuriString* folder = *SearchFolders_get(pending, i);
+        if(folder) furi_string_free(folder);
     }
     SearchFolders_clear(pending);
     return found;

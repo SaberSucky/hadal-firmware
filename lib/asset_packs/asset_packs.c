@@ -487,7 +487,8 @@ static void load_animated_icon(LoadState* state, const char* dir_path, const cha
     size_t blob_bytes = 0;
     bool ok = true;
 
-    for(size_t i = 0; i < frame_count && ok; i++) {
+    // a load cancelled (an app starting) stops between frames, not after all of them
+    for(size_t i = 0; i < frame_count && ok && !load_cancelled(state); i++) {
         char frame_name[16];
         snprintf(frame_name, sizeof(frame_name), "frame_%02u.bm", (unsigned)i);
         ok = join_path(path, sizeof(path), dir_path, frame_name);
@@ -678,6 +679,14 @@ static int32_t loader_thread(void* context) {
 
         compress_free(state.compress);
         free(state.scratch);
+        // the table was sized for every icon a pack could replace: kept at what it holds
+        if(state.icons && state.icon_count < state.icon_capacity) {
+            PackIcon* trimmed = malloc(sizeof(PackIcon) * (state.icon_count ? state.icon_count : 1));
+            memcpy(trimmed, state.icons, sizeof(PackIcon) * state.icon_count);
+            free(state.icons);
+            state.icons = trimmed;
+            state.icon_capacity = state.icon_count;
+        }
     } else {
         FURI_LOG_I(TAG, "%s has no icons", loader->name);
     }
@@ -812,6 +821,16 @@ void asset_packs_app_starting(void) {
         discard_fonts_locked_after(ASSET_PACKS_FONT_SHORT_GRACE_MS);
     }
     furi_mutex_release(asset_packs.mutex);
+
+    // A loader that has finished keeps its thread (a 6 KB stack) until the next load: freed
+    // here, before the app needs the RAM. One still running is left alone: it may be waiting
+    // to tell the desktop, whose thread this is.
+    if(asset_packs.loader &&
+       furi_thread_get_state(asset_packs.loader) == FuriThreadStateStopped) {
+        furi_thread_join(asset_packs.loader);
+        furi_thread_free(asset_packs.loader);
+        asset_packs.loader = NULL;
+    }
 }
 
 /* An app's own icons: found by name in its symbol table */

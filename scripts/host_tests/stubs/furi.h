@@ -60,17 +60,23 @@ static inline int furi_mutex_release(FuriMutex* m) {
 /* ---- thread ---- */
 typedef int32_t (*FuriThreadCallback)(void* context);
 typedef enum { FuriThreadPriorityLow = 15 } FuriThreadPriority;
+typedef enum { FuriThreadStateStopped, FuriThreadStateRunning } FuriThreadState;
 typedef struct FuriThread {
     pthread_t thread;
     FuriThreadCallback callback;
     void* context;
     bool started;
+    volatile bool finished;
 } FuriThread;
 
 static void* furi_thread_trampoline(void* arg) {
     FuriThread* t = arg;
     t->callback(t->context);
+    t->finished = true;
     return NULL;
+}
+static inline FuriThreadState furi_thread_get_state(FuriThread* t) {
+    return !t->started || t->finished ? FuriThreadStateStopped : FuriThreadStateRunning;
 }
 static inline FuriThread*
     furi_thread_alloc_ex(const char* name, uint32_t stack, FuriThreadCallback callback, void* context) {
