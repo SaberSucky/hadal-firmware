@@ -2516,5 +2516,104 @@ class IrLibraryOrderTests(TempDirCase):
         self.assertIsNone(r.read_order(lib))
 
 
+class DfuRangeTests(TempDirCase):
+    """lib/update_util/dfu_file.c dfu_file_get_address_range(): the RAM updater uses it to decide
+    whether the new firmware can go in before the radio stack (it must, for BLE Light -> Full,
+    or the Full stack overwrites the end of the old firmware). Built as-is on the host."""
+
+    @classmethod
+    def setUpClass(cls):
+        import subprocess
+
+        if not _have_sanitizer("address,undefined"):
+            raise unittest.SkipTest("gcc with AddressSanitizer is not available")
+        cls.build_dir = tempfile.mkdtemp(prefix="dfu_")
+        cls.exe = os.path.join(cls.build_dir, "dfu_range_host")
+        host = os.path.join(REPO_ROOT, "scripts", "host_tests")
+        subprocess.check_call(
+            [
+                "gcc", "-std=gnu11", "-g", "-O1", "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
+                "-Wall", "-Wextra", "-Werror",
+                "-I", os.path.join(host, "stubs_dfu"),
+                "-I", os.path.join(host, "stubs"),
+                "-I", os.path.join(REPO_ROOT, "applications", "services"),
+                "-I", os.path.join(REPO_ROOT, "lib"),
+                "-I", os.path.join(REPO_ROOT, "furi"),
+                "-I", REPO_ROOT,
+                "-o", cls.exe,
+                os.path.join(host, "dfu_range_host.c"),
+                os.path.join(REPO_ROOT, "lib", "update_util", "dfu_file.c"),
+                os.path.join(host, "stubs", "storage_host.c"),
+                "-lpthread",
+            ]
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.build_dir, True)
+
+    @staticmethod
+    def make_dfu(targets):
+        """A DfuSe file: targets is a list of lists of (address, data)."""
+        import struct
+        import zlib
+
+        body = b""
+        for elements in targets:
+            payload = b"".join(struct.pack("<II", a, len(d)) + d for a, d in elements)
+            body += b"Target" + bytes([0, 1, 0, 0, 0]) + b"hadal".ljust(255, b"\0") + struct.pack("<II", len(payload), len(elements)) + payload
+        prefix = b"DfuSe" + bytes([1]) + struct.pack("<I", 11 + len(body)) + bytes([len(targets)])
+        image = prefix + body
+        suffix = struct.pack("<HHHH", 0xFFFF, 0xDF11, 0x0483, 0x011A) + b"UFD" + bytes([16])
+        crc = zlib.crc32(image + suffix) ^ 0xFFFFFFFF
+        return image + suffix + struct.pack("<I", crc)
+
+    def run_host(self, path):
+        import subprocess
+
+        r = subprocess.run([self.exe, path], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+        targets, crc_ok, ok, start, end = r.stdout.split()
+        return int(targets), crc_ok == "1", ok == "1", int(start, 16), int(end, 16)
+
+    def write(self, name, data):
+        path = self.p(name)
+        with open(path, "wb") as f:
+            f.write(data)
+        return path
+
+    def test_one_element(self):
+        path = self.write("a.dfu", self.make_dfu([[(0x08000000, b"\x11" * 5000)]]))
+        self.assertEqual(self.run_host(path), (1, True, True, 0x08000000, 0x08000000 + 5000))
+
+    def test_several_targets_and_elements(self):
+        path = self.write("b.dfu", self.make_dfu([
+            [(0x08001000, b"a" * 300), (0x08000000, b"b" * 100)],
+            [(0x08080000, b"c" * 4096)],
+        ]))
+        self.assertEqual(self.run_host(path), (2, True, True, 0x08000000, 0x08081000))
+
+    def test_cut_short(self):
+        data = self.make_dfu([[(0x08000000, b"\x22" * 9000)]])
+        path = self.write("c.dfu", data[: len(data) // 2])
+        targets, crc_ok, ok, _, _ = self.run_host(path)
+        self.assertFalse(crc_ok)
+        self.assertEqual(targets, 0)  # the updater then keeps the old order, radio first
+
+    def test_built_package_fits_below_the_full_stack(self):
+        dfu = os.path.join(REPO_ROOT, "dist", "f7-C", "f7-update-local", "firmware.dfu")
+        if not os.path.exists(dfu):
+            self.skipTest("no update package built")
+        sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+        import update_package_check
+
+        with open(dfu, "rb") as f:
+            elements = update_package_check.parse_dfu(f.read())[0]
+        want_start = min(a for a, _ in elements)
+        want_end = max(a + len(d) for a, d in elements)
+        self.assertEqual(self.run_host(dfu), (1, True, True, want_start, want_end))
+        self.assertLessEqual(want_end, 0x080CE000, "the firmware must end below the Full stack")
+
+
 if __name__ == "__main__":
     unittest.main()

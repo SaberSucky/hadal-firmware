@@ -68,6 +68,19 @@ uint64_t storage_file_size(File* file) {
     return (uint64_t)size;
 }
 
+bool storage_file_seek(File* file, uint32_t offset, bool from_start) {
+    if(!file->file) return false;
+    return fseek(file->file, (long)offset, from_start ? SEEK_SET : SEEK_CUR) == 0;
+}
+
+uint64_t storage_file_tell(File* file) {
+    return file->file ? (uint64_t)ftell(file->file) : 0;
+}
+
+bool storage_file_is_open(File* file) {
+    return file->file != NULL;
+}
+
 bool storage_dir_open(File* file, const char* path) {
     char p[512];
     host_path(p, sizeof(p), path);
