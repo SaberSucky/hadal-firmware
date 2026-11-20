@@ -2770,5 +2770,64 @@ class ResourceIndexTests(TempDirCase):
         self.assertEqual(got.count("folder"), 0)
 
 
+class BootGuardTests(TempDirCase):
+    """lib/update_util/boot_guard_state.c: when a new firmware is replaced by the last one that
+    started steadily. Built as-is under ASan/UBSan."""
+
+    @classmethod
+    def setUpClass(cls):
+        import subprocess
+
+        if not _have_sanitizer("address,undefined"):
+            raise unittest.SkipTest("gcc with AddressSanitizer is not available")
+        cls.build_dir = tempfile.mkdtemp(prefix="bgd_")
+        cls.exe = os.path.join(cls.build_dir, "boot_guard_host")
+        lib = os.path.join(REPO_ROOT, "lib", "update_util")
+        subprocess.check_call(
+            [
+                "gcc", "-std=gnu11", "-g", "-O1", "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
+                "-Wall", "-Wextra", "-Werror", "-I", lib, "-o", cls.exe,
+                os.path.join(REPO_ROOT, "scripts", "host_tests", "boot_guard_host.c"),
+                os.path.join(lib, "boot_guard_state.c"),
+            ]
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.build_dir, True)
+
+    def run_guard(self, events):
+        import subprocess
+
+        r = subprocess.run([self.exe], input="\n".join(events) + "\n", capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+        return r.stdout.splitlines()
+
+    def test_failing_firmware_is_rolled_back_once(self):
+        out = self.run_guard(["U 1 0", "B", "B", "B", "B", "B", "B"])
+        self.assertEqual(out[0], "1 1 0 0 -")      # armed after an update, a rollback exists
+        self.assertEqual(out[1:4], ["1 1 0 1 -", "1 1 0 2 -", "1 1 0 3 -"])
+        self.assertEqual(out[4], "0 1 1 4 ROLLBACK")  # the 4th start that never settled
+        self.assertEqual(out[5:], ["0 1 1 4 -", "0 1 1 4 -"])  # never twice
+
+    def test_steady_firmware_is_left_alone(self):
+        out = self.run_guard(["U 1 0", "B", "B", "S", "B", "B", "B", "B"])
+        self.assertEqual(out[3], "0 1 0 0 -")
+        self.assertTrue(all(line.endswith(" -") for line in out))
+
+    def test_no_rollback_package_no_watch(self):
+        out = self.run_guard(["U 0 0", "B", "B", "B", "B", "B"])
+        self.assertTrue(all(line.startswith("0 0 0 0") for line in out), out)
+
+    def test_after_a_rollback_nothing_is_watched(self):
+        out = self.run_guard(["U 1 0", "B", "B", "B", "B", "U 1 1", "B", "B", "B", "B"])
+        self.assertEqual(out[5], "0 1 0 0 -")
+        self.assertTrue(all(line.endswith(" -") for line in out[6:]))
+
+    def test_foreign_register_reads_as_off(self):
+        out = self.run_guard(["R 12345678", "B", "R ffffffff", "B"])
+        self.assertTrue(all(line == "0 0 0 0 -" for line in out), out)
+
+
 if __name__ == "__main__":
     unittest.main()

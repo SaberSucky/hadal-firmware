@@ -365,6 +365,19 @@ void update_task_set_progress(UpdateTask* update_task, UpdateTaskStage stage, ui
     }
 }
 
+void update_task_fail_with_reason(UpdateTask* update_task, const char* reason) {
+    update_task_set_progress(update_task, UpdateTaskStageError, 0);
+    update_log("refused: %s", reason);
+    furi_string_set(update_task->state.status, reason);
+    if(update_task->status_change_cb) {
+        (update_task->status_change_cb)(
+            furi_string_get_cstr(update_task->state.status),
+            update_task->state.overall_progress,
+            true,
+            update_task->status_change_cb_state);
+    }
+}
+
 static void update_task_close_file(UpdateTask* update_task) {
     furi_assert(update_task);
     if(!storage_file_is_open(update_task->file)) {

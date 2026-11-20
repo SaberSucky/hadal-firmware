@@ -20,6 +20,8 @@ typedef struct UpdateTask {
 } UpdateTask;
 
 void update_task_set_progress(UpdateTask* update_task, UpdateTaskStage stage, uint8_t progress);
+/** Stop with an error whose text says why (two short lines fit the screen) */
+void update_task_fail_with_reason(UpdateTask* update_task, const char* reason);
 bool update_task_parse_manifest(UpdateTask* update_task);
 bool update_task_open_file(UpdateTask* update_task, FuriString* filename);
 

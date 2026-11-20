@@ -2,6 +2,9 @@
 #include "update_task_i.h"
 #include "update_trace.h"
 #include "update_task_resources.h"
+#include "update_log.h"
+#include <update_util/boot_guard.h>
+#include <update_util/update_rollback.h>
 
 #include <furi.h>
 #include <furi_hal.h>
@@ -150,9 +153,11 @@ static bool update_task_post_update(UpdateTask* update_task) {
             INT_BACKUP_DEFAULT_FILENAME,
             file_path);
 
-        update_task_set_progress(update_task, UpdateTaskStageIntRestore, 0);
-
-        CHECK_RESULT(int_backup_unpack(update_task->storage, furi_string_get_cstr(file_path)));
+        // A rollback kept /int and has no backup of it
+        if(!boot_guard_rollback_requested()) {
+            update_task_set_progress(update_task, UpdateTaskStageIntRestore, 0);
+            CHECK_RESULT(int_backup_unpack(update_task->storage, furi_string_get_cstr(file_path)));
+        }
 
         if(update_task->state.groups & UpdateTaskStageGroupResources) {
             TarUnpackProgress progress = {
@@ -201,6 +206,29 @@ static bool update_task_post_update(UpdateTask* update_task) {
     return success;
 }
 
+// After a successful install: a rollback is logged; a normal update stages itself as the next
+// rollback package, and the boot guard watches its first starts
+static void update_task_rollback_after_install(UpdateTask* update_task) {
+    const bool was_rollback = boot_guard_rollback_requested();
+    if(was_rollback) {
+        update_log(
+            "rollback: %s put back, the new firmware did not start",
+            furi_string_get_cstr(update_task->manifest->version));
+        // what was staged is the firmware that failed: it must never become the rollback
+        storage_simply_remove_recursive(update_task->storage, UPDATE_ROLLBACK_NEXT_DIR);
+    } else if(update_rollback_stage(
+                  update_task->storage,
+                  furi_string_get_cstr(update_task->update_path),
+                  update_task->manifest)) {
+        update_log(
+            "rollback: this firmware is staged; it becomes the rollback once it runs steadily");
+    }
+    const bool available = update_rollback_available(update_task->storage);
+    boot_guard_update_done(available, was_rollback);
+    update_log(
+        "rollback: %s", available ? "a rollback package is in place" : "no rollback package yet");
+}
+
 int32_t update_task_worker_backup_restore(void* context) {
     furi_assert(context);
     UpdateTask* update_task = context;
@@ -227,6 +255,7 @@ int32_t update_task_worker_backup_restore(void* context) {
         } else if(boot_mode == FuriHalRtcBootModePostUpdate) { //-V547
             success = update_task_post_update(update_task);
             if(success) {
+                update_task_rollback_after_install(update_task);
                 update_operation_disarm();
             }
         }

@@ -80,6 +80,8 @@ struct Desktop {
     FuriTimer* update_clock_timer;
     /** Ends the asset pack crash watch once the pack has been in use for a while. */
     FuriTimer* asset_pack_stable_timer;
+    /** Tells the boot guard that this firmware starts and runs: see update_util/boot_guard.h */
+    FuriTimer* boot_stable_timer;
 
     AnimationManager* animation_manager;
     FuriSemaphore* animation_semaphore;

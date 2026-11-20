@@ -56,6 +56,7 @@ typedef enum {
     FuriHalRtcRegisterUpdateTrace, /**< Current update: marker, starts, last step, detail */
     FuriHalRtcRegisterUpdateTraceStart, /**< Current update: RTC time of its first step */
     FuriHalRtcRegisterUpdateTracePrevious, /**< An earlier update that did not finish */
+    FuriHalRtcRegisterBootGuard, /**< Starts since an update that did not settle; rollback */
 
     FuriHalRtcRegisterMAX, /**< Service value, do not use */
 } FuriHalRtcRegister;

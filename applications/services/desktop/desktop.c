@@ -1,3 +1,5 @@
+#include <update_util/boot_guard.h>
+#include <update_util/update_rollback.h>
 #include "desktop_i.h"
 
 #include <cli/cli_vcp.h>
@@ -21,6 +23,8 @@
 
 /** How long a loaded asset pack must run before a reset stops counting against it. */
 #define ASSET_PACK_STABLE_MS 10000
+// Running this long after a start counts as starting steadily (update_util/boot_guard.h)
+#define BOOT_STABLE_MS       30000
 
 _Static_assert(
     sizeof(((DesktopSettings*)0)->active_asset_pack) == ASSET_PACK_NAME_SIZE,
@@ -49,6 +53,11 @@ static void desktop_loader_callback(const void* message, void* context) {
 static void desktop_asset_packs_changed_callback(void* context) {
     Desktop* desktop = context;
     view_dispatcher_send_custom_event(desktop->view_dispatcher, DesktopGlobalAssetPacksChanged);
+}
+
+static void desktop_boot_stable_timer_callback(void* context) {
+    Desktop* desktop = context;
+    view_dispatcher_send_custom_event(desktop->view_dispatcher, DesktopGlobalBootStable);
 }
 
 static void desktop_asset_pack_stable_timer_callback(void* context) {
@@ -197,6 +206,11 @@ static bool desktop_custom_event_callback(void* context, uint32_t event) {
 
     } else if(event == DesktopGlobalAssetPackStable) {
         asset_packs_mark_stable();
+
+    } else if(event == DesktopGlobalBootStable) {
+        // This firmware works: it becomes the one to roll back to
+        boot_guard_on_stable();
+        boot_guard_set_rollback_available(update_rollback_promote(desktop->storage));
 
     } else {
         return scene_manager_handle_custom_event(desktop->scene_manager, event);
@@ -482,6 +496,8 @@ static Desktop* desktop_alloc(void) {
     desktop->asset_pack_guard_done = false;
     desktop->asset_pack_stable_timer =
         furi_timer_alloc(desktop_asset_pack_stable_timer_callback, FuriTimerTypeOnce, desktop);
+    desktop->boot_stable_timer =
+        furi_timer_alloc(desktop_boot_stable_timer_callback, FuriTimerTypeOnce, desktop);
     asset_packs_set_changed_callback(desktop_asset_packs_changed_callback, desktop);
 
     desktop->update_clock_timer =
@@ -671,6 +687,7 @@ int32_t desktop_srv(void* p) {
     }
 
     boot_profile_mark("desktop ready");
+    furi_timer_start(desktop->boot_stable_timer, furi_ms_to_ticks(BOOT_STABLE_MS));
     view_dispatcher_run(desktop->view_dispatcher);
 
     // Should never get here (a service thread will crash automatically if it returns)

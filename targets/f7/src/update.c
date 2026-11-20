@@ -8,6 +8,8 @@
 
 #include <update_util/update_manifest.h>
 #include <update_util/update_operation.h>
+#include <update_util/boot_guard.h>
+#include <update_util/update_rollback.h>
 #include <toolbox/path.h>
 #include <toolbox/crc32_calc.h>
 
@@ -143,6 +145,17 @@ static bool flipper_update_get_manifest_path(FuriString* out_path) {
     return !furi_string_empty(out_path);
 }
 
+// A rollback (boot_guard.h) installs the rollback package: the update pointer is made to name
+// it, for this stage and for the updater it loads
+static void flipper_update_point_to_rollback(void) {
+    FIL file;
+    UINT written = 0;
+    if(f_open(&file, UPDATE_POINTER_FILE_PATH, FA_CREATE_ALWAYS | FA_WRITE) == FR_OK) {
+        f_write(&file, UPDATE_ROLLBACK_MANIFEST, strlen(UPDATE_ROLLBACK_MANIFEST), &written);
+        f_close(&file);
+    }
+}
+
 static UpdateManifest* flipper_update_process_manifest(const FuriString* manifest_path) {
     FIL file;
     FILINFO stat;
@@ -189,6 +202,9 @@ void flipper_boot_update_exec(void) {
     FuriString* manifest_path = furi_string_alloc();
 
     do {
+        if(boot_guard_rollback_requested()) {
+            flipper_update_point_to_rollback();
+        }
         if(!flipper_update_get_manifest_path(manifest_path)) {
             break;
         }

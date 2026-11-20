@@ -12,6 +12,8 @@
 
 #include "update_log.h"
 #include "update_trace.h"
+#include "update_task_preflight.h"
+#include <update_util/boot_guard.h>
 
 #define TAG "UpdWorkerRam"
 
@@ -474,6 +476,8 @@ int32_t update_task_worker_flash_writer(void* context) {
     update_trace_begin();
     do {
         CHECK_RESULT(update_task_parse_manifest(update_task));
+        /* Nothing changes until the package is known to be safe to install */
+        CHECK_RESULT(update_task_preflight(update_task));
 
         /* Changing the radio may put the new firmware in first (update_task_prepare_radio_change) */
         if(update_task->state.groups & UpdateTaskStageGroupRadio) {
@@ -491,8 +495,11 @@ int32_t update_task_worker_flash_writer(void* context) {
 
         update_trace_step(UpdateTraceStepDone, 0);
         furi_hal_rtc_set_boot_mode(FuriHalRtcBootModePostUpdate);
-        // Clean up /int before restoring backup on next boot
-        furi_hal_rtc_set_flag(FuriHalRtcFlagStorageFormatInternal);
+        // Clean up /int before restoring backup on next boot. A rollback has no backup (it
+        // starts here, without the pre-update step) and leaves /int as it is.
+        if(!boot_guard_rollback_requested()) {
+            furi_hal_rtc_set_flag(FuriHalRtcFlagStorageFormatInternal);
+        }
 #ifdef FURI_NDEBUG
         // Production
         furi_hal_rtc_set_log_level(FuriLogLevelNone);

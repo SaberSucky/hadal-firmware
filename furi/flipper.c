@@ -1,3 +1,4 @@
+#include <update_util/boot_guard.h>
 #include "flipper.h"
 #include <applications.h>
 #include <furi.h>
@@ -33,6 +34,12 @@ static void flipper_print_version(const char* target, const Version* version) {
 
 void flipper_init(void) {
     flipper_print_version("Firmware", furi_hal_version_get_firmware_version());
+
+    // Before any service: a newly installed firmware that keeps failing to start is replaced by
+    // the last one that started steadily (this may restart into the boot stage)
+    if(furi_hal_rtc_get_boot_mode() == FuriHalRtcBootModeNormal) {
+        boot_guard_on_start();
+    }
 
     FURI_LOG_I(TAG, "Boot mode %d, starting services", furi_hal_rtc_get_boot_mode());
 
