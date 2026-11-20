@@ -91,6 +91,28 @@ typedef struct {
 
 static FuriHalVersion furi_hal_version = {0};
 
+/* A custom name stands in for the chip's unique ids, as 8 bytes: the name, zero-padded. Read
+ * straight from the name, a name shorter than the 4 (MAC) or 8 (UID) bytes taken was read past
+ * its end. Names of 3 characters and more give the MAC they always gave. */
+static uint8_t furi_hal_version_custom_uid[8];
+
+/* Set by the user (Settings > Hadal > Misc > Spoofing), over whatever the name gives */
+static bool furi_hal_version_mac_spoofed = false;
+static uint8_t furi_hal_version_mac_spoof[6];
+static bool furi_hal_version_uid_spoofed = false;
+static uint8_t furi_hal_version_uid_spoof[8];
+
+static const uint8_t* furi_hal_version_custom_name_uid(void) {
+    const char* custom = version_get_custom_name(NULL);
+    if(custom == NULL) return NULL;
+    memset(furi_hal_version_custom_uid, 0, sizeof(furi_hal_version_custom_uid));
+    memcpy(
+        furi_hal_version_custom_uid,
+        custom,
+        strnlen(custom, sizeof(furi_hal_version_custom_uid)));
+    return furi_hal_version_custom_uid;
+}
+
 void furi_hal_version_set_name(const char* name) {
     if(name != NULL) {
         strlcpy(furi_hal_version.name, name, FURI_HAL_VERSION_ARRAY_NAME_LENGTH);
@@ -107,8 +129,10 @@ void furi_hal_version_set_name(const char* name) {
 
     // BLE Mac address
     uint32_t udn = LL_FLASH_GetUDN();
-    if(version_get_custom_name(NULL) != NULL) {
-        udn = *((uint32_t*)version_get_custom_name(NULL));
+    const uint8_t* custom_uid = furi_hal_version_custom_name_uid();
+    if(custom_uid != NULL) {
+        udn = (uint32_t)custom_uid[0] | ((uint32_t)custom_uid[1] << 8) |
+              ((uint32_t)custom_uid[2] << 16) | ((uint32_t)custom_uid[3] << 24);
     }
 
     uint32_t platform_id = FURI_HAL_VERSION_PLATFORM_ID;
@@ -118,6 +142,28 @@ void furi_hal_version_set_name(const char* name) {
     furi_hal_version.ble_mac[3] = (uint8_t)((platform_id >> 0) & 0xFF);
     furi_hal_version.ble_mac[4] = (uint8_t)((platform_id >> 8) & 0xFF);
     furi_hal_version.ble_mac[5] = (uint8_t)((platform_id >> 16) & 0xFF);
+    if(furi_hal_version_mac_spoofed) {
+        memcpy(furi_hal_version.ble_mac, furi_hal_version_mac_spoof, sizeof(furi_hal_version_mac_spoof));
+    }
+}
+
+void furi_hal_version_set_ble_mac(const uint8_t* mac) {
+    furi_hal_version_mac_spoofed = mac != NULL;
+    if(mac) memcpy(furi_hal_version_mac_spoof, mac, sizeof(furi_hal_version_mac_spoof));
+    // the name's own MAC back, or the spoofed one over it (from a copy: set_name writes the name)
+    char name[FURI_HAL_VERSION_ARRAY_NAME_LENGTH];
+    const char* current = furi_hal_version_get_name_ptr();
+    if(current) {
+        strlcpy(name, current, sizeof(name));
+        furi_hal_version_set_name(name);
+    } else {
+        furi_hal_version_set_name(NULL);
+    }
+}
+
+void furi_hal_version_set_uid(const uint8_t* uid) {
+    furi_hal_version_uid_spoofed = uid != NULL;
+    if(uid) memcpy(furi_hal_version_uid_spoof, uid, sizeof(furi_hal_version_uid_spoof));
 }
 
 static void furi_hal_version_load_otp_default(void) {
@@ -319,8 +365,8 @@ const uint8_t* furi_hal_version_uid_default(void) {
 }
 
 const uint8_t* furi_hal_version_uid(void) {
-    if(version_get_custom_name(NULL) != NULL) {
-        return (const uint8_t*)&(*((uint32_t*)version_get_custom_name(NULL)));
-    }
+    if(furi_hal_version_uid_spoofed) return furi_hal_version_uid_spoof;
+    const uint8_t* custom_uid = furi_hal_version_custom_name_uid();
+    if(custom_uid != NULL) return custom_uid;
     return (const uint8_t*)UID64_BASE;
 }

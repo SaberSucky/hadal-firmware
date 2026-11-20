@@ -1940,7 +1940,9 @@ Function,+,furi_hal_version_get_ncc_id,const char*,
 Function,+,furi_hal_version_get_otp_version,FuriHalVersionOtpVersion,
 Function,+,furi_hal_version_get_srrc_id,const char*,
 Function,-,furi_hal_version_init,void,
+Function,-,furi_hal_version_set_ble_mac,void,const uint8_t*
 Function,-,furi_hal_version_set_name,void,const char*
+Function,-,furi_hal_version_set_uid,void,const uint8_t*
 Function,+,furi_hal_version_uid,const uint8_t*,
 Function,+,furi_hal_version_uid_default,const uint8_t*,
 Function,+,furi_hal_version_uid_size,size_t,

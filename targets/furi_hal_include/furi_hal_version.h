@@ -206,6 +206,13 @@ void furi_hal_version_set_name(const char* name);
  */
 const uint8_t* furi_hal_version_get_ble_mac(void);
 
+/** Use this Bluetooth address (6 bytes, least significant first) instead of the one the chip
+ * or the custom name gives; NULL goes back to that. Takes effect when Bluetooth next starts */
+void furi_hal_version_set_ble_mac(const uint8_t* mac);
+
+/** Report this 8-byte unique id (About, device info) instead of the chip's; NULL goes back */
+void furi_hal_version_set_uid(const uint8_t* uid);
+
 /** Get address of version structure of firmware.
  *
  * @return     Address of firmware version structure.

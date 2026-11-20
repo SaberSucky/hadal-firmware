@@ -9,6 +9,7 @@
 #include <gui/modules/dialog_ex.h>
 #include <gui/modules/variable_item_list.h>
 #include <gui/modules/number_input.h>
+#include <gui/modules/byte_input.h>
 #include <dialogs/dialogs.h>
 #include <storage/storage.h>
 #include <desktop/desktop.h>
@@ -28,6 +29,7 @@ typedef enum {
     HadalViewDialog,
     HadalViewVariableList,
     HadalViewNumberInput,
+    HadalViewByteInput,
 } HadalView;
 
 typedef struct {
@@ -43,6 +45,8 @@ typedef struct {
     DialogEx* dialog;
     VariableItemList* variable_list;
     NumberInput* number_input;
+    ByteInput* byte_input;
+    uint8_t bytes[8]; /**< what the byte input edits */
 
     HadalMainMenu main_menu;
     size_t main_menu_selected; /**< the entry the item page is about */

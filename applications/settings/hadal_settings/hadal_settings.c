@@ -48,6 +48,9 @@ static HadalSettings* hadal_settings_alloc(void) {
     app->dialog = dialog_ex_alloc();
     app->variable_list = variable_item_list_alloc();
     app->number_input = number_input_alloc();
+    app->byte_input = byte_input_alloc();
+    view_dispatcher_add_view(
+        app->view_dispatcher, HadalViewByteInput, byte_input_get_view(app->byte_input));
     view_dispatcher_add_view(
         app->view_dispatcher, HadalViewNumberInput, number_input_get_view(app->number_input));
     view_dispatcher_add_view(
@@ -72,6 +75,8 @@ static void hadal_settings_free(HadalSettings* app) {
     view_dispatcher_remove_view(app->view_dispatcher, HadalViewVariableList);
     view_dispatcher_remove_view(app->view_dispatcher, HadalViewNumberInput);
     number_input_free(app->number_input);
+    view_dispatcher_remove_view(app->view_dispatcher, HadalViewByteInput);
+    byte_input_free(app->byte_input);
     submenu_free(app->submenu);
     widget_free(app->widget);
     dialog_ex_free(app->dialog);

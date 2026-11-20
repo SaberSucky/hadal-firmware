@@ -70,6 +70,40 @@ static bool namechanger_init() {
     return res;
 }
 
+// The spoofed Bluetooth address and serial, if the user set them; true if the address changed
+static bool namechanger_spoof_init(void) {
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    FlipperFormat* file = flipper_format_file_alloc(storage);
+    FuriString* header = furi_string_alloc();
+    bool mac_set = false;
+    do {
+        uint32_t version;
+        if(!flipper_format_file_open_existing(file, HADAL_SPOOF_PATH)) break;
+        if(!flipper_format_read_header(file, header, &version)) break;
+        if(furi_string_cmp_str(header, HADAL_SPOOF_HEADER) || version != HADAL_SPOOF_VERSION) break;
+
+        uint8_t mac[6];
+        if(flipper_format_read_hex(file, HADAL_SPOOF_MAC, mac, sizeof(mac))) {
+            // written most significant first; the radio wants it the other way round
+            uint8_t reversed[6];
+            for(size_t i = 0; i < sizeof(mac); i++) {
+                reversed[i] = mac[sizeof(mac) - 1 - i];
+            }
+            furi_hal_version_set_ble_mac(reversed);
+            mac_set = true;
+        }
+        flipper_format_rewind(file);
+        uint8_t serial[8];
+        if(flipper_format_read_hex(file, HADAL_SPOOF_SERIAL, serial, sizeof(serial))) {
+            furi_hal_version_set_uid(serial);
+        }
+    } while(false);
+    furi_string_free(header);
+    flipper_format_free(file);
+    furi_record_close(RECORD_STORAGE);
+    return mac_set;
+}
+
 int32_t namechanger_on_system_start(void* p) {
     UNUSED(p);
     if(furi_hal_rtc_get_boot_mode() != FuriHalRtcBootModeNormal) {
@@ -89,13 +123,17 @@ int32_t namechanger_on_system_start(void* p) {
 
     // Hehe bad code now here, bad bad bad, very bad, bad example, dont take it, make it better
 
-    if(namechanger_init()) {
+    const bool renamed = namechanger_init();
+    // after the name: a spoofed address goes over the one the name gives
+    const bool spoofed = namechanger_spoof_init();
+    if(renamed) {
         CliVcp* cli = furi_record_open(RECORD_CLI_VCP);
         cli_vcp_disable(cli);
         furi_delay_ms(2); // why i added delays here
         cli_vcp_enable(cli);
         furi_record_close(RECORD_CLI_VCP);
-
+    }
+    if(renamed || spoofed) {
         furi_delay_ms(3);
         Bt* bt = furi_record_open(RECORD_BT);
         if(!bt_profile_restore_default(bt)) {
