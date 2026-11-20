@@ -189,6 +189,8 @@ void desktop_scene_main_on_enter(void* context) {
 bool desktop_scene_main_on_event(void* context, SceneManagerEvent event) {
     Desktop* desktop = (Desktop*)context;
     bool consumed = false;
+    // whatever a key does next with the animation finds it loaded
+    if(event.type == SceneManagerEventTypeCustom) desktop_animation_reload_if_pending(desktop);
 
     if(event.type == SceneManagerEventTypeCustom && event.event >= DesktopMainEventKeybind &&
        event.event < DesktopMainEventKeybindEnd) {

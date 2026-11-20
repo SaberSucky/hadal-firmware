@@ -78,7 +78,9 @@ static void archive_list_item_cb(
             browser->view,
             ArchiveBrowserViewModel * model,
             {
-                if(model->item_cnt <= BROWSER_SORT_THRESHOLD) {
+                // sorted only when it holds the whole folder (a folder short of RAM comes a
+                // window at a time)
+                if(files_array_size(model->files) >= model->item_cnt) {
                     files_array_sort(model->files);
                 }
                 model->list_loading = false;

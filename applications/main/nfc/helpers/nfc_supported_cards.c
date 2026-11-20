@@ -7,12 +7,19 @@
 #include <loader/firmware_api/firmware_api.h>
 
 #include <furi.h>
+#include <furi_hal_version.h>
+#include <toolbox/crc32_calc.h>
+#include <toolbox/stream/buffered_file_stream.h>
 #include <path.h>
 #include <m-array.h>
 
 #define TAG "NfcSupportedCards"
 
 #define NFC_SUPPORTED_CARDS_PLUGINS_PATH APP_DATA_PATH("plugins")
+/* What each parser is for (protocol, features), so that it need not be loaded to be asked: every
+ * session loaded and linked all of them (about 45) on the first read. Kept with a key of the
+ * firmware's commit and every parser file's name and size; any change and they are asked again. */
+#define NFC_SUPPORTED_CARDS_CACHE_PATH APP_DATA_PATH(".parsers.cache")
 
 typedef enum {
     NfcSupportedCardsPluginFeatureHasVerify = (1U << 0),
@@ -168,6 +175,86 @@ static const NfcSupportedCardsPlugin* nfc_supported_cards_get_next_plugin(
     return plugin;
 }
 
+// The key of the parsers there are now: the firmware's commit, each file's name and size
+static uint32_t nfc_supported_cards_cache_key(Storage* storage) {
+    const char* commit = version_get_githash(furi_hal_version_get_firmware_version());
+    uint32_t key = crc32_calc_buffer(0, commit, strlen(commit));
+    File* dir = storage_file_alloc(storage);
+    char name[128];
+    FileInfo info;
+    if(storage_dir_open(dir, NFC_SUPPORTED_CARDS_PLUGINS_PATH)) {
+        while(storage_dir_read(dir, &info, name, sizeof(name))) {
+            key = crc32_calc_buffer(key, name, strlen(name));
+            const uint32_t size = (uint32_t)info.size;
+            key = crc32_calc_buffer(key, &size, sizeof(size));
+        }
+    }
+    storage_dir_close(dir);
+    storage_file_free(dir);
+    return key;
+}
+
+static bool nfc_supported_cards_cache_read(NfcSupportedCards* instance, uint32_t key) {
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    Stream* stream = buffered_file_stream_alloc(storage);
+    FuriString* line = furi_string_alloc();
+    bool ok = false;
+    if(buffered_file_stream_open(
+           stream, NFC_SUPPORTED_CARDS_CACHE_PATH, FSAM_READ, FSOM_OPEN_EXISTING) &&
+       stream_read_line(stream, line) && strtoul(furi_string_get_cstr(line), NULL, 16) == key) {
+        ok = true;
+        while(stream_read_line(stream, line)) {
+            char name[64];
+            unsigned protocol, feature;
+            if(sscanf(furi_string_get_cstr(line), "%63s %u %u", name, &protocol, &feature) != 3 ||
+               protocol >= NfcProtocolNum) {
+                ok = false;
+                break;
+            }
+            NfcSupportedCardsPluginCache plugin_cache = {
+                .name = furi_string_alloc_set_str(name),
+                .protocol = (NfcProtocol)protocol,
+                .feature = (NfcSupportedCardsPluginFeature)feature,
+            };
+            NfcSupportedCardsPluginCache_push_back(instance->plugins_cache_arr, plugin_cache);
+        }
+    }
+    if(!ok) {
+        // half read: what was taken goes, and the parsers are asked
+        for(size_t i = 0; i < NfcSupportedCardsPluginCache_size(instance->plugins_cache_arr); i++) {
+            furi_string_free(NfcSupportedCardsPluginCache_get(instance->plugins_cache_arr, i)->name);
+        }
+        NfcSupportedCardsPluginCache_reset(instance->plugins_cache_arr);
+    }
+    furi_string_free(line);
+    buffered_file_stream_close(stream);
+    stream_free(stream);
+    furi_record_close(RECORD_STORAGE);
+    return ok && NfcSupportedCardsPluginCache_size(instance->plugins_cache_arr) > 0;
+}
+
+static void nfc_supported_cards_cache_write(NfcSupportedCards* instance, uint32_t key) {
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    Stream* stream = buffered_file_stream_alloc(storage);
+    if(buffered_file_stream_open(
+           stream, NFC_SUPPORTED_CARDS_CACHE_PATH, FSAM_WRITE, FSOM_CREATE_ALWAYS)) {
+        stream_write_format(stream, "%08lX\n", (unsigned long)key);
+        for(size_t i = 0; i < NfcSupportedCardsPluginCache_size(instance->plugins_cache_arr); i++) {
+            const NfcSupportedCardsPluginCache* cache =
+                NfcSupportedCardsPluginCache_cget(instance->plugins_cache_arr, i);
+            stream_write_format(
+                stream,
+                "%s %u %u\n",
+                furi_string_get_cstr(cache->name),
+                (unsigned)cache->protocol,
+                (unsigned)cache->feature);
+        }
+    }
+    buffered_file_stream_close(stream);
+    stream_free(stream);
+    furi_record_close(RECORD_STORAGE);
+}
+
 void nfc_supported_cards_load_cache(NfcSupportedCards* instance) {
     furi_assert(instance);
 
@@ -175,6 +262,14 @@ void nfc_supported_cards_load_cache(NfcSupportedCards* instance) {
         if((instance->load_state == NfcSupportedCardsLoadStateSuccess) ||
            (instance->load_state == NfcSupportedCardsLoadStateFail))
             break;
+
+        Storage* storage = furi_record_open(RECORD_STORAGE);
+        const uint32_t key = nfc_supported_cards_cache_key(storage);
+        furi_record_close(RECORD_STORAGE);
+        if(nfc_supported_cards_cache_read(instance, key)) {
+            instance->load_state = NfcSupportedCardsLoadStateSuccess;
+            break;
+        }
 
         instance->load_context = nfc_supported_cards_load_context_alloc();
 
@@ -209,6 +304,7 @@ void nfc_supported_cards_load_cache(NfcSupportedCards* instance) {
         } else {
             FURI_LOG_D(TAG, "Loaded %zu plugins", plugins_loaded);
             instance->load_state = NfcSupportedCardsLoadStateSuccess;
+            nfc_supported_cards_cache_write(instance, key);
         }
 
     } while(false);

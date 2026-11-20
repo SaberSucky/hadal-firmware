@@ -57,6 +57,15 @@ static inline int furi_mutex_release(FuriMutex* m) {
     return pthread_mutex_unlock(&m->mutex);
 }
 
+#include <unistd.h>
+static inline void furi_delay_ms(uint32_t ms) {
+    usleep(ms * 1000U);
+}
+// the host has RAM to spare: a pack is never cut short by it here
+static inline size_t memmgr_get_free_heap(void) {
+    return 1U << 20;
+}
+
 /* ---- thread ---- */
 typedef int32_t (*FuriThreadCallback)(void* context);
 typedef enum { FuriThreadPriorityLow = 15 } FuriThreadPriority;

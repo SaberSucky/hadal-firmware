@@ -685,6 +685,51 @@ static FuriStatus sd_spi_get_cid(SD_CID* Cid) {
     return ret;
 }
 
+/* Several blocks in one command (CMD18), the card streaming them, instead of a command and the
+ * card's access time for each one (CMD17): FatFS reads a run of sectors at once for the larger
+ * reads (apps loading, 4 KB file reads). A card that fails it once reads block by block from then
+ * until the next start, and that read is done again that way. */
+static bool sd_multi_block_read = true;
+
+static FuriStatus sd_spi_cmd_read_multi_blocks(
+    uint32_t* data,
+    uint32_t block_address,
+    uint32_t blocks,
+    uint32_t timeout_ms) {
+    const SdSpiCmdAnswer response =
+        sd_spi_send_cmd(SD_CMD18_READ_MULT_BLOCK, block_address, 0xFF, SdSpiCmdAnswerTypeR1);
+    if(response.r1 != SdSpi_R1_NO_ERROR) {
+        sd_spi_deselect_card_and_purge();
+        return FuriStatusError;
+    }
+
+    FuriStatus status = FuriStatusOk;
+    for(uint32_t i = 0; i < blocks; i++) {
+        if(sd_spi_wait_for_data(SD_TOKEN_START_DATA_MULTIPLE_BLOCK_READ, timeout_ms) !=
+           FuriStatusOk) {
+            status = FuriStatusError;
+            break;
+        }
+        sd_spi_read_bytes_dma((uint8_t*)data + i * SD_BLOCK_SIZE, SD_BLOCK_SIZE);
+        sd_spi_purge_crc();
+    }
+
+    // CMD12 (STOP_TRANSMISSION), after an error too: a stuff byte follows the command, then R1,
+    // then the card holds the line low while it is busy
+    const uint8_t stop[SD_CMD_LENGTH] = {SD_CMD12_STOP_TRANSMISSION | 0x40, 0, 0, 0, 0, 0xFF};
+    sd_spi_write_bytes((uint8_t*)stop, sizeof(stop));
+    sd_spi_read_byte();
+    uint8_t r1 = SD_DUMMY_BYTE;
+    for(uint8_t i = 0; i < 8 && (r1 & 0x80); i++) {
+        r1 = sd_spi_read_byte();
+    }
+    if(r1 != SdSpi_R1_NO_ERROR) status = FuriStatusError;
+    if(sd_spi_wait_for_data(SD_DUMMY_BYTE, timeout_ms) != FuriStatusOk) status = FuriStatusError;
+
+    sd_spi_deselect_card_and_purge();
+    return status;
+}
+
 static FuriStatus
     sd_spi_cmd_read_blocks(uint32_t* data, uint32_t address, uint32_t blocks, uint32_t timeout_ms) {
     uint32_t block_address = address;
@@ -701,6 +746,14 @@ static FuriStatus
 
     if(!sd_high_capacity) {
         block_address = address * SD_BLOCK_SIZE;
+    }
+
+    if(blocks > 1 && sd_multi_block_read) {
+        if(sd_spi_cmd_read_multi_blocks(data, block_address, blocks, timeout_ms) ==
+           FuriStatusOk) {
+            return FuriStatusOk;
+        }
+        sd_multi_block_read = false; // this card: block by block, starting with this read
     }
 
     while(blocks--) {
@@ -912,6 +965,9 @@ uint8_t furi_hal_sd_max_mount_retry_count(void) {
 }
 
 FuriStatus furi_hal_sd_init(bool power_reset) {
+    // a card (re)started gets to read several blocks at once again
+    sd_multi_block_read = true;
+
     // Slow speed init
     furi_hal_spi_acquire(&furi_hal_spi_bus_handle_sd_slow);
     furi_hal_sd_spi_handle = &furi_hal_spi_bus_handle_sd_slow;

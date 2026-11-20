@@ -94,6 +94,8 @@ struct Desktop {
     bool in_transition;
     bool asset_pack_guard_done;
     bool app_running;
+    /** An app closed while the menu covered the desktop: its animation loads once in sight */
+    bool animation_reload_pending;
     bool locked;
     /** The lock in place, or the next one, opens without the PIN (control centre's Lock) */
     bool keypad_lock;
@@ -116,3 +118,5 @@ bool desktop_lock_needs_pin(const Desktop* desktop);
 bool desktop_keybind_read(Desktop* desktop, DesktopKeybind bind, FuriString* out);
 /** Do what a button or a control centre tile is bound to (desktop_keybinds.h); false if unbound */
 bool desktop_keybind_run(Desktop* desktop, DesktopKeybind bind);
+/** Load the idle animation an app's run left unloaded, if it is still waiting */
+void desktop_animation_reload_if_pending(Desktop* desktop);

@@ -528,7 +528,9 @@ static void browser_list_item_cb(
             browser->view,
             FileBrowserModel * model,
             {
-                if(model->item_cnt <= BROWSER_SORT_THRESHOLD) {
+                // sorted only when it holds the whole folder (a folder short of RAM comes a
+                // window at a time)
+                if(items_array_size(model->items) >= model->item_cnt) {
                     FuriString* selected = NULL;
                     if((model->item_idx > 0) &&
                        ((size_t)model->item_idx < items_array_size(model->items))) {

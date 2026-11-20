@@ -59,6 +59,19 @@ struct BrowserWorker {
     FileInfo item_info; /**< the entry being passed to list_item_cb, as the folder listed it */
 };
 
+/* A folder of up to BROWSER_SORT_THRESHOLD entries is loaded whole, to be sorted: an entry
+ * takes about this much (its record, its name, the name shown, an icon), and the list one block
+ * that grows. Short of RAM (in an app that uses much of it, Sub-GHz say), it is loaded a window at
+ * a time like a larger folder, in the order of the card: a little out of order, not a crash. */
+#define BROWSER_ITEM_RAM    (200U)
+#define BROWSER_RAM_RESERVE (16U * 1024U)
+
+static bool browser_can_load_whole(uint32_t count) {
+    return count <= BROWSER_SORT_THRESHOLD &&
+           memmgr_get_free_heap() > count * BROWSER_ITEM_RAM + BROWSER_RAM_RESERVE &&
+           memmgr_heap_get_max_free_block() > count * 2 * 32U + 1024U;
+}
+
 static bool browser_path_is_file(FuriString* path) {
     bool state = false;
     FileInfo file_info;
@@ -554,7 +567,7 @@ static int32_t browser_worker(void* context) {
             if(!folder_ok) {
                 // Already reported, and opening it again would only fail again
                 browser_load_aborted(browser, 0);
-            } else if(items_cnt > BROWSER_SORT_THRESHOLD) {
+            } else if(!browser_can_load_whole(items_cnt)) {
                 browser_folder_load_chunked(
                     browser, path, browser->load_offset, browser->load_count);
             } else {

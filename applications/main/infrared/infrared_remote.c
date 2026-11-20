@@ -13,12 +13,21 @@
 #define INFRARED_FILE_VERSION   (1)
 
 ARRAY_DEF(StringArray, const char*, M_CSTR_DUP_OPLIST); //-V575
+ARRAY_DEF(OffsetArray, uint32_t, M_POD_OPLIST); //-V658
 
 struct InfraredRemote {
     StringArray_t signal_names;
+    /* Where each signal's body starts in the file, noted as it was loaded: a button press seeks
+     * there instead of reading the file from the top to its signal (learned raw signals are
+     * kilobytes each). Emptied by any change to the file, which moves them: then searched. */
+    OffsetArray_t signal_offsets;
     FuriString* name;
     FuriString* path;
 };
+
+static void infrared_remote_offsets_stale(InfraredRemote* remote) {
+    OffsetArray_reset(remote->signal_offsets);
+}
 
 typedef struct {
     InfraredRemote* remote;
@@ -41,6 +50,7 @@ typedef InfraredErrorCode (
 InfraredRemote* infrared_remote_alloc(void) {
     InfraredRemote* remote = malloc(sizeof(InfraredRemote));
     StringArray_init(remote->signal_names);
+    OffsetArray_init(remote->signal_offsets);
     remote->name = furi_string_alloc();
     remote->path = furi_string_alloc();
     return remote;
@@ -48,6 +58,7 @@ InfraredRemote* infrared_remote_alloc(void) {
 
 void infrared_remote_free(InfraredRemote* remote) {
     StringArray_clear(remote->signal_names);
+    OffsetArray_clear(remote->signal_offsets);
     furi_string_free(remote->path);
     furi_string_free(remote->name);
     free(remote);
@@ -55,6 +66,7 @@ void infrared_remote_free(InfraredRemote* remote) {
 
 void infrared_remote_reset(InfraredRemote* remote) {
     StringArray_reset(remote->signal_names);
+    OffsetArray_reset(remote->signal_offsets);
     furi_string_reset(remote->name);
     furi_string_reset(remote->path);
 }
@@ -99,7 +111,17 @@ InfraredErrorCode infrared_remote_load_signal(
             break;
         }
 
-        error = infrared_signal_search_by_index_and_read(signal, ff, index);
+        if(OffsetArray_size(remote->signal_offsets) == StringArray_size(remote->signal_names)) {
+            // straight to it
+            if(!flipper_format_seek(
+                   ff, *OffsetArray_cget(remote->signal_offsets, index), FlipperFormatOffsetFromStart)) {
+                error = InfraredErrorCodeFileOperationFailed;
+                break;
+            }
+            error = infrared_signal_read_body(signal, ff);
+        } else {
+            error = infrared_signal_search_by_index_and_read(signal, ff, index);
+        }
         if(INFRARED_ERROR_PRESENT(error)) {
             const char* signal_name = infrared_remote_get_signal_name(remote, index);
             FURI_LOG_E(TAG, "Failed to load signal '%s' from file '%s'", signal_name, path);
@@ -151,6 +173,7 @@ InfraredErrorCode infrared_remote_append_signal(
         if(INFRARED_ERROR_PRESENT(error)) break;
 
         StringArray_push_back(remote->signal_names, name);
+        infrared_remote_offsets_stale(remote);
     } while(false);
 
     flipper_format_free(ff);
@@ -163,6 +186,8 @@ static InfraredErrorCode infrared_remote_batch_start(
     InfraredRemote* remote,
     InfraredBatchCallback batch_callback,
     const InfraredBatchTarget* target) {
+    // the file is rewritten: every position after the change moves
+    infrared_remote_offsets_stale(remote);
     FuriString* tmp = furi_string_alloc();
     Storage* storage = furi_record_open(RECORD_STORAGE);
 
@@ -236,6 +261,7 @@ static InfraredErrorCode infrared_remote_batch_start(
 
         StringArray_reset(remote->signal_names);
         StringArray_set(remote->signal_names, buf_names);
+        infrared_remote_offsets_stale(remote);
     }
 
     StringArray_clear(buf_names);
@@ -441,9 +467,11 @@ InfraredErrorCode infrared_remote_load(InfraredRemote* remote, const char* path)
 
         infrared_remote_set_path(remote, path);
         StringArray_reset(remote->signal_names);
+        OffsetArray_reset(remote->signal_offsets);
 
         while(infrared_signal_read_name(ff, tmp) == InfraredErrorCodeNone) {
             StringArray_push_back(remote->signal_names, furi_string_get_cstr(tmp));
+            OffsetArray_push_back(remote->signal_offsets, (uint32_t)flipper_format_tell(ff));
         }
     } while(false);
 

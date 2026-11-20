@@ -152,6 +152,7 @@ static void graveyard_timer_callback(void* context) {
  * Every frame starts by setting a font again, so a few frames are enough; the full grace is for
  * pack switches, the short one when an app starts and needs the RAM while it loads */
 #define ASSET_PACKS_FONT_SHORT_GRACE_MS 100
+#define ASSET_PACKS_CANCEL_WAIT_MS      1000
 
 static void discard_fonts_locked_after(uint32_t grace_ms) {
     asset_packs.font_ram = 0;
@@ -409,9 +410,19 @@ static void add_icon(
 }
 
 /** True if an icon with this many frames of this many blob bytes still fits the RAM budget. */
+/* A pack never takes the RAM down below this: what it would load past that is left out (the
+ * stock icon or font shows), whatever its budget says. Packs load while the Flipper starts and
+ * after every app, when the RAM is wanted elsewhere too. */
+#define ASSET_PACKS_HEAP_RESERVE (32U * 1024U)
+
+static bool heap_has_room(size_t bytes) {
+    return memmgr_get_free_heap() > bytes + ASSET_PACKS_HEAP_RESERVE;
+}
+
 static bool take_budget(LoadState* state, size_t frame_count, size_t blob_bytes) {
     const size_t cost = asset_pack_icon_ram_cost(frame_count, blob_bytes);
     if(state->ram_used + cost > ASSET_PACK_ICON_RAM_BUDGET) return false;
+    if(!heap_has_room(cost)) return false;
     state->ram_used += cost;
     return true;
 }
@@ -595,6 +606,7 @@ static void load_fonts(LoadState* state, const char* fonts_path) {
         snprintf(file_name, sizeof(file_name), "%s.u8f", asset_pack_font_slot_name(slot));
         if(!join_path(path, sizeof(path), fonts_path, file_name)) continue;
 
+        if(!heap_has_room(ASSET_PACK_MAX_FONT_BYTES)) break;
         size_t size = 0;
         uint8_t* data = read_file(state->storage, path, ASSET_PACK_MAX_FONT_BYTES, &size);
         if(!data) continue;
@@ -822,14 +834,22 @@ void asset_packs_app_starting(void) {
     }
     furi_mutex_release(asset_packs.mutex);
 
-    // A loader that has finished keeps its thread (a 6 KB stack) until the next load: freed
-    // here, before the app needs the RAM. One still running is left alone: it may be waiting
-    // to tell the desktop, whose thread this is.
-    if(asset_packs.loader &&
-       furi_thread_get_state(asset_packs.loader) == FuriThreadStateStopped) {
-        furi_thread_join(asset_packs.loader);
-        furi_thread_free(asset_packs.loader);
-        asset_packs.loader = NULL;
+    // The loader goes before the app loads: one that has finished keeps its thread (a 6 KB
+    // stack), and one still loading (a large pack takes seconds after the start) held all it had
+    // read until it noticed it was cancelled, while the app loaded beside it. A cancelled load
+    // stops at its next file and tells no one, so it is waited for, briefly; one that does not
+    // stop in time (it never should) is left to finish.
+    if(asset_packs.loader) {
+        for(uint32_t waited = 0; furi_thread_get_state(asset_packs.loader) != FuriThreadStateStopped &&
+                                 waited < ASSET_PACKS_CANCEL_WAIT_MS;
+            waited += 10) {
+            furi_delay_ms(10);
+        }
+        if(furi_thread_get_state(asset_packs.loader) == FuriThreadStateStopped) {
+            furi_thread_join(asset_packs.loader);
+            furi_thread_free(asset_packs.loader);
+            asset_packs.loader = NULL;
+        }
     }
 }
 

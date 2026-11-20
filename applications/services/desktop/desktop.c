@@ -186,7 +186,14 @@ static bool desktop_custom_event_callback(void* context, uint32_t event) {
         furi_semaphore_release(desktop->animation_semaphore);
 
     } else if(event == DesktopGlobalAfterAppFinished) {
-        animation_manager_load_and_continue_animation(desktop->animation_manager);
+        // Back to the menu, as a rule, which covers the desktop: the animation loads once the
+        // desktop is in sight (the tick, or a key on the desktop), not while it cannot be seen,
+        // taking the card from the next app to start
+        if(gui_active_view_port_count(desktop->gui, GuiLayerFullscreen)) {
+            desktop->animation_reload_pending = true;
+        } else {
+            animation_manager_load_and_continue_animation(desktop->animation_manager);
+        }
         asset_packs_reload_icons();
         desktop_auto_lock_arm(desktop);
         desktop->app_running = false;
@@ -242,9 +249,19 @@ static bool desktop_back_event_callback(void* context) {
     return scene_manager_handle_back_event(desktop->scene_manager);
 }
 
+void desktop_animation_reload_if_pending(Desktop* desktop) {
+    if(!desktop->animation_reload_pending || desktop->app_running) return;
+    desktop->animation_reload_pending = false;
+    animation_manager_load_and_continue_animation(desktop->animation_manager);
+}
+
 static void desktop_tick_event_callback(void* context) {
     furi_assert(context);
     Desktop* app = context;
+    if(app->animation_reload_pending &&
+       !gui_active_view_port_count(app->gui, GuiLayerFullscreen)) {
+        desktop_animation_reload_if_pending(app);
+    }
     scene_manager_handle_tick_event(app->scene_manager);
 }
 
