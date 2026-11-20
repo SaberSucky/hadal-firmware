@@ -2682,5 +2682,93 @@ class MainMenuListTests(TempDirCase):
             self.assertIn("ok 3000", r.stdout)
 
 
+class ResourceManifestCheckTests(unittest.TestCase):
+    """update_package_check.resource_manifest_problems(): the archive must let updates skip
+    unchanged files (Manifest first, every file listed with its size and MD5)."""
+
+    def manifest(self, files):
+        import hashlib
+
+        lines = ["V:0", "T:0"] + [f"F:{hashlib.md5(d).hexdigest()}:{len(d)}:{n}" for n, d in files.items()]
+        return ("\n".join(lines) + "\n").encode()
+
+    def test_good_and_bad(self):
+        sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+        from update_package_check import resource_manifest_problems
+
+        files = {"apps/a.fap": b"abc", "infrared/assets/tv.ir": b"0123"}
+        good = dict(files, Manifest=self.manifest(files))
+        self.assertEqual(resource_manifest_problems(good, "Manifest"), [])
+        self.assertTrue(resource_manifest_problems(good, "apps/a.fap"))  # not first
+        stale = dict(good, **{"apps/a.fap": b"abd"})
+        self.assertIn("apps/a.fap differs from its Manifest entry", resource_manifest_problems(stale, "Manifest"))
+        extra = dict(good, **{"new.txt": b"x"})
+        self.assertIn("new.txt is not in the Manifest", resource_manifest_problems(extra, "Manifest"))
+        self.assertIn("there is no Manifest", resource_manifest_problems(files, "apps/a.fap"))
+
+
+class ResourceIndexTests(TempDirCase):
+    """applications/system/updater/util/update_resource_index.c: which files an update can leave
+    alone. Built as-is under ASan/UBSan."""
+
+    @classmethod
+    def setUpClass(cls):
+        import subprocess
+
+        if not _have_sanitizer("address,undefined"):
+            raise unittest.SkipTest("gcc with AddressSanitizer is not available")
+        cls.build_dir = tempfile.mkdtemp(prefix="rix_")
+        cls.exe = os.path.join(cls.build_dir, "resource_index_host")
+        util = os.path.join(REPO_ROOT, "applications", "system", "updater", "util")
+        subprocess.check_call(
+            [
+                "gcc", "-std=gnu11", "-g", "-O1", "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
+                "-Wall", "-Wextra", "-Werror", "-I", util, "-o", cls.exe,
+                os.path.join(REPO_ROOT, "scripts", "host_tests", "resource_index_host.c"),
+                os.path.join(util, "update_resource_index.c"),
+            ]
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.build_dir, True)
+
+    def run_index(self, lines):
+        import subprocess
+
+        r = subprocess.run([self.exe], input="\n".join(lines) + "\n", capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+        return r.stdout.split()
+
+    def test_lookups(self):
+        a, b = "11" * 16, "22" * 16
+        got = self.run_index([
+            f"F apps/Tools/clock.fap 1000 {a}",
+            "D apps/Tools",
+            f"F infrared/assets/tv.ir 99445 {b}",
+            ".",
+            f"? apps/Tools/clock.fap 1000 {a}",   # same file
+            f"? apps/Tools/clock.fap 1001 {a}",   # size differs
+            f"? apps/Tools/clock.fap 1000 {b}",   # content differs
+            f"? ./apps/Tools/clock.fap 1000 {a}", # tar-style name
+            f"? /apps/Tools/clock.fap 1000 {a}",
+            f"? apps/Tools/ 0 {a}",               # folder, trailing slash
+            f"? apps/Tools/other.fap 1000 {a}",   # not in the new resources
+        ])
+        self.assertEqual(got, ["match", "differs", "differs", "match", "match", "folder", "absent"])
+
+    def test_many_entries(self):
+        import random
+
+        rng = random.Random(5)
+        files = [(f"dir{i % 37}/file_{i}.bin", rng.randrange(1 << 20), "%032x" % rng.getrandbits(128)) for i in range(5000)]
+        lines = [f"F {n} {sz} {h}" for n, sz, h in files] + ["."]
+        lines += [f"? {n} {sz} {h}" for n, sz, h in files]
+        got = self.run_index(lines)
+        # a hash two names share may hide one of them (it is then written, never wrongly skipped)
+        self.assertGreaterEqual(got.count("match"), 4990)
+        self.assertEqual(got.count("folder"), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

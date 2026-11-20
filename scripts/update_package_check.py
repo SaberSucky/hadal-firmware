@@ -175,6 +175,34 @@ def fap_manifest(data):
     return None
 
 
+def resource_manifest_problems(files, first_file):
+    """Why the device could not use the archive's Manifest to skip unchanged files ([] if it can).
+    files: name -> data of every regular file in the resources archive."""
+    import hashlib
+
+    problems = []
+    if first_file != "Manifest":
+        problems.append(f"the first file is {first_file!r}, not Manifest")
+    manifest = files.get("Manifest")
+    if manifest is None:
+        return problems + ["there is no Manifest"]
+    listed = {}
+    for line in manifest.decode(errors="replace").splitlines():
+        if line.startswith("F:"):
+            parts = line.split(":", 3)
+            if len(parts) == 4:
+                listed[parts[3]] = (parts[1], int(parts[2]) if parts[2].isdigit() else -1)
+    for name, data in files.items():
+        if name == "Manifest":
+            continue
+        entry = listed.get(name)
+        if entry is None:
+            problems.append(f"{name} is not in the Manifest")
+        elif entry != (hashlib.md5(data).hexdigest(), len(data)):
+            problems.append(f"{name} differs from its Manifest entry")
+    return problems
+
+
 def open_package(path, scratch):
     if os.path.isdir(path):
         return path
@@ -365,11 +393,22 @@ def check_package(path, expect="any", ob_data=None, scratch=None, api_csv=API_CS
                 with tarfile.open(tmp.name) as tar:
                     names = tar.getnames()
                     apps = {m.name: tar.extractfile(m).read() for m in tar.getmembers() if m.isfile() and m.name.endswith(".fap")}
+                    files = {m.name: tar.extractfile(m).read() for m in tar.getmembers() if m.isfile()}
+                    first_file = next((m.name for m in tar.getmembers() if m.isfile()), None)
         except Exception as e:  # noqa: BLE001
             report.fail(f"resources do not unpack: {e}")
         else:
             unsafe = [n for n in names if n.startswith("/") or ".." in n.split("/")]
             report.check(not unsafe, f"resources unpack to {len(names)} relative paths", f"resources contain unsafe paths: {unsafe[:3]}")
+            # An update leaves a file on the card alone when it has the size and MD5 the new
+            # Manifest gives (update_task_resources.c): the Manifest must come first in the archive
+            # and describe every file exactly, or every update writes everything again
+            # (not a failure: without it the device replaces every file, as it always did)
+            problems = resource_manifest_problems(files, first_file)
+            if problems:
+                report.info("resources: updates will rewrite every file: " + "; ".join(problems[:3]))
+            else:
+                report.ok("resources: Manifest comes first and gives every file's size and MD5, so updates skip unchanged files")
             fw_major, fw_minor = firmware_api_version(api_csv)
             bad = []
             for name, data in sorted(apps.items()):

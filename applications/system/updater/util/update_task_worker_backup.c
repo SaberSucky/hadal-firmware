@@ -1,6 +1,7 @@
 #include "update_task.h"
 #include "update_task_i.h"
 #include "update_trace.h"
+#include "update_task_resources.h"
 
 #include <furi.h>
 #include <furi_hal.h>
@@ -164,14 +165,18 @@ static bool update_task_post_update(UpdateTask* update_task) {
                 furi_string_get_cstr(update_task->manifest->resource_bundle),
                 file_path);
 
-            CHECK_RESULT(tar_archive_open(
-                archive, furi_string_get_cstr(file_path), TarOpenModeReadHeatshrink));
+            // Only what changed, when the archive says what it holds; otherwise, or if that
+            // stops part way, everything is replaced as before
+            if(!update_task_resources_install(update_task, furi_string_get_cstr(file_path))) {
+                CHECK_RESULT(tar_archive_open(
+                    archive, furi_string_get_cstr(file_path), TarOpenModeReadHeatshrink));
 
-            update_task_cleanup_resources(update_task);
+                update_task_cleanup_resources(update_task);
 
-            update_task_set_progress(update_task, UpdateTaskStageResourcesFileUnpack, 0);
-            tar_archive_set_file_callback(archive, update_task_resource_unpack_cb, &progress);
-            CHECK_RESULT(tar_archive_unpack_to(archive, STORAGE_EXT_PATH_PREFIX, NULL));
+                update_task_set_progress(update_task, UpdateTaskStageResourcesFileUnpack, 0);
+                tar_archive_set_file_callback(archive, update_task_resource_unpack_cb, &progress);
+                CHECK_RESULT(tar_archive_unpack_to(archive, STORAGE_EXT_PATH_PREFIX, NULL));
+            }
         }
 
         if(update_task->state.groups & UpdateTaskStageGroupSplashscreen) {
