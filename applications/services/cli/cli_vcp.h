@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include <stdbool.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -15,6 +17,9 @@ typedef struct CliVcp CliVcp;
 
 void cli_vcp_enable(CliVcp* cli_vcp);
 void cli_vcp_disable(CliVcp* cli_vcp);
+
+/** Whether the USB serial port is up for the CLI (cli_vcp_enable() called last) */
+bool cli_vcp_is_enabled(CliVcp* cli_vcp);
 #ifdef __cplusplus
 }
 #endif

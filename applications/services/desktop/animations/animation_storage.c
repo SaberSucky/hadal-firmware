@@ -13,6 +13,8 @@
 
 #define ANIMATION_META_FILE     "meta.txt"
 #define ANIMATION_MANIFEST_FILE "manifest.txt"
+#define ANIMATION_FRAMES_FILE   "frames.bin"
+#define ANIMATION_FRAMES_MAGIC  0x31464448 /* "HDF1" */
 #define ANIMATION_DEFAULT_DIR   EXT_PATH("dolphin")
 #define ANIMATION_DIR_SIZE      96
 #define TAG                     "AnimationStorage"
@@ -298,6 +300,36 @@ static void animation_storage_free_frames(BubbleAnimation* animation) {
     free((void*)icon->frames);
 }
 
+/**
+ * All the frames of an animation in one file, so loading it opens one file instead of one per
+ * frame (each open walks the folders again on the card, which is most of the time a load takes):
+ * "HDF1", the frame count (u16), 2 reserved bytes, the size of each frame (u16), then the frames,
+ * each exactly what frame_<n>.bm would hold. Built with the animations; packs may lack it.
+ */
+static bool animation_storage_read_frames_file(File* file, Icon* icon, size_t max_frame_size) {
+    struct {
+        uint32_t magic;
+        uint16_t count;
+        uint16_t reserved;
+    } header;
+    if(storage_file_read(file, &header, sizeof(header)) != sizeof(header)) return false;
+    if(header.magic != ANIMATION_FRAMES_MAGIC || header.count != icon->frame_count) return false;
+
+    const size_t sizes_length = sizeof(uint16_t) * header.count;
+    uint16_t* sizes = malloc(sizes_length);
+    bool ok = storage_file_read(file, sizes, sizes_length) == sizes_length;
+    for(size_t i = 0; ok && i < header.count; i++) {
+        ok = sizes[i] && sizes[i] <= max_frame_size;
+    }
+    for(size_t i = 0; ok && i < header.count; i++) {
+        uint8_t* frame = malloc(sizes[i]);
+        FURI_CONST_ASSIGN_PTR(icon->frames[i], frame);
+        ok = storage_file_read(file, frame, sizes[i]) == sizes[i];
+    }
+    free(sizes);
+    return ok;
+}
+
 static bool animation_storage_load_frames(
     Storage* storage,
     const char* directory,
@@ -323,44 +355,51 @@ static bool animation_storage_load_frames(
     FURI_CONST_ASSIGN(icon->frame_rate, 0);
     FURI_CONST_ASSIGN(icon->height, height);
     FURI_CONST_ASSIGN(icon->width, width);
-    icon->frames = malloc(sizeof(const uint8_t*) * icon->frame_count);
+    // zeroed: a load that stops halfway frees only the frames it read
+    const size_t frames_size = sizeof(const uint8_t*) * icon->frame_count;
+    icon->frames = malloc(frames_size);
+    memset((void*)icon->frames, 0, frames_size);
 
     bool frames_ok = false;
     File* file = storage_file_alloc(storage);
-    FileInfo file_info;
-    FuriString* filename;
-    filename = furi_string_alloc();
-    size_t max_filesize = ROUND_UP_TO(width, 8) * height + 1;
+    FuriString* filename = furi_string_alloc();
+    const size_t max_filesize = ROUND_UP_TO(width, 8) * height + 1;
+    uint64_t size = 0;
 
-    for(int i = 0; i < icon->frame_count; ++i) {
-        frames_ok = false;
-        furi_string_printf(filename, "%s/%s/frame_%d.bm", directory, name, i);
-
-        if(storage_common_stat(storage, furi_string_get_cstr(filename), &file_info) != FSE_OK)
-            break;
-        if(file_info.size > max_filesize) {
-            FURI_LOG_E(
-                TAG,
-                "Filesize %llu, max: %zu (width %u, height %u)",
-                file_info.size,
-                max_filesize,
-                width,
-                height);
-            break;
+    furi_string_printf(filename, "%s/%s/" ANIMATION_FRAMES_FILE, directory, name);
+    if(storage_file_open(file, furi_string_get_cstr(filename), FSAM_READ, FSOM_OPEN_EXISTING)) {
+        frames_ok = animation_storage_read_frames_file(file, icon, max_filesize);
+        storage_file_close(file);
+        if(!frames_ok) {
+            FURI_LOG_W(TAG, "Bad \'%s\', reading the frame files", furi_string_get_cstr(filename));
+            animation_storage_free_frames(animation);
+            icon->frames = malloc(frames_size);
+            memset((void*)icon->frames, 0, frames_size);
         }
+    } else {
+        storage_file_close(file);
+    }
+
+    for(int i = 0; !frames_ok && i < icon->frame_count; ++i) {
+        furi_string_printf(filename, "%s/%s/frame_%d.bm", directory, name, i);
+        // opened once, with no stat first: each path lookup costs a walk through the folders
         if(!storage_file_open(
                file, furi_string_get_cstr(filename), FSAM_READ, FSOM_OPEN_EXISTING)) {
-            FURI_LOG_E(TAG, "Can't open file \'%s\'", furi_string_get_cstr(filename));
+            storage_file_close(file);
             break;
         }
-
-        FURI_CONST_ASSIGN_PTR(icon->frames[i], malloc(file_info.size));
-        if(storage_file_read(file, (void*)icon->frames[i], file_info.size) != file_info.size) {
-            FURI_LOG_E(TAG, "Read failed: \'%s\'", furi_string_get_cstr(filename));
-            break;
+        size = storage_file_size(file);
+        bool read = false;
+        if(size == 0 || size > max_filesize) {
+            FURI_LOG_E(
+                TAG, "Filesize %llu, max: %zu (width %u, height %u)", size, max_filesize, width, height);
+        } else {
+            FURI_CONST_ASSIGN_PTR(icon->frames[i], malloc(size));
+            read = storage_file_read(file, (void*)icon->frames[i], size) == size;
         }
         storage_file_close(file);
-        frames_ok = true;
+        if(!read) break;
+        if(i == icon->frame_count - 1) frames_ok = true;
     }
 
     if(!frames_ok) {
@@ -370,7 +409,7 @@ static bool animation_storage_load_frames(
             furi_string_get_cstr(filename),
             width,
             height,
-            file_info.size);
+            size);
         animation_storage_free_frames(animation);
     } else {
         furi_check(animation->icon_animation.frames);

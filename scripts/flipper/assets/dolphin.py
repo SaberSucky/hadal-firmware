@@ -1,6 +1,7 @@
 import multiprocessing
 import logging
 import os
+import struct
 from collections import Counter
 
 from flipper.utils.fff import FlipperFormatFile
@@ -17,6 +18,39 @@ def _convert_image_to_bm(pair: set):
 def _convert_image(source_filename: str):
     image = file2image(source_filename)
     return image.data
+
+
+FRAMES_FILE = "frames.bin"
+FRAMES_MAGIC = b"HDF1"
+
+
+def frames_file_pack(blobs) -> bytes:
+    """frames.bin: "HDF1", <u16 count> <u16 0>, <u16 size> per frame, then the frames
+    (each what frame_<n>.bm would hold). Read by animation_storage.c."""
+    if not blobs or len(blobs) > 256:
+        raise ValueError(f"{len(blobs)} frames, 1 to 256 fit")
+    sizes = [len(b) for b in blobs]
+    if not all(0 < n <= 0xFFFF for n in sizes):
+        raise ValueError("a frame is empty or over 65535 bytes")
+    head = FRAMES_MAGIC + struct.pack("<HH", len(blobs), 0)
+    return head + struct.pack(f"<{len(sizes)}H", *sizes) + b"".join(blobs)
+
+
+def frames_file_unpack(data: bytes) -> list:
+    """The frame blobs of a frames.bin, in order."""
+    if len(data) < 8 or data[:4] != FRAMES_MAGIC:
+        raise ValueError("not a frames file")
+    count = struct.unpack_from("<H", data, 4)[0]
+    sizes = struct.unpack_from(f"<{count}H", data, 8)
+    blobs, offset = [], 8 + 2 * count
+    for n in sizes:
+        if n == 0 or offset + n > len(data):
+            raise ValueError("frames file is cut short")
+        blobs.append(data[offset : offset + n])
+        offset += n
+    if offset != len(data):
+        raise ValueError("frames file has trailing bytes")
+    return blobs
 
 
 class DolphinBubbleAnimation:
@@ -218,18 +252,15 @@ class DolphinBubbleAnimation:
 
         file.save(meta_filename)
 
-        to_pack = []
-        for index, frame in enumerate(self.frames):
-            to_pack.append(
-                (frame, os.path.join(animation_directory, f"frame_{index}.bm"))
-            )
-
+        # All frames in one file: the firmware opens one file per animation instead of
+        # one per frame (each open walks the folders on the card again)
         if ImageTools.is_processing_slow():
             pool = multiprocessing.Pool()
-            pool.map(_convert_image_to_bm, to_pack)
+            blobs = pool.map(_convert_image, self.frames)
         else:
-            for image in to_pack:
-                _convert_image_to_bm(image)
+            blobs = [_convert_image(frame) for frame in self.frames]
+        with open(os.path.join(animation_directory, FRAMES_FILE), "wb") as file:
+            file.write(frames_file_pack(blobs))
 
     def process(self):
         if ImageTools.is_processing_slow():

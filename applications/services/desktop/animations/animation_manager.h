@@ -46,6 +46,15 @@ typedef void (*AnimationManagerInteractCallback)(void*);
 AnimationManager* animation_manager_alloc(void);
 
 /**
+ * Load and show the first idle animation. Until this is called, the manager loads nothing and
+ * ignores the events that would switch animations, so the desktop can bring up what matters
+ * first (settings, the asset pack's folder, the USB port) and load the animation once, last.
+ *
+ * @animation_manager   instance
+ */
+void animation_manager_start(AnimationManager* animation_manager);
+
+/**
  * Free Animation Manager
  *
  * @animation_manager   instance

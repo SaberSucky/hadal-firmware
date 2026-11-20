@@ -54,6 +54,8 @@ struct AnimationManager {
     bool blocking_shown_sd_ok  : 1;
     bool levelup_pending       : 1;
     bool levelup_active        : 1;
+    /** Set by animation_manager_start(): nothing is loaded or switched before it */
+    bool started : 1;
 };
 
 static StorageAnimation*
@@ -159,7 +161,7 @@ static void animation_manager_interact_callback(void* context) {
 void animation_manager_check_blocking_process(AnimationManager* animation_manager) {
     furi_assert(animation_manager);
 
-    if(animation_manager->state == AnimationManagerStateIdle) {
+    if(animation_manager->started && animation_manager->state == AnimationManagerStateIdle) {
         bool blocked = animation_manager_check_blocking(animation_manager);
 
         if(!blocked) {
@@ -182,7 +184,7 @@ void animation_manager_check_blocking_process(AnimationManager* animation_manage
 void animation_manager_new_idle_process(AnimationManager* animation_manager) {
     furi_assert(animation_manager);
 
-    if(animation_manager->state == AnimationManagerStateIdle) {
+    if(animation_manager->started && animation_manager->state == AnimationManagerStateIdle) {
         animation_manager_start_new_idle(animation_manager);
     }
 }
@@ -190,6 +192,7 @@ void animation_manager_new_idle_process(AnimationManager* animation_manager) {
 /* reaction to animation_manager->interact_callback() */
 bool animation_manager_interact_process(AnimationManager* animation_manager) {
     furi_assert(animation_manager);
+    if(!animation_manager->started) return false;
     bool consumed = true;
 
     if(animation_manager->levelup_pending) {
@@ -218,6 +221,7 @@ bool animation_manager_interact_process(AnimationManager* animation_manager) {
 
 static void animation_manager_start_new_idle(AnimationManager* animation_manager) {
     furi_assert(animation_manager);
+    if(!animation_manager->started) return;
 
     StorageAnimation* new_animation = animation_manager_select_idle_animation(animation_manager);
     animation_manager_replace_current_animation(animation_manager, new_animation);
@@ -325,11 +329,18 @@ AnimationManager* animation_manager_alloc(void) {
     furi_record_close(RECORD_DOLPHIN);
 
     animation_manager->blocking_shown_sd_ok = true;
+
+    return animation_manager;
+}
+
+void animation_manager_start(AnimationManager* animation_manager) {
+    furi_assert(animation_manager);
+    if(animation_manager->started) return;
+    animation_manager->started = true;
+
     if(!animation_manager_check_blocking(animation_manager)) {
         animation_manager_start_new_idle(animation_manager);
     }
-
-    return animation_manager;
 }
 
 void animation_manager_free(AnimationManager* animation_manager) {
@@ -464,6 +475,7 @@ bool animation_manager_is_animation_loaded(AnimationManager* animation_manager) 
 
 void animation_manager_unload_and_stall_animation(AnimationManager* animation_manager) {
     furi_assert(animation_manager);
+    if(!animation_manager->started) return;
     furi_assert(animation_manager->current_animation);
     furi_assert(!furi_string_size(animation_manager->freezed_animation_name));
     furi_assert(
@@ -501,6 +513,7 @@ void animation_manager_unload_and_stall_animation(AnimationManager* animation_ma
 
 void animation_manager_load_and_continue_animation(AnimationManager* animation_manager) {
     furi_assert(animation_manager);
+    if(!animation_manager->started) return;
     furi_assert(!animation_manager->current_animation);
     furi_assert(furi_string_size(animation_manager->freezed_animation_name));
     furi_assert(

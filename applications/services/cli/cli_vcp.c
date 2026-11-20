@@ -322,3 +322,8 @@ void cli_vcp_disable(CliVcp* cli_vcp) {
     };
     cli_vcp_synchronous_request(cli_vcp, &message);
 }
+
+bool cli_vcp_is_enabled(CliVcp* cli_vcp) {
+    furi_check(cli_vcp);
+    return cli_vcp->is_enabled;
+}

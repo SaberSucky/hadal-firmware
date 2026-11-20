@@ -104,11 +104,7 @@ static bool namechanger_spoof_init(void) {
     return mac_set;
 }
 
-int32_t namechanger_on_system_start(void* p) {
-    UNUSED(p);
-    if(furi_hal_rtc_get_boot_mode() != FuriHalRtcBootModeNormal) {
-        return 0;
-    }
+static void namechanger_apply(void) {
 
     // Wait for all required services to start and create their records
     uint8_t timeout = 0;
@@ -116,7 +112,7 @@ int32_t namechanger_on_system_start(void* p) {
           !furi_record_exists(RECORD_STORAGE)) {
         timeout++;
         if(timeout > 250) {
-            return 0;
+            return;
         }
         furi_delay_ms(5);
     }
@@ -126,11 +122,15 @@ int32_t namechanger_on_system_start(void* p) {
     const bool renamed = namechanger_init();
     // after the name: a spoofed address goes over the one the name gives
     const bool spoofed = namechanger_spoof_init();
+    // The desktop normally brings the USB port up after this, with the new name already in place.
+    // Only if it gave up waiting is the port up with the old name: reconnect it once.
     if(renamed) {
         CliVcp* cli = furi_record_open(RECORD_CLI_VCP);
-        cli_vcp_disable(cli);
-        furi_delay_ms(2); // why i added delays here
-        cli_vcp_enable(cli);
+        if(cli_vcp_is_enabled(cli)) {
+            cli_vcp_disable(cli);
+            furi_delay_ms(2);
+            cli_vcp_enable(cli);
+        }
         furi_record_close(RECORD_CLI_VCP);
     }
     if(renamed || spoofed) {
@@ -143,6 +143,17 @@ int32_t namechanger_on_system_start(void* p) {
         bt = NULL;
         furi_delay_ms(3);
     }
+}
 
+int32_t namechanger_on_system_start(void* p) {
+    UNUSED(p);
+    if(furi_hal_rtc_get_boot_mode() != FuriHalRtcBootModeNormal) {
+        return 0;
+    }
+
+    namechanger_apply();
+
+    static uint8_t done_marker;
+    furi_record_create(RECORD_NAMECHANGER_DONE, &done_marker);
     return 0;
 }

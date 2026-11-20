@@ -4,5 +4,7 @@ App(
     entry_point="namechanger_on_system_start",
     requires=["storage", "cli", "bt"],
     conflicts=["updater"],
-    order=1300,
+    # Early, so the name is final before the desktop brings up the USB port and before the
+    # Bluetooth radio starts advertising
+    order=95,
 )

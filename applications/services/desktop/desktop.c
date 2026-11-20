@@ -6,6 +6,7 @@
 #include "desktop_i.h"
 
 #include <cli/cli_vcp.h>
+#include <namechanger/namechanger.h>
 
 #include <gui/gui_i.h>
 
@@ -23,6 +24,8 @@
 #include "furi_hal_power.h"
 
 #define TAG "Desktop"
+
+#define DESKTOP_USB_NAME_WAIT_MS 1500
 
 /** How long a loaded asset pack must run before a reset stops counting against it. */
 #define ASSET_PACK_STABLE_MS 10000
@@ -367,6 +370,23 @@ static void desktop_apply_settings(Desktop* desktop) {
     desktop->in_transition = false;
 }
 
+/**
+ * Bring up the USB serial port (qFlipper, the CLI), once its name is final: after the name and
+ * spoofing from the SD card are applied (a start hook, usually done within ~100 ms of the SD card
+ * mounting), or after DESKTOP_USB_NAME_WAIT_MS if that never happens. A port that comes up with one
+ * name and is then reconnected with another loses qFlipper while it is reading the Flipper.
+ */
+static void desktop_start_usb_port(void) {
+    for(uint32_t waited = 0;
+        !furi_record_exists(RECORD_NAMECHANGER_DONE) && waited < DESKTOP_USB_NAME_WAIT_MS;
+        waited += 10) {
+        furi_delay_ms(10);
+    }
+    CliVcp* cli_vcp = furi_record_open(RECORD_CLI_VCP);
+    cli_vcp_enable(cli_vcp);
+    furi_record_close(RECORD_CLI_VCP);
+}
+
 static void desktop_init_settings(Desktop* desktop) {
     furi_pubsub_subscribe(storage_get_pubsub(desktop->storage), desktop_storage_callback, desktop);
 
@@ -384,7 +404,6 @@ static Desktop* desktop_alloc(void) {
 
     desktop->animation_semaphore = furi_semaphore_alloc(1, 0);
     desktop->animation_manager = animation_manager_alloc();
-    boot_profile_mark("animations loaded");
     desktop->gui = furi_record_open(RECORD_GUI);
     desktop->scene_thread = furi_thread_alloc();
     desktop->view_dispatcher = view_dispatcher_alloc();
@@ -660,6 +679,7 @@ int32_t desktop_srv(void* p) {
     Desktop* desktop = desktop_alloc();
     boot_profile_mark("desktop allocated");
 
+    // Before the idle animation: the asset pack decides which folder it comes from
     desktop_init_settings(desktop);
     boot_profile_mark("desktop settings loaded");
 
@@ -669,10 +689,13 @@ int32_t desktop_srv(void* p) {
     if(desktop_pin_code_is_set() && !desktop->settings.boot_unlocked) {
         desktop_lock(desktop);
     } else {
-        CliVcp* cli_vcp = furi_record_open(RECORD_CLI_VCP);
-        cli_vcp_enable(cli_vcp);
-        furi_record_close(RECORD_CLI_VCP);
+        desktop_start_usb_port();
+        boot_profile_mark("usb port up");
     }
+
+    // Last, the slow part: reading the idle animation from the SD card
+    animation_manager_start(desktop->animation_manager);
+    boot_profile_mark("animations loaded");
 
     if(storage_file_exists(desktop->storage, SLIDESHOW_FS_PATH)) {
         scene_manager_next_scene(desktop->scene_manager, DesktopSceneSlideshow);

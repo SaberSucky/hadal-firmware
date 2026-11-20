@@ -44,7 +44,8 @@ void findmy_startup() {
     if(storage_sd_status(storage) != FSE_OK) {
         FURI_LOG_D(TAG, "SD Card not ready, skipping startup hook");
     } else {
-        findmy_startup_apply(NULL);
+        // On its own thread: it waits for the radio, and the start hooks after it need not
+        run_parallel(findmy_startup_apply, NULL, 2048);
     }
 
     furi_record_close(RECORD_STORAGE);

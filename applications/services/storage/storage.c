@@ -43,6 +43,7 @@ Storage* storage_app_alloc(void) {
     }
 
     storage_ext_init(&app->storage[ST_EXT]);
+    if(app->storage[ST_EXT].status == StorageStatusOK) boot_profile_mark("SD card mounted");
 
     // sd icon gui
     app->sd_gui.enabled = (app->storage[ST_EXT].status != StorageStatusNotReady);
