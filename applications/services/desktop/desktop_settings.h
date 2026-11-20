@@ -41,6 +41,14 @@ typedef struct {
     char name_or_path[128];
 } FavoriteApp;
 
+/** What happens after too many wrong PINs in a row */
+typedef enum {
+    DesktopPinFailActionNone,
+    DesktopPinFailActionPowerOff,
+    /** erase the internal storage (settings, PIN, pairings, keys); the SD card is kept */
+    DesktopPinFailActionFactoryReset,
+} DesktopPinFailAction;
+
 typedef struct {
     uint32_t auto_lock_delay_ms;
     uint8_t usb_inhibit_auto_lock;
@@ -52,6 +60,13 @@ typedef struct {
     char menu_style[32];
     /** Folder name under /ext/asset_packs, empty for the built-in assets. */
     char active_asset_pack[32];
+    /** 1: do not lock at start even with a PIN set (0, the default, locks as before) */
+    uint8_t boot_unlocked;
+    /** show the time and date on the lock screen */
+    uint8_t lock_clock;
+    /** DesktopPinFailAction, after pin_fail_limit wrong PINs in a row */
+    uint8_t pin_fail_action;
+    uint8_t pin_fail_limit;
 } DesktopSettings;
 
 void desktop_settings_load(DesktopSettings* settings);

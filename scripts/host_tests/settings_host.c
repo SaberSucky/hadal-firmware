@@ -3,11 +3,13 @@
  * scripts/asset_packer_test.py: the real load/migrate code and the real saved_struct, on host
  * storage. Files of every older version are written from the layouts those versions had.
  *
- *   migrate ROOT VERSION [CASE]   write /int/.desktop.settings as VERSION (14, 17, 18, 19), load
+ *   migrate ROOT VERSION [CASE]   write /int/.desktop.settings as VERSION (14, 17, 18, 19, 20), load
  *                                 it with the current code and print what came out
  *
- * CASE: "" (normal), "unterminated" (string fields full of 0xFF), "badsum" (checksum wrong)
+ * CASE: "" (normal), "unterminated" (string fields full of 0xFF), "badsum" (checksum wrong),
+ *       "badaction" (v20: a wrong-PIN action the firmware does not know)
  */
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -82,7 +84,7 @@ int main(int argc, char** argv) {
         SettingsV18 v18 = {.v17 = v17};
         strcpy(v18.menu_style, "Test.fal");
         ok = saved_struct_save(PATH, &v18, sizeof(v18), MAGIC, 18);
-    } else if(version == 19) {
+    } else if(version == 19 || version == 20) {
         DesktopSettings current;
         memset(&current, 0, sizeof(current));
         memcpy(&current, &v17, sizeof(v17)); // the same leading layout
@@ -92,7 +94,17 @@ int main(int argc, char** argv) {
             memset(current.menu_style, 0xFF, sizeof(current.menu_style));
             memset(current.active_asset_pack, 0xFF, sizeof(current.active_asset_pack));
         }
-        ok = saved_struct_save(PATH, &current, sizeof(current), MAGIC, 19);
+        if(version == 19) {
+            // v19 ended where the lock options begin
+            ok = saved_struct_save(
+                PATH, &current, offsetof(DesktopSettings, boot_unlocked), MAGIC, 19);
+        } else {
+            current.boot_unlocked = 1;
+            current.lock_clock = 1;
+            current.pin_fail_action = !strcmp(variant, "badaction") ? 7 : 2;
+            current.pin_fail_limit = 5;
+            ok = saved_struct_save(PATH, &current, sizeof(current), MAGIC, 20);
+        }
     }
     if(!ok) return 3;
 
@@ -121,5 +133,11 @@ int main(int argc, char** argv) {
     printf("menu_style %s\n", loaded.menu_style);
     printf("pack_len %zu\n", strnlen(loaded.active_asset_pack, sizeof(loaded.active_asset_pack)));
     printf("pack %s\n", loaded.active_asset_pack);
+    printf(
+        "lock %u %u %u %u\n",
+        loaded.boot_unlocked,
+        loaded.lock_clock,
+        loaded.pin_fail_action,
+        loaded.pin_fail_limit);
     return 0;
 }

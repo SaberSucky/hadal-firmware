@@ -7,6 +7,7 @@
 #include "../desktop_i.h"
 #include "../views/desktop_events.h"
 #include "../views/desktop_view_main.h"
+#include "../helpers/desktop_keybinds.h"
 #include "desktop_scene.h"
 
 #define TAG "DesktopSrv"
@@ -89,6 +90,103 @@ static void desktop_scene_main_start_favorite(Desktop* desktop, FavoriteApp* app
     }
 }
 
+/* ---- keybinds: what a button does, from the SD card (helpers/desktop_keybinds.h) ---- */
+
+#define KEYBINDS_FILE_MAX (4096U)
+
+_Static_assert(
+    DesktopMainEventKeybindEnd - DesktopMainEventKeybind == DesktopKeybindCount,
+    "an event for every keybind");
+
+// The action bound to a button, the file's last line for it; false if there is none
+static bool desktop_scene_main_keybind_read(Storage* storage, DesktopKeybind bind, FuriString* out) {
+    File* file = storage_file_alloc(storage);
+    bool found = false;
+    if(storage_file_open(file, DESKTOP_KEYBINDS_PATH, FSAM_READ, FSOM_OPEN_EXISTING)) {
+        char* text = malloc(KEYBINDS_FILE_MAX);
+        const size_t size = storage_file_read(file, text, KEYBINDS_FILE_MAX);
+        for(size_t start = 0; start < size;) {
+            const char* line = text + start;
+            const char* end = memchr(line, '\n', size - start);
+            const size_t length = end ? (size_t)(end - line) : size - start;
+            DesktopKeybind line_bind;
+            const char* action;
+            size_t action_length;
+            if(desktop_keybinds_parse_line(line, length, &line_bind, &action, &action_length) &&
+               line_bind == bind) {
+                furi_string_set_strn(out, action, action_length);
+                found = true;
+            }
+            start += length + 1;
+        }
+        free(text);
+    }
+    storage_file_free(file);
+    return found;
+}
+
+// What a button did before keybinds: the event the scene already knows
+static uint32_t desktop_scene_main_default_event(Desktop* desktop, DesktopKeybind bind) {
+    const bool dummy = desktop->settings.dummy_mode;
+    switch(bind) {
+    case DesktopKeybindUpPress:
+        return DesktopMainEventOpenLockMenu;
+    case DesktopKeybindUpHold:
+        return dummy ? DesktopDummyEventOpenUpLong : DesktopMainEventLock;
+    case DesktopKeybindDownPress:
+        return dummy ? DesktopDummyEventOpenDown : DesktopMainEventOpenArchive;
+    case DesktopKeybindDownHold:
+        return dummy ? DesktopDummyEventOpenDownLong : DesktopMainEventOpenDebug;
+    case DesktopKeybindLeftPress:
+        return dummy ? DesktopDummyEventOpenLeft : DesktopMainEventOpenFavoriteLeftShort;
+    case DesktopKeybindLeftHold:
+        return dummy ? DesktopDummyEventOpenLeftLong : DesktopMainEventOpenFavoriteLeftLong;
+    case DesktopKeybindRightHold:
+        return dummy ? DesktopDummyEventOpenRightLong : DesktopMainEventOpenFavoriteRightLong;
+    case DesktopKeybindOkPress:
+        return dummy ? DesktopDummyEventOpenOk : DesktopMainEventOpenMenu;
+    case DesktopKeybindOkHold:
+        if(dummy) return DesktopDummyEventOpenOkLong;
+        return furi_hal_rtc_is_flag_set(FuriHalRtcFlagDebug) ?
+                   DesktopAnimationEventNewIdleAnimation :
+                   DesktopMainEventOpenFavoriteOkLong;
+    default:
+        // a short Right press is the animation's
+        return DesktopAnimationEventInteractAnimation;
+    }
+}
+
+// Do what the button is bound to; false if it is not bound
+static bool desktop_scene_main_keybind_run(Desktop* desktop, DesktopKeybind bind) {
+    FuriString* action = furi_string_alloc();
+    const bool bound = desktop_scene_main_keybind_read(desktop->storage, bind, action);
+    if(bound) {
+        const char* text = furi_string_get_cstr(action);
+        static const uint32_t events[] = {
+            [DesktopKeybindActionMainMenu] = DesktopMainEventOpenMenu,
+            [DesktopKeybindActionLockMenu] = DesktopMainEventOpenLockMenu,
+            [DesktopKeybindActionLock] = DesktopMainEventLock,
+            [DesktopKeybindActionArchive] = DesktopMainEventOpenArchive,
+            [DesktopKeybindActionPowerOff] = DesktopMainEventOpenPowerOff,
+        };
+        const DesktopKeybindAction desktop_action = desktop_keybind_action(text);
+        if(desktop_action == DesktopKeybindActionNothing) {
+            // bound to nothing: the button does nothing
+        } else if(desktop_action != DesktopKeybindActionNone) {
+            view_dispatcher_send_custom_event(desktop->view_dispatcher, events[desktop_action]);
+        } else if(text[0] != '/' || furi_string_end_withi_str(action, ".fap")) {
+            // an app, by name or on the SD card
+            loader_start_detached_with_gui_error(desktop->loader, text, NULL);
+        } else {
+            // a file: in the app it belongs to
+            const char* app = desktop_keybind_app_for_file(text);
+            if(app) loader_start_detached_with_gui_error(desktop->loader, app, text);
+        }
+    }
+    furi_string_free(action);
+    return bound;
+}
+
 void desktop_scene_main_callback(DesktopEvent event, void* context) {
     Desktop* desktop = (Desktop*)context;
     if(desktop->in_transition) return;
@@ -115,6 +213,16 @@ void desktop_scene_main_on_enter(void* context) {
 bool desktop_scene_main_on_event(void* context, SceneManagerEvent event) {
     Desktop* desktop = (Desktop*)context;
     bool consumed = false;
+
+    if(event.type == SceneManagerEventTypeCustom && event.event >= DesktopMainEventKeybind &&
+       event.event < DesktopMainEventKeybindEnd) {
+        const DesktopKeybind bind = event.event - DesktopMainEventKeybind;
+        if(!desktop_scene_main_keybind_run(desktop, bind)) {
+            view_dispatcher_send_custom_event(
+                desktop->view_dispatcher, desktop_scene_main_default_event(desktop, bind));
+        }
+        return true;
+    }
 
     if(event.type == SceneManagerEventTypeCustom) {
         switch(event.event) {
@@ -189,7 +297,10 @@ bool desktop_scene_main_on_event(void* context, SceneManagerEvent event) {
             consumed = true;
             break;
         case DesktopAnimationEventInteractAnimation:
-            if(!animation_manager_interact_process(desktop->animation_manager)) {
+            // a short Right press: the binding, if there is one, comes before the animation
+            if(desktop_scene_main_keybind_run(desktop, DesktopKeybindRightPress)) {
+                // done
+            } else if(!animation_manager_interact_process(desktop->animation_manager)) {
                 if(!desktop->settings.dummy_mode) {
                     desktop_scene_main_open_app_or_profile(
                         desktop, &desktop->settings.favorite_apps[FavoriteAppRightShort]);

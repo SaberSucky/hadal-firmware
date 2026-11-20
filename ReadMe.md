@@ -32,6 +32,8 @@ The Flipper ships with ST's "BLE Light" radio stack, which can only advertise an
 - **Interface → Main Menu:** put the main menu in your own order, take apps out, and add any app from the SD card. Kept in `/ext/apps_data/loader/main_menu.txt` (one entry per line); without it the menu has the built-in order, and Settings is always in it
 - **Interface → Menu Style:** the main menu's look (the built-in list or one of the style plugins), applied at once
 - **Interface → Asset Pack:** see below
+- **Interface → Desktop Keys:** what each button does on the desktop, pressed or held, all ten of them (the ones that were fixed too): a desktop action (main menu, lock menu, lock, archive, power off, nothing), any app, or any file, which opens in its app (a `.sub` in Sub-GHz, a `.ir` in Infrared...). Kept in `/ext/apps_data/desktop/keybinds.txt`, one line a button; a button with no line does what it always did
+- **Interface → Lock Screen:** lock at start or not when a PIN is set, the time and date on the lock screen, and what too many wrong PINs in a row do: nothing, power off, or erase the Flipper (its settings, PIN, pairings and saved keys; the SD card is kept). The PIN screen says how many tries are left
 - **Protocols → Extended Sub-GHz:** the range beyond the radio chip's specification, which used to need a file edited by hand. It asks first, and applies after a restart
 
 ### Updates and crashes

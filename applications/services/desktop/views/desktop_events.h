@@ -73,4 +73,8 @@ typedef enum {
     DesktopGlobalAssetPackStable,
     DesktopGlobalBootStable,
     DesktopGlobalSaveCrashReport,
+
+    /** A desktop button pressed or held: this + DesktopKeybind (helpers/desktop_keybinds.h) */
+    DesktopMainEventKeybind,
+    DesktopMainEventKeybindEnd = DesktopMainEventKeybind + 10,
 } DesktopEvent;

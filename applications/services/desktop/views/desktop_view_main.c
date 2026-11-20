@@ -7,6 +7,7 @@
 #include <dolphin/dolphin.h>
 
 #include "desktop_view_main.h"
+#include "../helpers/desktop_keybinds.h"
 
 struct DesktopMainView {
     View* view;
@@ -49,63 +50,21 @@ bool desktop_main_input_callback(InputEvent* event, void* context) {
 
     DesktopMainView* main_view = context;
 
-    if(main_view->dummy_mode == false) {
-        if(event->type == InputTypeShort) {
-            if(event->key == InputKeyOk) {
-                main_view->callback(DesktopMainEventOpenMenu, main_view->context);
-            } else if(event->key == InputKeyUp) {
-                main_view->callback(DesktopMainEventOpenLockMenu, main_view->context);
-            } else if(event->key == InputKeyDown) {
-                main_view->callback(DesktopMainEventOpenArchive, main_view->context);
-            } else if(event->key == InputKeyLeft) {
-                main_view->callback(DesktopMainEventOpenFavoriteLeftShort, main_view->context);
-            }
-            // Right key short is handled by animation manager
-        } else if(event->type == InputTypeLong) {
-            if(event->key == InputKeyUp) {
-                main_view->callback(DesktopMainEventLock, main_view->context);
-            } else if(event->key == InputKeyDown) {
-                main_view->callback(DesktopMainEventOpenDebug, main_view->context);
-            } else if(event->key == InputKeyLeft) {
-                main_view->callback(DesktopMainEventOpenFavoriteLeftLong, main_view->context);
-            } else if(event->key == InputKeyRight) {
-                main_view->callback(DesktopMainEventOpenFavoriteRightLong, main_view->context);
-            } else if(event->key == InputKeyOk) {
-                if(furi_hal_rtc_is_flag_set(FuriHalRtcFlagDebug)) {
-                    main_view->callback(DesktopAnimationEventNewIdleAnimation, main_view->context);
-                } else {
-                    main_view->callback(DesktopMainEventOpenFavoriteOkLong, main_view->context);
-                }
-            }
-        }
-    } else {
-        if(event->type == InputTypeShort) {
-            if(event->key == InputKeyOk) {
-                main_view->callback(DesktopDummyEventOpenOk, main_view->context);
-            } else if(event->key == InputKeyUp) {
-                main_view->callback(DesktopMainEventOpenLockMenu, main_view->context);
-            } else if(event->key == InputKeyDown) {
-                main_view->callback(DesktopDummyEventOpenDown, main_view->context);
-            } else if(event->key == InputKeyLeft) {
-                main_view->callback(DesktopDummyEventOpenLeft, main_view->context);
-            }
-            // Right key short is handled by animation manager
-        } else if(event->type == InputTypeLong) {
-            if(event->key == InputKeyOk) {
-                // Not working in DummyMode
-                // if(furi_hal_rtc_is_flag_set(FuriHalRtcFlagDebug)) {
-                //     main_view->callback(DesktopAnimationEventNewIdleAnimation, main_view->context);
-                // }
-                main_view->callback(DesktopDummyEventOpenOkLong, main_view->context);
-            } else if(event->key == InputKeyUp) {
-                main_view->callback(DesktopDummyEventOpenUpLong, main_view->context);
-            } else if(event->key == InputKeyDown) {
-                main_view->callback(DesktopDummyEventOpenDownLong, main_view->context);
-            } else if(event->key == InputKeyLeft) {
-                main_view->callback(DesktopDummyEventOpenLeftLong, main_view->context);
-            } else if(event->key == InputKeyRight) {
-                main_view->callback(DesktopDummyEventOpenRightLong, main_view->context);
-            }
+    // every press and hold of the five buttons goes to the scene, which looks up what it is bound
+    // to (helpers/desktop_keybinds.h); a short Right press is the animation's, which hands it on
+    if(event->type == InputTypeShort || event->type == InputTypeLong) {
+        static const int8_t keybinds[InputKeyMAX] = {
+            [InputKeyUp] = DesktopKeybindUpPress,
+            [InputKeyDown] = DesktopKeybindDownPress,
+            [InputKeyRight] = DesktopKeybindRightPress,
+            [InputKeyLeft] = DesktopKeybindLeftPress,
+            [InputKeyOk] = DesktopKeybindOkPress,
+            [InputKeyBack] = -1,
+        };
+        const int8_t press = keybinds[event->key];
+        if(press >= 0) {
+            const int bind = press + (event->type == InputTypeLong ? 1 : 0);
+            main_view->callback(DesktopMainEventKeybind + bind, main_view->context);
         }
     }
 

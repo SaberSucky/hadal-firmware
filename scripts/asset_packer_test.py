@@ -2015,6 +2015,7 @@ class SettingsMigrationTests(TempDirCase):
         out = self.migrate(14)
         self.assertKept(out)
         self.assertEqual((out["usb"], out["menu_style_len"], out["pack_len"]), ("0", "0", "0"))
+        self.assertEqual(out["lock"], "0 0 0 0")
 
     def test_v17_file_loads_with_no_pack(self):
         out = self.migrate(17)
@@ -2027,20 +2028,33 @@ class SettingsMigrationTests(TempDirCase):
         self.assertEqual(out["menu_style"], "Test.fal")
         self.assertEqual(out["pack_len"], "0")
 
-    def test_v19_file_round_trips_the_pack(self):
+    def test_v19_file_keeps_the_pack_and_gains_the_old_lock_behaviour(self):
         out = self.migrate(19)
         self.assertKept(out)
         self.assertEqual((out["menu_style"], out["pack"]), ("Test.fal", "Hadal"))
-        self.assertEqual(out["file_version"], 19)
+        # locks at start, no clock, nothing happens on wrong PINs: as before v20
+        self.assertEqual(out["lock"], "0 0 0 0")
+
+    def test_v20_file_round_trips_the_lock_options(self):
+        out = self.migrate(20)
+        self.assertKept(out)
+        self.assertEqual(out["pack"], "Hadal")
+        self.assertEqual(out["lock"], "1 1 2 5")
+        self.assertEqual(out["file_version"], 20)
+
+    def test_an_unknown_wrong_pin_action_is_none(self):
+        out = self.migrate(20, "badaction")
+        self.assertEqual(out["lock"], "1 1 0 5")
 
     def test_strings_without_a_terminator_are_cut_to_fit(self):
         out = self.migrate(19, "unterminated")
         self.assertEqual((out["menu_style_len"], out["pack_len"]), ("31", "31"))
 
-    def test_a_damaged_file_gives_defaults_and_is_rewritten_as_v19(self):
+    def test_a_damaged_file_gives_defaults_and_is_rewritten_as_v20(self):
         out = self.migrate(19, "badsum")
         self.assertEqual((out["auto_lock"], out["pack_len"], out["menu_style_len"]), ("0", "0", "0"))
-        self.assertEqual(out["file_version"], 19)
+        self.assertEqual(out["lock"], "0 0 0 0")
+        self.assertEqual(out["file_version"], 20)
 
 
 class IconIndexTests(TempDirCase):
@@ -3109,6 +3123,96 @@ class BatteryStatsTests(unittest.TestCase):
         for seconds, text in [(35 * 60, "35 min"), (5 * 3600 + 20 * 60, "5 h 20 min"),
                               (30 * 3600, "1 day 6 h"), (52 * 3600, "2 days 4 h")]:
             self.assertEqual(self.run_host([], "duration", str(seconds)), [text])
+
+
+class KeybindTests(unittest.TestCase):
+    """The desktop's keybinds file (applications/services/desktop/helpers/desktop_keybinds.c)"""
+
+    @classmethod
+    def setUpClass(cls):
+        import subprocess
+
+        if not _have_sanitizer("address,undefined"):
+            raise unittest.SkipTest("gcc with AddressSanitizer is not available")
+        cls.build_dir = tempfile.mkdtemp(prefix="kb_")
+        cls.exe = os.path.join(cls.build_dir, "keybinds_host")
+        helpers = os.path.join(REPO_ROOT, "applications", "services", "desktop", "helpers")
+        subprocess.check_call(
+            [
+                "gcc", "-std=gnu11", "-g", "-O1", "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
+                "-Wall", "-Wextra", "-Werror", "-I", helpers, "-o", cls.exe,
+                os.path.join(REPO_ROOT, "scripts", "host_tests", "keybinds_host.c"),
+                os.path.join(helpers, "desktop_keybinds.c"),
+            ]
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.build_dir, True)
+
+    def parse(self, *lines):
+        import subprocess
+
+        r = subprocess.run([self.exe], input="".join(l + "\n" for l in lines), capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+        return r.stdout.splitlines()
+
+    def test_bindings_and_desktop_actions(self):
+        out = self.parse(
+            "up press: Lock Menu",
+            "  OK HOLD :   main menu  ",
+            "down hold: Nothing",
+            "right press: Power Off",
+            "left press:Archive",
+            "up hold: lock",
+        )
+        self.assertEqual(out, [
+            "up press|Lock Menu|2|-",
+            "ok hold|main menu|1|-",
+            "down hold|Nothing|6|-",
+            "right press|Power Off|5|-",
+            "left press|Archive|4|-",
+            "up hold|lock|3|-",
+        ])
+
+    def test_apps_and_files(self):
+        out = self.parse(
+            "ok hold: Infrared",
+            "left hold: /ext/subghz/garage.sub",
+            "right hold: /ext/apps/Tools/battery_history.fap",
+            "down press: /ext/badusb/demo.txt",
+            "down hold: /ext/notes/demo.txt",
+            "up press: /ext/scripts/blink.JS",
+            "ok press: /ext/infrared/tv.ir",
+        )
+        self.assertEqual(out, [
+            "ok hold|Infrared|0|-",
+            "left hold|/ext/subghz/garage.sub|0|Sub-GHz",
+            "right hold|/ext/apps/Tools/battery_history.fap|0|-",
+            "down press|/ext/badusb/demo.txt|0|Bad USB",
+            "down hold|/ext/notes/demo.txt|0|-",
+            "up press|/ext/scripts/blink.JS|0|/ext/apps/assets/js_app.fap",
+            "ok press|/ext/infrared/tv.ir|0|Infrared",
+        ])
+
+    def test_lines_that_are_not_bindings(self):
+        out = self.parse(
+            "# a comment: with a colon",
+            "",
+            "up: Lock",
+            "up press:",
+            "up press:    ",
+            "sideways press: Lock",
+            "up pressed: Lock",
+        )
+        self.assertEqual(out, ["-"] * 7)
+
+    def test_fuzz(self):
+        import subprocess
+
+        for seed in ("3", "41"):
+            r = subprocess.run([self.exe, "fuzz", "20000", seed], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr[-1500:])
 
 
 class ScreenPreviewTests(TempDirCase):

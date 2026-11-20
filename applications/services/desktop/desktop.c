@@ -665,7 +665,8 @@ int32_t desktop_srv(void* p) {
 
     scene_manager_next_scene(desktop->scene_manager, DesktopSceneMain);
 
-    if(desktop_pin_code_is_set()) {
+    // with a PIN set, the Flipper starts locked unless the user turned that off
+    if(desktop_pin_code_is_set() && !desktop->settings.boot_unlocked) {
         desktop_lock(desktop);
     } else {
         CliVcp* cli_vcp = furi_record_open(RECORD_CLI_VCP);

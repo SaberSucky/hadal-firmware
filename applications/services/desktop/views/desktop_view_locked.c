@@ -8,6 +8,9 @@
 
 #include "../desktop_i.h"
 #include "desktop_view_locked.h"
+#include "../helpers/desktop_lock_clock.h"
+#include <furi_hal_rtc.h>
+#include <locale/locale.h>
 
 #define DOOR_MOVING_INTERVAL_MS  (1000 / 16)
 #define LOCKED_HINT_TIMEOUT_MS   (1000)
@@ -28,6 +31,7 @@ struct DesktopViewLocked {
     void* context;
 
     FuriTimer* timer;
+    FuriTimer* clock_timer;
     uint8_t lock_count;
     uint32_t lock_lastpress;
 };
@@ -42,6 +46,7 @@ typedef enum {
 
 typedef struct {
     bool pin_locked;
+    bool show_clock;
     int8_t door_offset;
     DesktopViewLockedState view_state;
 } DesktopViewLockedModel;
@@ -59,6 +64,27 @@ void desktop_view_locked_set_callback(
 static void locked_view_timer_callback(void* context) {
     DesktopViewLocked* locked_view = context;
     locked_view->callback(DesktopLockedEventUpdate, locked_view->context);
+}
+
+// Once a second while the clock shows, so that its minute turns over on time
+static void locked_view_clock_timer_callback(void* context) {
+    DesktopViewLocked* locked_view = context;
+    with_view_model(
+        locked_view->view,
+        DesktopViewLockedModel * model,
+        {},
+        model->show_clock && model->view_state == DesktopViewLockedStateLocked);
+}
+
+void desktop_view_locked_set_clock(DesktopViewLocked* locked_view, bool show) {
+    furi_assert(locked_view);
+    with_view_model(
+        locked_view->view, DesktopViewLockedModel * model, { model->show_clock = show; }, true);
+    if(show) {
+        furi_timer_start(locked_view->clock_timer, furi_ms_to_ticks(1000));
+    } else {
+        furi_timer_stop(locked_view->clock_timer);
+    }
 }
 
 static void desktop_view_locked_doors_draw(Canvas* canvas, DesktopViewLockedModel* model) {
@@ -133,6 +159,10 @@ static void desktop_view_locked_draw(Canvas* canvas, void* model) {
     } else if(view_state == DesktopViewLockedStateUnlockedHintShown) {
         canvas_set_font(canvas, FontPrimary);
         elements_multiline_text_framed(canvas, 42, 30 + STATUS_BAR_Y_SHIFT, "Unlocked");
+    } else if(view_state == DesktopViewLockedStateLocked && m->show_clock) {
+        DateTime now;
+        furi_hal_rtc_get_datetime(&now);
+        desktop_lock_clock_draw(canvas, &now, locale_get_time_format() == LocaleTimeFormat12h);
     }
 }
 
@@ -195,6 +225,8 @@ DesktopViewLocked* desktop_view_locked_alloc(void) {
     locked_view->view = view_alloc();
     locked_view->timer =
         furi_timer_alloc(locked_view_timer_callback, FuriTimerTypePeriodic, locked_view);
+    locked_view->clock_timer =
+        furi_timer_alloc(locked_view_clock_timer_callback, FuriTimerTypePeriodic, locked_view);
 
     view_allocate_model(locked_view->view, ViewModelTypeLocking, sizeof(DesktopViewLockedModel));
     view_set_context(locked_view->view, locked_view);
@@ -207,6 +239,8 @@ DesktopViewLocked* desktop_view_locked_alloc(void) {
 void desktop_view_locked_free(DesktopViewLocked* locked_view) {
     furi_assert(locked_view);
     furi_timer_free(locked_view->timer);
+    furi_timer_stop(locked_view->clock_timer);
+    furi_timer_free(locked_view->clock_timer);
     view_free(locked_view->view);
     free(locked_view);
 }
@@ -230,6 +264,7 @@ void desktop_view_locked_lock(DesktopViewLocked* locked_view, bool pin_locked) {
 
 void desktop_view_locked_unlock(DesktopViewLocked* locked_view) {
     locked_view->lock_count = 0;
+    desktop_view_locked_set_clock(locked_view, false);
     DesktopViewLockedModel* model = view_get_model(locked_view->view);
     model->view_state = DesktopViewLockedStateUnlockedHintShown;
     model->pin_locked = false;

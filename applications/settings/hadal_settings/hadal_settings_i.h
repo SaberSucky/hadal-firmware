@@ -17,6 +17,7 @@
 #include "pack_info.h"
 #include "main_menu_edit.h"
 #include "menu_styles.h"
+#include "keybinds.h"
 
 #define HADAL_MAX_PACKS 40u
 
@@ -42,6 +43,8 @@ typedef struct {
 
     HadalMainMenu main_menu;
     size_t main_menu_selected; /**< the entry the item page is about */
+
+    DesktopKeybind keybind_selected; /**< the button the action page is about */
 
     char pack_names[HADAL_MAX_PACKS][HADAL_PACK_NAME_SIZE];
     size_t pack_count;

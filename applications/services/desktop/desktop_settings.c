@@ -9,7 +9,8 @@
 #define DESKTOP_SETTINGS_VER_14 (14)
 #define DESKTOP_SETTINGS_VER_17 (17)
 #define DESKTOP_SETTINGS_VER_18 (18)
-#define DESKTOP_SETTINGS_VER    (19)
+#define DESKTOP_SETTINGS_VER_19 (19)
+#define DESKTOP_SETTINGS_VER    (20)
 
 #define DESKTOP_SETTINGS_PATH  INT_PATH(DESKTOP_SETTINGS_FILE_NAME)
 #define DESKTOP_SETTINGS_MAGIC (0x17)
@@ -30,6 +31,20 @@ _Static_assert(
         8 + sizeof(FavoriteApp) * (FavoriteAppNumber + DummyAppNumber) + 32,
     "DesktopSettings before active_asset_pack must still be the v18 layout");
 
+// v19 files hold everything up to the lock options, which v20 appended
+_Static_assert(
+    offsetof(DesktopSettings, boot_unlocked) ==
+        offsetof(DesktopSettings, active_asset_pack) + 32,
+    "DesktopSettings before boot_unlocked must still be the v19 layout");
+
+// The fields v20 added: zero is the behaviour before them
+static void desktop_settings_clear_lock_options(DesktopSettings* settings) {
+    settings->boot_unlocked = 0;
+    settings->lock_clock = 0;
+    settings->pin_fail_action = DesktopPinFailActionNone;
+    settings->pin_fail_limit = 0;
+}
+
 // Actual size of DesktopSettings v13
 //static_assert(sizeof(DesktopSettingsV13) == 1234);
 
@@ -47,6 +62,10 @@ static void desktop_settings_terminate_strings(DesktopSettings* settings) {
     desktop_settings_terminate_apps(settings->dummy_apps, DummyAppNumber);
     settings->menu_style[sizeof(settings->menu_style) - 1] = '\0';
     settings->active_asset_pack[sizeof(settings->active_asset_pack) - 1] = '\0';
+    // an action the firmware does not know is none
+    if(settings->pin_fail_action > DesktopPinFailActionFactoryReset) {
+        settings->pin_fail_action = DesktopPinFailActionNone;
+    }
 }
 
 void desktop_settings_load(DesktopSettings* settings) {
@@ -66,6 +85,17 @@ void desktop_settings_load(DesktopSettings* settings) {
                 DESKTOP_SETTINGS_MAGIC,
                 DESKTOP_SETTINGS_VER);
 
+        } else if(version == DESKTOP_SETTINGS_VER_19) {
+            // v20 appended the lock options; everything before them is unchanged
+            success = saved_struct_load(
+                DESKTOP_SETTINGS_PATH,
+                settings,
+                offsetof(DesktopSettings, boot_unlocked),
+                DESKTOP_SETTINGS_MAGIC,
+                DESKTOP_SETTINGS_VER_19);
+
+            if(success) desktop_settings_clear_lock_options(settings);
+
         } else if(version == DESKTOP_SETTINGS_VER_18) {
             // v19 appended the asset pack name; everything before it is unchanged
             success = saved_struct_load(
@@ -77,6 +107,7 @@ void desktop_settings_load(DesktopSettings* settings) {
 
             if(success) {
                 memset(settings->active_asset_pack, 0, sizeof(settings->active_asset_pack));
+                desktop_settings_clear_lock_options(settings);
             }
 
         } else if(version == DESKTOP_SETTINGS_VER_17) {
@@ -90,6 +121,7 @@ void desktop_settings_load(DesktopSettings* settings) {
             if(success) {
                 memset(settings->menu_style, 0, sizeof(settings->menu_style));
                 memset(settings->active_asset_pack, 0, sizeof(settings->active_asset_pack));
+                desktop_settings_clear_lock_options(settings);
             }
 
         } else if(version == DESKTOP_SETTINGS_VER_14) {
@@ -116,6 +148,7 @@ void desktop_settings_load(DesktopSettings* settings) {
                     settings->dummy_apps, settings_v14->dummy_apps, sizeof(settings->dummy_apps));
                 memset(settings->menu_style, 0, sizeof(settings->menu_style));
                 memset(settings->active_asset_pack, 0, sizeof(settings->active_asset_pack));
+                desktop_settings_clear_lock_options(settings);
             }
 
             free(settings_v14);

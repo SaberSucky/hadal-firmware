@@ -11,6 +11,7 @@
 #include "../views/desktop_events.h"
 #include "../views/desktop_view_pin_input.h"
 #include "../helpers/pin_code.h"
+#include <power/power_service/power.h>
 #include "desktop_scene.h"
 
 #define WRONG_PIN_HEADER_TIMEOUT 3000
@@ -63,6 +64,28 @@ static void desktop_scene_pin_input_done_callback(const DesktopPinCode* pin_code
     }
 }
 
+// The user's choice of what happens after too many wrong PINs in a row (Settings > Hadal >
+// Interface > Lock Screen). Power off keeps the count, so the next wrong PIN powers off again;
+// a factory reset erases the internal storage (the PIN with it) and keeps the SD card.
+static bool desktop_scene_pin_input_too_many_fails(Desktop* desktop) {
+    const DesktopSettings* settings = &desktop->settings;
+    if(settings->pin_fail_action == DesktopPinFailActionNone || !settings->pin_fail_limit) {
+        return false;
+    }
+    if(furi_hal_rtc_get_pin_fails() < settings->pin_fail_limit) return false;
+
+    Power* power = furi_record_open(RECORD_POWER);
+    if(settings->pin_fail_action == DesktopPinFailActionFactoryReset) {
+        furi_hal_rtc_reset_registers();
+        furi_hal_rtc_set_flag(FuriHalRtcFlagStorageFormatInternal);
+        power_reboot(power, PowerBootModeNormal);
+    } else {
+        power_off(power);
+    }
+    furi_record_close(RECORD_POWER);
+    return true;
+}
+
 static void desktop_scene_pin_input_timer_callback(void* context) {
     Desktop* desktop = context;
 
@@ -73,7 +96,18 @@ static void desktop_scene_pin_input_timer_callback(void* context) {
 static void
     desktop_scene_pin_input_update_wrong_count(DesktopScenePinInputState* state, Desktop* desktop) {
     uint32_t attempts = furi_hal_rtc_get_pin_fails();
-    if(attempts > 0) {
+    const DesktopSettings* settings = &desktop->settings;
+    if(attempts > 0 && settings->pin_fail_action != DesktopPinFailActionNone &&
+       settings->pin_fail_limit > attempts) {
+        // say how many are left before the Flipper powers off or erases itself
+        furi_string_printf(
+            state->enter_pin_string,
+            "%lu more and it %s",
+            settings->pin_fail_limit - attempts,
+            settings->pin_fail_action == DesktopPinFailActionFactoryReset ? "resets" : "powers off");
+        desktop_view_pin_input_set_label_tertiary(
+            desktop->pin_input_view, 64, 60, furi_string_get_cstr(state->enter_pin_string));
+    } else if(attempts > 0) {
         furi_string_printf(state->enter_pin_string, "Wrong Attempts: %lu", attempts);
         desktop_view_pin_input_set_label_tertiary(
             desktop->pin_input_view, 64, 60, furi_string_get_cstr(state->enter_pin_string));
@@ -118,6 +152,10 @@ bool desktop_scene_pin_input_on_event(void* context, SceneManagerEvent event) {
     if(event.type == SceneManagerEventTypeCustom) {
         switch(event.event) {
         case DesktopPinInputEventUnlockFailed:
+            if(desktop_scene_pin_input_too_many_fails(desktop)) {
+                consumed = true;
+                break;
+            }
             pin_timeout = desktop_pin_lock_get_fail_timeout();
             if(pin_timeout > 0) {
                 desktop_pin_lock_error_notify();

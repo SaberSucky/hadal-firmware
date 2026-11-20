@@ -62,6 +62,7 @@ void desktop_scene_locked_on_enter(void* context) {
             desktop_view_locked_lock(desktop->locked_view, false);
             desktop_view_locked_close_doors(desktop->locked_view);
         }
+        desktop_view_locked_set_clock(desktop->locked_view, desktop->settings.lock_clock);
         scene_manager_set_scene_state(
             desktop->scene_manager, DesktopSceneLocked, DesktopSceneLockedStateRepeatEnter);
     }
