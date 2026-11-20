@@ -241,6 +241,11 @@ static void* drawer(void* arg) {
     return NULL;
 }
 
+// the firmware notes the pack's state for crash reports; nothing to note on the host
+void furi_crash_report_note_pack(const char* text) {
+    (void)text;
+}
+
 int main(int argc, char** argv) {
     if(argc < 3) return 2;
     const char* command = argv[1];

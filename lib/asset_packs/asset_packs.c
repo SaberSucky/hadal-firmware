@@ -1,4 +1,5 @@
 #include "asset_packs.h"
+#include <core/crash_report.h>
 #include "asset_pack_format.h"
 
 #include <assets_icon_index.h>
@@ -434,6 +435,7 @@ static void load_static_icon(LoadState* state, const char* file_path, const char
     if(original && original->frame_count != 1) return;
     if(!original && !app_only_allowed(pack_path)) return;
     if(already_loaded(state, original, name_hash)) return;
+    if(!heap_has_room(2 * MAX_FILE_SIZE)) return; // read, then copied
 
     size_t size = 0;
     uint8_t* data = read_file(state->storage, file_path, MAX_FILE_SIZE, &size);
@@ -498,8 +500,13 @@ static void load_animated_icon(LoadState* state, const char* dir_path, const cha
     size_t blob_bytes = 0;
     bool ok = true;
 
-    // a load cancelled (an app starting) stops between frames, not after all of them
+    // a load cancelled (an app starting) stops between frames, not after all of them; and a
+    // frame is read only with room for it, its icon's copy and the reserve
     for(size_t i = 0; i < frame_count && ok && !load_cancelled(state); i++) {
+        if(!heap_has_room(2 * (blob_bytes + MAX_FILE_SIZE))) {
+            ok = false;
+            break;
+        }
         char frame_name[16];
         snprintf(frame_name, sizeof(frame_name), "frame_%02u.bm", (unsigned)i);
         ok = join_path(path, sizeof(path), dir_path, frame_name);
@@ -571,7 +578,9 @@ static void scan_directory(
     if(storage_dir_open(dir, dir_path)) {
         FileInfo info;
         char name[NAME_BUFFER_SIZE];
-        while(!load_cancelled(state) && storage_dir_read(dir, &info, name, sizeof(name))) {
+        // and the scan ends when the RAM runs short: nothing more could be kept
+        while(!load_cancelled(state) && heap_has_room(MAX_FILE_SIZE) &&
+              storage_dir_read(dir, &info, name, sizeof(name))) {
             if(strlen(name) + 1 >= sizeof(name)) continue; // possibly truncated
             char child_path[PATH_SIZE];
             char child_pack[PATH_SIZE];
@@ -671,6 +680,9 @@ static int32_t loader_thread(void* context) {
 
     state.storage = furi_record_open(RECORD_STORAGE);
     bool path_ok = join_path(state.pack_path, sizeof(state.pack_path), ASSET_PACKS_PATH, loader->name);
+    char note[ASSET_PACK_NAME_SIZE + 24]; // the crash report keeps its first 31 characters
+    snprintf(note, sizeof(note), "%s loading", loader->name);
+    furi_crash_report_note_pack(note);
 
     // Present for the whole load: if the firmware dies in here, the next boot sees it and
     // skips the pack instead of crashing again. A pack already proved stable this session is
@@ -760,6 +772,13 @@ static int32_t loader_thread(void* context) {
         (unsigned long)(furi_get_tick() - started),
         installed ? "" : " (not installed)");
 
+    snprintf(
+        note,
+        sizeof(note),
+        "%s, %u B held",
+        loader->name,
+        (unsigned)(asset_packs.ram_used + asset_packs.font_ram));
+    furi_crash_report_note_pack(note);
     atomic_store(&asset_packs.loading, false);
     if(installed) notify_changed();
     free(loader);
@@ -968,6 +987,10 @@ void asset_packs_reload_icons(void) {
     furi_mutex_release(asset_packs.mutex);
 
     if(reload) start_loader(fonts_missing);
+}
+
+bool asset_packs_is_loading(void) {
+    return atomic_load(&asset_packs.loading);
 }
 
 void asset_packs_mark_stable(void) {

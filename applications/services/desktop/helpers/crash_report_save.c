@@ -60,6 +60,7 @@ static void crash_report_format(const FuriCrashReport* report, FuriString* text)
             report->app,
             report->app_heap_free);
     }
+    if(report->pack[0]) furi_string_cat_printf(text, "\nAsset pack: %s", report->pack);
     furi_string_cat_printf(
         text,
         "\nMemory: %lu bytes free, %lu at the lowest\n"

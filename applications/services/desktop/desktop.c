@@ -56,6 +56,8 @@ static void desktop_loader_callback(const void* message, void* context) {
 }
 
 /** Called by the asset pack manager from whichever thread changed something. */
+#define DESKTOP_PACK_RELOAD_MS 2000
+
 static void desktop_asset_packs_changed_callback(void* context) {
     Desktop* desktop = context;
     view_dispatcher_send_custom_event(desktop->view_dispatcher, DesktopGlobalAssetPacksChanged);
@@ -194,7 +196,8 @@ static bool desktop_custom_event_callback(void* context, uint32_t event) {
         } else {
             animation_manager_load_and_continue_animation(desktop->animation_manager);
         }
-        asset_packs_reload_icons();
+        desktop->pack_reload_pending = true;
+        desktop->pack_reload_after = furi_get_tick() + furi_ms_to_ticks(DESKTOP_PACK_RELOAD_MS);
         desktop_auto_lock_arm(desktop);
         desktop->app_running = false;
 
@@ -261,6 +264,11 @@ static void desktop_tick_event_callback(void* context) {
     if(app->animation_reload_pending &&
        !gui_active_view_port_count(app->gui, GuiLayerFullscreen)) {
         desktop_animation_reload_if_pending(app);
+    }
+    if(app->pack_reload_pending && !app->app_running &&
+       (int32_t)(furi_get_tick() - app->pack_reload_after) >= 0) {
+        app->pack_reload_pending = false;
+        asset_packs_reload_icons();
     }
     scene_manager_handle_tick_event(app->scene_manager);
 }

@@ -1031,6 +1031,8 @@ static const char* loader_app_short_name(const char* path) {
 }
 
 static void loader_check_leak(Loader* loader) {
+    // a pack loading (the app changed the pack, say) takes memory that is not the app's
+    if(asset_packs_is_loading()) return;
     const size_t after = memmgr_get_free_heap();
     if(after + LOADER_LEAK_SLACK_BYTES >= loader->app.heap_before) return;
     const size_t kept = loader->app.heap_before - after;

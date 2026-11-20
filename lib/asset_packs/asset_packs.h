@@ -43,6 +43,9 @@ void asset_packs_get_active(char* name, size_t size);
 /** Free the active pack's icons, e.g. to give a big app the RAM. Drawing falls back to built-in. */
 void asset_packs_unload_icons(void);
 
+/** Whether a pack is loading now (its memory is in use and changing) */
+bool asset_packs_is_loading(void);
+
 /** Load the active pack's icons again after asset_packs_unload_icons(). No-op if not unloaded. */
 void asset_packs_reload_icons(void);
 

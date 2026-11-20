@@ -7,7 +7,7 @@
 #include <furi_hal_rtc.h>
 #include <stm32wbxx.h>
 
-#define CRASH_REPORT_MAGIC      (0x32524348U) /* "HCR2": an app and its heap added */
+#define CRASH_REPORT_MAGIC      (0x33524348U) /* "HCR3": the asset pack added */
 // how far up the stack to look for return addresses
 #define CRASH_REPORT_SCAN_WORDS (256U)
 
@@ -21,6 +21,11 @@ __attribute__((section(".noinit"))) static FuriCrashReport crash_report;
 static void crash_report_copy_text(char* to, size_t size, const char* from);
 
 static char crash_report_app[24];
+static char crash_report_pack[32];
+
+void furi_crash_report_note_pack(const char* text) {
+    crash_report_copy_text(crash_report_pack, sizeof(crash_report_pack), text ? text : "");
+}
 static uint32_t crash_report_app_heap;
 
 void furi_crash_report_note_app(const char* app, uint32_t heap_free) {
@@ -80,6 +85,7 @@ void furi_crash_report_capture(const char* message, const uint32_t* registers) {
     crash_report.exception = __get_IPSR();
     memcpy(crash_report.app, crash_report_app, sizeof(crash_report.app));
     crash_report.app_heap_free = crash_report_app_heap;
+    memcpy(crash_report.pack, crash_report_pack, sizeof(crash_report.pack));
     crash_report_copy_text(crash_report.message, sizeof(crash_report.message), message);
 
     const uint32_t* stack;

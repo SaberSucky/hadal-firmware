@@ -31,6 +31,7 @@ typedef struct {
     char thread[24];
     char app[24]; /**< the app running, empty for none */
     uint32_t app_heap_free; /**< free heap as that app started */
+    char pack[32]; /**< the asset pack: what it held, or that it was loading */
     uint32_t check;
 } FuriCrashReport;
 
@@ -41,6 +42,9 @@ const FuriCrashReport* furi_crash_report_get(void);
 
 /** The app now running (NULL for none) and the free heap as it started, for a crash report */
 void furi_crash_report_note_app(const char* app, uint32_t heap_free);
+
+/** What the asset pack holds now (or that it is loading), for a crash report; NULL for none */
+void furi_crash_report_note_pack(const char* text);
 void furi_crash_report_clear(void);
 
 #ifdef __cplusplus

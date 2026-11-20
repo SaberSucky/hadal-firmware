@@ -96,6 +96,10 @@ struct Desktop {
     bool app_running;
     /** An app closed while the menu covered the desktop: its animation loads once in sight */
     bool animation_reload_pending;
+    /** A pack that gave its RAM to an app comes back once no app has run for a moment: going
+     * from the menu straight into another app, it is not read in between */
+    bool pack_reload_pending;
+    uint32_t pack_reload_after;
     bool locked;
     /** The lock in place, or the next one, opens without the PIN (control centre's Lock) */
     bool keypad_lock;
