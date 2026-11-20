@@ -14,6 +14,9 @@ enum SubGhzSettingIndex {
     SubGhzSettingIndexIgnorePrinceton,
     SubGhzSettingIndexIgnoreNiceFlorS,
     SubGhzSettingIndexDeleteOldSignals,
+    SubGhzSettingIndexSkipDuplicates,
+    SubGhzSettingIndexAutosave,
+    SubGhzSettingIndexForgetIgnored,
     SubGhzSettingIndexSound,
     SubGhzSettingIndexResetToDefault,
     SubGhzSettingIndexLock,
@@ -340,9 +343,43 @@ static void subghz_scene_receiver_config_set_delete_old_signals(VariableItem* it
     subghz->last_settings->delete_old_signals = index == 1;
 }
 
+static const char* const duplicates_text[] = {"Keep", "Skip"};
+
+static void subghz_scene_receiver_config_set_skip_duplicates(VariableItem* item) {
+    SubGhz* subghz = variable_item_get_context(item);
+    const uint8_t index = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, duplicates_text[index]);
+    subghz->last_settings->skip_duplicates = index == 1;
+    if(subghz->history) subghz_history_set_skip_duplicates(subghz->history, index == 1);
+}
+
+static void subghz_scene_receiver_config_set_autosave(VariableItem* item) {
+    SubGhz* subghz = variable_item_get_context(item);
+    const uint8_t index = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, combobox_text[index]);
+    subghz->last_settings->autosave = index == 1;
+    if(subghz->history) subghz_history_set_autosave(subghz->history, index == 1);
+}
+
+static void subghz_scene_receiver_config_show_ignored(VariableItem* item, size_t count) {
+    char text[8];
+    snprintf(text, sizeof(text), "%u", (unsigned)count);
+    variable_item_set_current_value_text(item, text);
+}
+
 static void subghz_scene_receiver_config_var_list_enter_callback(void* context, uint32_t index) {
     furi_assert(context);
     SubGhz* subghz = context;
+    if(index == SubGhzSettingIndexForgetIgnored) {
+        // every ignored signal shows again
+        Storage* storage = furi_record_open(RECORD_STORAGE);
+        subghz_ignore_clear(storage);
+        furi_record_close(RECORD_STORAGE);
+        subghz_history_apply_filters(subghz);
+        subghz_scene_receiver_config_show_ignored(
+            variable_item_list_get(subghz->variable_item_list, index), subghz->ignored_count);
+        return;
+    }
     if(index == SubGhzSettingIndexLock) {
         view_dispatcher_send_custom_event(
             subghz->view_dispatcher, SubGhzCustomEventSceneSettingLock);
@@ -529,6 +566,32 @@ void subghz_scene_receiver_config_on_enter(void* context) {
         value_index = subghz->last_settings->delete_old_signals;
         variable_item_set_current_value_index(item, value_index);
         variable_item_set_current_value_text(item, combobox_text[value_index]);
+
+        // a signal already anywhere in the list: shown again, or not
+        item = variable_item_list_add(
+            subghz->variable_item_list,
+            "Duplicates",
+            2,
+            subghz_scene_receiver_config_set_skip_duplicates,
+            subghz);
+        value_index = subghz->last_settings->skip_duplicates;
+        variable_item_set_current_value_index(item, value_index);
+        variable_item_set_current_value_text(item, duplicates_text[value_index]);
+
+        // every new signal saved to /ext/subghz/autosave
+        item = variable_item_list_add(
+            subghz->variable_item_list,
+            "Autosave",
+            COMBO_BOX_COUNT,
+            subghz_scene_receiver_config_set_autosave,
+            subghz);
+        value_index = subghz->last_settings->autosave;
+        variable_item_set_current_value_index(item, value_index);
+        variable_item_set_current_value_text(item, combobox_text[value_index]);
+
+        // OK forgets the signals Ignore put aside
+        item = variable_item_list_add(subghz->variable_item_list, "Forget ignored", 1, NULL, subghz);
+        subghz_scene_receiver_config_show_ignored(item, subghz->ignored_count);
     }
 
     // Enable speaker, will send all incoming noises and signals to speaker so you can listen how your remote sounds like :)

@@ -22,7 +22,31 @@ void subghz_scene_receiver_info_callback(GuiButtonType result, InputType type, v
     } else if((result == GuiButtonTypeRight) && (type == InputTypeShort)) {
         view_dispatcher_send_custom_event(
             subghz->view_dispatcher, SubGhzCustomEventSceneReceiverInfoSave);
+    } else if((result == GuiButtonTypeLeft) && (type == InputTypeShort)) {
+        view_dispatcher_send_custom_event(
+            subghz->view_dispatcher, SubGhzCustomEventSceneReceiverInfoIgnore);
     }
+}
+
+// Never show this signal again: onto the ignore list, and out of the list on screen
+static void subghz_scene_receiver_info_ignore(SubGhz* subghz) {
+    const uint16_t chosen = subghz->idx_menu_chosen;
+    if(chosen >= subghz_history_get_item(subghz->history)) return;
+    const uint32_t hash = subghz_history_get_signal_hash(subghz->history, chosen);
+    FuriString* label = furi_string_alloc();
+    subghz_history_get_text_item_menu(subghz->history, label, chosen);
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    subghz_ignore_add(storage, hash, furi_string_get_cstr(label));
+    furi_record_close(RECORD_STORAGE);
+    furi_string_free(label);
+    subghz_history_apply_filters(subghz);
+    for(uint16_t i = subghz_history_get_item(subghz->history); i > 0; i--) {
+        if(subghz_history_get_signal_hash(subghz->history, i - 1) == hash) {
+            subghz_history_delete_item(subghz->history, i - 1);
+        }
+    }
+    const uint16_t left = subghz_history_get_item(subghz->history);
+    subghz->idx_menu_chosen = left ? MIN(chosen, left - 1) : 0;
 }
 
 static bool subghz_scene_receiver_info_update_parser(void* context) {
@@ -103,6 +127,15 @@ void subghz_scene_receiver_info_draw_widget(SubGhz* subghz) {
                 subghz_scene_receiver_info_callback,
                 subghz);
         }
+        // only from Read's list: a signal there can be ignored from now on
+        if(subghz->history && subghz_history_get_item(subghz->history) > subghz->idx_menu_chosen) {
+            widget_add_button_element(
+                subghz->widget,
+                GuiButtonTypeLeft,
+                "Ignore",
+                subghz_scene_receiver_info_callback,
+                subghz);
+        }
 
         // Removed static check
         if(!raw_only && subghz_txrx_protocol_is_transmittable(subghz->txrx, false)) {
@@ -172,6 +205,10 @@ bool subghz_scene_receiver_info_on_event(void* context, SceneManagerEvent event)
             }
             subghz_block_generic_global.endless_tx = false;
 
+            return true;
+        } else if(event.event == SubGhzCustomEventSceneReceiverInfoIgnore) {
+            subghz_scene_receiver_info_ignore(subghz);
+            scene_manager_previous_scene(subghz->scene_manager);
             return true;
         } else if(event.event == SubGhzCustomEventSceneReceiverInfoSave) {
             //CC1101 Stop RX -> Save

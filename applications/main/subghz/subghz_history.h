@@ -84,6 +84,21 @@ SubGhzHistory* subghz_history_alloc(void);
  */
 void subghz_history_free(SubGhzHistory* instance);
 
+/** Skip a signal the list already holds anywhere (not only the last one) */
+void subghz_history_set_skip_duplicates(SubGhzHistory* instance, bool skip);
+
+/** Signals never to add (helpers/subghz_signal_hash.h); the array must outlive its use */
+void subghz_history_set_ignored(SubGhzHistory* instance, const uint32_t* hashes, size_t count);
+
+/** What signal a record holds */
+uint32_t subghz_history_get_signal_hash(SubGhzHistory* instance, uint16_t idx);
+
+/** Whether records added from now on wait to be autosaved */
+void subghz_history_set_autosave(SubGhzHistory* instance, bool autosave);
+
+/** A record not autosaved yet, marked as autosaved now; false when there is none */
+bool subghz_history_take_autosave(SubGhzHistory* instance, uint16_t* idx);
+
 /** Clear history
  * 
  * @param instance - SubGhzHistory instance

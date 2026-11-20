@@ -31,6 +31,8 @@ typedef struct {
     float hopping_threshold;
     bool leds_and_amp;
     uint8_t tx_power;
+    bool skip_duplicates; /**< Read: a signal already in the list is not added again */
+    bool autosave; /**< Read: every new signal is saved to /ext/subghz/autosave */
 } SubGhzLastSettings;
 
 SubGhzLastSettings* subghz_last_settings_alloc(void);

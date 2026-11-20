@@ -214,6 +214,7 @@ SubGhz* subghz_alloc(bool alloc_for_tx_only) {
         subghz->ignore_filter = subghz->last_settings->ignore_filter;
         subghz->filter = subghz->last_settings->filter;
         subghz->tx_power = subghz->last_settings->tx_power;
+        subghz_history_apply_filters(subghz);
     } else {
         subghz->filter = SubGhzProtocolFlag_Decodable;
         subghz->ignore_filter = 0x0;

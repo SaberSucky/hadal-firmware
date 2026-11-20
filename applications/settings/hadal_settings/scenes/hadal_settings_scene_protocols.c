@@ -12,12 +12,14 @@
 enum {
     ProtocolsExtended,
     ProtocolsRestart,
+    ProtocolsFrequencies,
 };
 
 enum {
     EventExtendedOff = 10,
     EventExtendedOn,
     EventRestart,
+    EventFrequencies,
 };
 
 static const char* const off_on[] = {"Off", "On"};
@@ -64,6 +66,8 @@ static void enter_callback(void* context, uint32_t index) {
     HadalSettings* app = context;
     if(index == ProtocolsRestart)
         view_dispatcher_send_custom_event(app->view_dispatcher, EventRestart);
+    if(index == ProtocolsFrequencies)
+        view_dispatcher_send_custom_event(app->view_dispatcher, EventFrequencies);
 }
 
 void hadal_settings_scene_protocols_on_enter(void* context) {
@@ -75,6 +79,7 @@ void hadal_settings_scene_protocols_on_enter(void* context) {
     variable_item_set_current_value_index(item, on);
     variable_item_set_current_value_text(item, off_on[on]);
     item = variable_item_list_add(app->variable_list, "Restart to apply", 0, NULL, app);
+    item = variable_item_list_add(app->variable_list, "Sub-GHz Frequencies", 0, NULL, app);
     variable_item_list_set_enter_callback(app->variable_list, enter_callback, app);
     view_dispatcher_switch_to_view(app->view_dispatcher, HadalViewVariableList);
 }
@@ -87,6 +92,9 @@ bool hadal_settings_scene_protocols_on_event(void* context, SceneManagerEvent ev
         scene_manager_next_scene(app->scene_manager, HadalSettingsSceneProtocolsConfirm);
     } else if(event.event == EventExtendedOff) {
         hadal_settings_extended_range_set(app->storage, false);
+    } else if(event.event == EventFrequencies) {
+        scene_manager_set_scene_state(app->scene_manager, HadalSettingsSceneSubghzFreqs, 0);
+        scene_manager_next_scene(app->scene_manager, HadalSettingsSceneSubghzFreqs);
     } else if(event.event == EventRestart) {
         Power* power = furi_record_open(RECORD_POWER);
         power_reboot(power, PowerBootModeNormal);

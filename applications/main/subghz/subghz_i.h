@@ -1,5 +1,6 @@
 #pragma once
 
+#include "helpers/subghz_ignore.h"
 #include "helpers/subghz_types.h"
 #include "helpers/subghz_gen_info.h"
 #include <lib/subghz/types.h>
@@ -110,6 +111,8 @@ struct SubGhz {
     const SubGhzAddManuallyPlugin* add_manually_plugin;
 
     uint16_t idx_menu_chosen;
+    uint32_t ignored[SUBGHZ_IGNORE_MAX]; /**< helpers/subghz_ignore.h */
+    size_t ignored_count;
     SubGhzLoadTypeFile load_type_file;
     uint8_t tx_power;
     void* rpc_ctx;
@@ -129,6 +132,12 @@ void subghz_dialog_message_no_memory(SubGhz* subghz);
 
 bool subghz_key_load(SubGhz* subghz, const char* file_path, bool show_dialog);
 bool subghz_get_next_name_file(SubGhz* subghz, uint8_t max_len);
+/** Read the ignore list and the duplicate setting into the history */
+void subghz_history_apply_filters(SubGhz* subghz);
+
+/** Save what Read received since the last call, when autosave is on */
+void subghz_autosave_pending(SubGhz* subghz);
+
 bool subghz_save_protocol_to_file(
     SubGhz* subghz,
     FlipperFormat* flipper_format,

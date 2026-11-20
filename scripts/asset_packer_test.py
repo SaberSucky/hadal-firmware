@@ -3295,6 +3295,108 @@ class FileSortTests(unittest.TestCase):
         self.assertEqual(match("anything", ""), "0")
 
 
+class SubGhzTextTests(unittest.TestCase):
+    """Sub-GHz: what counts as the same signal, and editing the user frequency file"""
+
+    @classmethod
+    def setUpClass(cls):
+        import subprocess
+
+        if not _have_sanitizer("address,undefined"):
+            raise unittest.SkipTest("gcc with AddressSanitizer is not available")
+        cls.build_dir = tempfile.mkdtemp(prefix="sgt_")
+        cls.exe = os.path.join(cls.build_dir, "subghz_text_host")
+        helpers = os.path.join(REPO_ROOT, "applications", "main", "subghz", "helpers")
+        settings = os.path.join(REPO_ROOT, "applications", "settings", "hadal_settings")
+        subprocess.check_call(
+            [
+                "gcc", "-std=gnu11", "-g", "-O1", "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
+                "-Wall", "-Wextra", "-Werror", "-I", helpers, "-I", settings, "-o", cls.exe,
+                os.path.join(REPO_ROOT, "scripts", "host_tests", "subghz_text_host.c"),
+                os.path.join(helpers, "subghz_signal_hash.c"),
+                os.path.join(settings, "subghz_freqs.c"),
+            ]
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.build_dir, True)
+
+    def run_host(self, text, *args):
+        import subprocess
+
+        r = subprocess.run([self.exe, *args], input=text, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+        return r.stdout
+
+    RECORD = (
+        "Filetype: Flipper SubGhz Key File\nVersion: 1\nFrequency: 433920000\n"
+        "Preset: FuriHalSubGhzPresetOok650Async\nProtocol: Princeton\nBit: 24\n"
+        "Key: 00 00 00 00 00 95 D5 D4\nTE: 400\nGuard_time: 30\n"
+    )
+
+    def hash(self, text, chunk=None):
+        return self.run_host(text, "hash", *([str(chunk)] if chunk else [])).strip()
+
+    def test_the_same_signal_hashes_the_same_however_it_was_received(self):
+        base = self.hash(self.RECORD)
+        other = (self.RECORD.replace("433920000", "433420000").replace("TE: 400", "TE: 397")
+                 .replace("Ok650", "Ok270").replace("Guard_time: 30", "Guard_time: 31"))
+        self.assertEqual(self.hash(other), base)
+        self.assertEqual(self.hash(self.RECORD.replace("\n", "\r\n")), base)
+        self.assertEqual(self.hash(self.RECORD + "RSSI: -60\nLatitute: 1\nLongitude: 2\n"), base)
+
+    def test_another_signal_hashes_differently(self):
+        base = self.hash(self.RECORD)
+        self.assertNotEqual(self.hash(self.RECORD.replace("D5 D4", "D5 D5")), base)
+        self.assertNotEqual(self.hash(self.RECORD.replace("Princeton", "CAME")), base)
+        self.assertNotEqual(self.hash(self.RECORD.replace("Bit: 24", "Bit: 25")), base)
+
+    def test_chunks_do_not_change_the_hash(self):
+        base = self.hash(self.RECORD)
+        long_key = self.RECORD + "AVeryLongKeyNameThatDoesNotFitTheBuffer_ABCDEFGH: x\n"
+        whole = self.hash(long_key)
+        for chunk in (1, 2, 3, 7, 64):
+            self.assertEqual(self.hash(self.RECORD, chunk), base)
+            self.assertEqual(self.hash(long_key, chunk), whole)
+
+    USER = (
+        "Filetype: Flipper SubGhz Setting File\nVersion: 1\n# comment\n"
+        "#Frequency: 300000000\nFrequency: 433920000\nHopper_frequency: 433920000\n"
+        "Frequency: 868350000\nCustom_preset_name: FM95\n"
+    )
+
+    def test_list_and_standard(self):
+        self.assertEqual(self.run_host(self.USER, "list").split("\n")[:-1], ["433920000", "868350000", "standard 1"])
+        self.assertEqual(self.run_host("", "list").strip(), "standard 1")
+        off = self.USER.replace("Version: 1\n", "Version: 1\nAdd_standard_frequencies: false\n")
+        self.assertIn("standard 0", self.run_host(off, "list"))
+
+    def test_add_after_the_last_and_not_twice(self):
+        out = self.run_host(self.USER, "with", "315000000")
+        lines = out.split("\n")
+        self.assertEqual(lines[lines.index("Frequency: 868350000") + 1], "Frequency: 315000000")
+        self.assertIn("Custom_preset_name: FM95", out)
+        self.assertEqual(self.run_host(self.USER, "with", "433920000"), self.USER)
+        new = self.run_host("", "with", "315000000")
+        self.assertTrue(new.startswith("Filetype: Flipper SubGhz Setting File\nVersion: 1\n"))
+        self.assertIn("Frequency: 315000000\n", new)
+
+    def test_remove_keeps_everything_else(self):
+        out = self.run_host(self.USER, "without", "433920000")
+        self.assertNotIn("\nFrequency: 433920000", out)
+        self.assertIn("Hopper_frequency: 433920000", out)
+        self.assertIn("#Frequency: 300000000", out)
+        self.assertIn("Frequency: 868350000", out)
+
+    def test_standard_switch(self):
+        out = self.run_host(self.USER, "standard", "0")
+        self.assertIn("Version: 1\nAdd_standard_frequencies: false\n", out)
+        again = self.run_host(out, "standard", "1")
+        self.assertEqual(again.count("Add_standard_frequencies"), 1)
+        self.assertIn("Add_standard_frequencies: true", again)
+
+
 class ScreenPreviewTests(TempDirCase):
     """The app screens drawn by the firmware's own canvas on the host, under sanitizers"""
 

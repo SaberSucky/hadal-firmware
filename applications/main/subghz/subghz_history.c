@@ -6,6 +6,10 @@
 #include <lib/subghz/protocols/nice_flor_s.h>
 
 #include <furi.h>
+#include <toolbox/stream/stream.h>
+#include <flipper_format/flipper_format_i.h>
+
+#include "helpers/subghz_signal_hash.h"
 
 #define TAG "SubGhzHistory"
 
@@ -14,6 +18,8 @@ typedef struct {
     FlipperFormat* flipper_string;
     uint16_t tx_block;
     uint8_t type;
+    bool autosaved;
+    uint32_t signal_hash; /**< helpers/subghz_signal_hash.h */
     SubGhzRadioPreset* preset;
     DateTime datetime;
 } SubGhzHistoryItem;
@@ -34,6 +40,10 @@ struct SubGhzHistory {
     uint8_t code_last_hash_data;
     bool code_last_hash_data_set;
     bool full;
+    bool skip_duplicates; /**< a signal already in the list anywhere is not added again */
+    bool autosave; /**< new records wait to be autosaved */
+    const uint32_t* ignored; /**< signals never added */
+    size_t ignored_count;
     FuriString* tmp_string;
     SubGhzHistoryStruct* history;
 };
@@ -44,7 +54,60 @@ SubGhzHistory* subghz_history_alloc(void) {
     instance->history = malloc(sizeof(SubGhzHistoryStruct));
     SubGhzHistoryItemArray_init(instance->history->data);
     instance->full = false;
+    instance->skip_duplicates = false;
+    instance->autosave = false;
+    instance->ignored = NULL;
+    instance->ignored_count = 0;
     return instance;
+}
+
+void subghz_history_set_skip_duplicates(SubGhzHistory* instance, bool skip) {
+    furi_assert(instance);
+    instance->skip_duplicates = skip;
+}
+
+void subghz_history_set_autosave(SubGhzHistory* instance, bool autosave) {
+    furi_assert(instance);
+    instance->autosave = autosave;
+}
+
+void subghz_history_set_ignored(SubGhzHistory* instance, const uint32_t* hashes, size_t count) {
+    furi_assert(instance);
+    instance->ignored = hashes;
+    instance->ignored_count = count;
+}
+
+// The signal a serialized record holds (helpers/subghz_signal_hash.h)
+static uint32_t subghz_history_hash_record(FlipperFormat* record) {
+    Stream* stream = flipper_format_get_raw_stream(record);
+    SubGhzSignalHash state;
+    subghz_signal_hash_init(&state);
+    stream_rewind(stream);
+    uint8_t chunk[64];
+    size_t read;
+    while((read = stream_read(stream, chunk, sizeof(chunk))) > 0) {
+        subghz_signal_hash_feed(&state, (const char*)chunk, read);
+    }
+    stream_rewind(stream);
+    return subghz_signal_hash_finish(&state);
+}
+
+uint32_t subghz_history_get_signal_hash(SubGhzHistory* instance, uint16_t idx) {
+    furi_assert(instance);
+    return SubGhzHistoryItemArray_get(instance->history->data, idx)->signal_hash;
+}
+
+bool subghz_history_take_autosave(SubGhzHistory* instance, uint16_t* idx) {
+    furi_assert(instance);
+    for(size_t i = 0; i < SubGhzHistoryItemArray_size(instance->history->data); i++) {
+        SubGhzHistoryItem* item = SubGhzHistoryItemArray_get(instance->history->data, i);
+        if(!item->autosaved) {
+            item->autosaved = true;
+            *idx = (uint16_t)i;
+            return true;
+        }
+    }
+    return false;
 }
 
 void subghz_history_free(SubGhzHistory* instance) {
@@ -327,6 +390,29 @@ bool subghz_history_add_to_history(
     item->item_str = furi_string_alloc();
     item->flipper_string = flipper_format_string_alloc();
     subghz_protocol_decoder_base_serialize(decoder_base, item->flipper_string, preset);
+    // with autosave off, records count as saved: turning it on later saves only what comes then
+    item->autosaved = !instance->autosave;
+    item->signal_hash = subghz_history_hash_record(item->flipper_string);
+
+    // a signal the user said to ignore, or (if they asked) one the list already holds: dropped
+    bool drop = false;
+    for(size_t i = 0; i < instance->ignored_count && !drop; i++) {
+        drop = instance->ignored[i] == item->signal_hash;
+    }
+    const size_t added = SubGhzHistoryItemArray_size(instance->history->data) - 1;
+    for(size_t i = 0; i < added && instance->skip_duplicates && !drop; i++) {
+        drop = SubGhzHistoryItemArray_get(instance->history->data, i)->signal_hash ==
+               item->signal_hash;
+    }
+    if(drop) {
+        furi_string_free(item->item_str);
+        furi_string_free(item->preset->name);
+        free(item->preset);
+        flipper_format_free(item->flipper_string);
+        SubGhzHistoryItemArray_remove_v(instance->history->data, added, added + 1);
+        furi_string_free(text);
+        return false;
+    }
 
     do {
         if(!flipper_format_rewind(item->flipper_string)) {

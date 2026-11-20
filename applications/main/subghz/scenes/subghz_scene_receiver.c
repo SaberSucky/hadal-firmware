@@ -196,6 +196,11 @@ static void subghz_scene_add_to_history_callback(
                 notification_message(subghz->notifications, &sequence_error);
             }
             subghz_rx_key_state_set(subghz, SubGhzRxKeyStateAddKey);
+            // saved from the scene's thread, not the radio's
+            if(subghz->last_settings->autosave) {
+                view_dispatcher_send_custom_event(
+                    subghz->view_dispatcher, SubGhzCustomEventSceneReceiverAutosave);
+            }
         } else if(subghz_history_is_full(history, decoder_base->protocol->type)) {
             // The bar is only redrawn after a signal lands, so warn from here too. Every
             // refused signal buzzes, not just the first, so a full history is felt. Still full
@@ -317,6 +322,10 @@ bool subghz_scene_receiver_on_event(void* context, SceneManagerEvent event) {
                 scene_manager_search_and_switch_to_previous_scene(
                     subghz->scene_manager, SubGhzSceneStart);
             }
+            consumed = true;
+            break;
+        case SubGhzCustomEventSceneReceiverAutosave:
+            subghz_autosave_pending(subghz);
             consumed = true;
             break;
         case SubGhzCustomEventViewReceiverOK:

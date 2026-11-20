@@ -505,3 +505,55 @@ SubGhzRxKeyState subghz_rx_key_state_get(SubGhz* subghz) {
     furi_assert(subghz);
     return subghz->rx_key_state;
 }
+
+void subghz_history_apply_filters(SubGhz* subghz) {
+    if(!subghz->history) return;
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    subghz->ignored_count = subghz_ignore_load(storage, subghz->ignored, SUBGHZ_IGNORE_MAX);
+    furi_record_close(RECORD_STORAGE);
+    subghz_history_set_ignored(subghz->history, subghz->ignored, subghz->ignored_count);
+    subghz_history_set_skip_duplicates(subghz->history, subghz->last_settings->skip_duplicates);
+    subghz_history_set_autosave(subghz->history, subghz->last_settings->autosave);
+}
+
+void subghz_autosave_pending(SubGhz* subghz) {
+    if(!subghz->history || !subghz->last_settings->autosave) return;
+    uint16_t idx;
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    storage_simply_mkdir(storage, SUBGHZ_AUTOSAVE_FOLDER);
+    FuriString* path = furi_string_alloc();
+    while(subghz_history_take_autosave(subghz->history, &idx)) {
+        // <protocol>_<date>-<time>, made unique if two land in one second
+        const DateTime when = subghz_history_get_datetime(subghz->history, idx);
+        FuriString* name = furi_string_alloc_set_str(
+            subghz_history_get_protocol_name(subghz->history, idx));
+        furi_string_replace_all(name, " ", "_");
+        furi_string_replace_all(name, "/", "_");
+        furi_string_cat_printf(
+            name,
+            "_%04u%02u%02u-%02u%02u%02u",
+            when.year,
+            when.month,
+            when.day,
+            when.hour,
+            when.minute,
+            when.second);
+        for(uint32_t n = 0; n < 100; n++) {
+            furi_string_printf(path, "%s/%s", SUBGHZ_AUTOSAVE_FOLDER, furi_string_get_cstr(name));
+            if(n) furi_string_cat_printf(path, "_%lu", (unsigned long)n);
+            furi_string_cat_str(path, ".sub");
+            if(!storage_file_exists(storage, furi_string_get_cstr(path))) break;
+        }
+        furi_string_free(name);
+        Stream* record =
+            flipper_format_get_raw_stream(subghz_history_get_raw_data(subghz->history, idx));
+        stream_rewind(record);
+        if(!stream_save_to_file(
+               record, storage, furi_string_get_cstr(path), FSOM_CREATE_ALWAYS)) {
+            FURI_LOG_W(TAG, "Autosave failed: %s", furi_string_get_cstr(path));
+        }
+        stream_rewind(record);
+    }
+    furi_string_free(path);
+    furi_record_close(RECORD_STORAGE);
+}
