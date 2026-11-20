@@ -47,6 +47,10 @@ The Flipper ships with ST's "BLE Light" radio stack, which can only advertise an
 ### Levels
 The dolphin goes up to **level 30**. The first three levels end where they always did (300 and 1,800 XP), so nobody's level changes; after that each level takes 1,500 XP and 100 more than the one before (level 30 starts at 77,401 XP). Animations made for "level 3" show at every level from 3 up, and the passport shows the level and how far it is to the next.
 
+### Lists
+- In every menu (the lists most apps and settings use), a selected entry too long for its row scrolls so all of it can be read, and **Left** and **Right** move a page at a time through a long list
+- In the file pickers apps open, **Right** goes into the selected folder, as **Left** comes out of one
+
 ### Keyboard
 The on-screen keyboard has a symbols page: the **#** key beside **_** switches between letters and every printable ASCII symbol (`` ! @ # $ % ^ & * ( ) ~ ` | \ - + = [ ] { } ; : < > " ' , . / ? ``), with a space bar, for passwords, URLs and file names. As before, **Up** from the top row moves into the text, where **Left** and **Right** move the cursor.
 

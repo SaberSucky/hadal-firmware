@@ -810,6 +810,35 @@ static bool file_browser_view_input_callback(InputEvent* event, void* context) {
             }
             consumed = true;
         }
+    } else if(event->key == InputKeyRight) {
+        // Right goes into the selected folder, as Left comes out of one
+        if(event->type == InputTypeShort) {
+            int32_t select_index = 0;
+            FuriString* item_path = NULL;
+            with_view_model(
+                browser->view,
+                FileBrowserModel * model,
+                {
+                    if(browser_is_item_in_array(model, model->item_idx)) {
+                        BrowserItem_t* item =
+                            items_array_get(model->items, model->item_idx - model->array_offset);
+                        if(item->type == BrowserItemTypeFolder) {
+                            select_index = item->unsorted_idx;
+                            item_path = furi_string_alloc();
+                            path_concat(
+                                file_browser_worker_get_path_current(browser->worker),
+                                furi_string_get_cstr(item->name),
+                                item_path);
+                        }
+                    }
+                },
+                false);
+            if(item_path) {
+                file_browser_worker_folder_enter(browser->worker, item_path, select_index);
+                furi_string_free(item_path);
+            }
+            consumed = true;
+        }
     } else if(event->key == InputKeyLeft) {
         if(event->type == InputTypeShort) {
             bool is_root = false;

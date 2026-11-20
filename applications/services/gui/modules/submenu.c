@@ -5,10 +5,15 @@
 #include <furi.h>
 #include <m-array.h>
 
+// A selected label too long for its row scrolls, a step this often, after a pause at its start
+#define SUBMENU_SCROLL_INTERVAL_MS (333U)
+#define SUBMENU_SCROLL_PAUSE       (2U)
+
 struct Submenu {
     View* view;
 
     FuriTimer* locked_timer;
+    FuriTimer* scroll_timer;
 };
 
 typedef struct {
@@ -73,10 +78,14 @@ typedef struct {
 
     bool locked_message_visible;
     bool is_vertical;
+
+    size_t scroll_counter; /**< steps since the selection last moved */
+    bool selected_scrolls; /**< the selected label is longer than its row */
 } SubmenuModel;
 
 static void submenu_process_up(Submenu* submenu);
 static void submenu_process_down(Submenu* submenu);
+static void submenu_process_page(Submenu* submenu, bool down);
 static void submenu_process_ok(Submenu* submenu, InputType input_type);
 
 static size_t submenu_items_on_screen(SubmenuModel* model) {
@@ -130,16 +139,24 @@ static void submenu_view_draw_callback(Canvas* canvas, void* _model) {
                     &I_Lock_7x8);
             }
 
-            FuriString* disp_str = furi_string_alloc_set(SubmenuItemArray_cref(it)->label);
-            elements_string_fit_width(canvas, disp_str, item_width - (is_locked ? 21 : 11));
-
-            canvas_draw_str(
-                canvas,
-                6,
-                y_offset + (item_position * item_height) + item_height - 4,
-                furi_string_get_cstr(disp_str));
-
-            furi_string_free(disp_str);
+            const size_t text_width = item_width - (is_locked ? 21 : 11);
+            const char* label = furi_string_get_cstr(SubmenuItemArray_cref(it)->label);
+            const uint8_t text_y = y_offset + (item_position * item_height) + item_height - 4;
+            if(position == model->position && canvas_string_width(canvas, label) > text_width) {
+                // the selected one scrolls, so the whole of it can be read
+                model->selected_scrolls = true;
+                const size_t scroll = model->scroll_counter > SUBMENU_SCROLL_PAUSE ?
+                                          model->scroll_counter - SUBMENU_SCROLL_PAUSE :
+                                          0;
+                elements_scrollable_text_line_str(
+                    canvas, 6, text_y, text_width, label, scroll, false, false);
+            } else {
+                if(position == model->position) model->selected_scrolls = false;
+                FuriString* disp_str = furi_string_alloc_set_str(label);
+                elements_string_fit_width(canvas, disp_str, text_width);
+                canvas_draw_str(canvas, 6, text_y, furi_string_get_cstr(disp_str));
+                furi_string_free(disp_str);
+            }
         }
 
         position++;
@@ -192,7 +209,7 @@ static bool submenu_view_input_callback(InputEvent* event, void* context) {
     } else if(event->key == InputKeyOk) {
         consumed = true;
         submenu_process_ok(submenu, event->type);
-    } else if(event->type == InputTypeShort) {
+    } else if(event->type == InputTypeShort || event->type == InputTypeRepeat) {
         switch(event->key) {
         case InputKeyUp:
             consumed = true;
@@ -202,16 +219,17 @@ static bool submenu_view_input_callback(InputEvent* event, void* context) {
             consumed = true;
             submenu_process_down(submenu);
             break;
+        case InputKeyLeft:
+            // a page at a time through a long list
+            consumed = true;
+            submenu_process_page(submenu, false);
+            break;
+        case InputKeyRight:
+            consumed = true;
+            submenu_process_page(submenu, true);
+            break;
         default:
             break;
-        }
-    } else if(event->type == InputTypeRepeat) {
-        if(event->key == InputKeyUp) {
-            consumed = true;
-            submenu_process_up(submenu);
-        } else if(event->key == InputKeyDown) {
-            consumed = true;
-            submenu_process_down(submenu);
         }
     }
 
@@ -226,6 +244,27 @@ void submenu_timer_callback(void* context) {
         submenu->view, SubmenuModel * model, { model->locked_message_visible = false; }, true);
 }
 
+static void submenu_scroll_timer_callback(void* context) {
+    Submenu* submenu = context;
+    // redrawn only when there is something to scroll
+    with_view_model(
+        submenu->view,
+        SubmenuModel * model,
+        { model->scroll_counter++; },
+        model->selected_scrolls);
+}
+
+static void submenu_view_enter(void* context) {
+    Submenu* submenu = context;
+    with_view_model(submenu->view, SubmenuModel * model, { model->scroll_counter = 0; }, false);
+    furi_timer_start(submenu->scroll_timer, furi_ms_to_ticks(SUBMENU_SCROLL_INTERVAL_MS));
+}
+
+static void submenu_view_exit(void* context) {
+    Submenu* submenu = context;
+    furi_timer_stop(submenu->scroll_timer);
+}
+
 Submenu* submenu_alloc(void) {
     Submenu* submenu = malloc(sizeof(Submenu));
     submenu->view = view_alloc();
@@ -235,6 +274,10 @@ Submenu* submenu_alloc(void) {
     view_set_input_callback(submenu->view, submenu_view_input_callback);
 
     submenu->locked_timer = furi_timer_alloc(submenu_timer_callback, FuriTimerTypeOnce, submenu);
+    submenu->scroll_timer =
+        furi_timer_alloc(submenu_scroll_timer_callback, FuriTimerTypePeriodic, submenu);
+    view_set_enter_callback(submenu->view, submenu_view_enter);
+    view_set_exit_callback(submenu->view, submenu_view_exit);
 
     with_view_model(
         submenu->view,
@@ -243,6 +286,7 @@ Submenu* submenu_alloc(void) {
             SubmenuItemArray_init(model->items);
             model->position = 0;
             model->window_position = 0;
+            model->scroll_counter = 0;
             model->header = furi_string_alloc();
         },
         true);
@@ -263,6 +307,8 @@ void submenu_free(Submenu* submenu) {
         true);
     furi_timer_stop(submenu->locked_timer);
     furi_timer_free(submenu->locked_timer);
+    furi_timer_stop(submenu->scroll_timer);
+    furi_timer_free(submenu->scroll_timer);
     view_free(submenu->view);
     free(submenu);
 }
@@ -437,6 +483,7 @@ void submenu_set_selected_item(Submenu* submenu, uint32_t index) {
 
             model->position = position;
             model->window_position = position;
+            model->scroll_counter = 0;
 
             if(model->window_position > 0) {
                 model->window_position -= 1;
@@ -464,6 +511,7 @@ void submenu_process_up(Submenu* submenu) {
             const size_t items_on_screen = submenu_items_on_screen(model);
             const size_t items_size = SubmenuItemArray_size(model->items);
 
+            model->scroll_counter = 0;
             if(model->position > 0) {
                 model->position--;
                 if((model->position == model->window_position) && (model->window_position > 0)) {
@@ -487,6 +535,7 @@ void submenu_process_down(Submenu* submenu) {
             const size_t items_on_screen = submenu_items_on_screen(model);
             const size_t items_size = SubmenuItemArray_size(model->items);
 
+            model->scroll_counter = 0;
             if(model->position < items_size - 1) {
                 model->position++;
                 if((model->position - model->window_position > items_on_screen - 2) &&
@@ -496,6 +545,36 @@ void submenu_process_down(Submenu* submenu) {
             } else {
                 model->position = 0;
                 model->window_position = 0;
+            }
+        },
+        true);
+}
+
+void submenu_process_page(Submenu* submenu, bool down) {
+    with_view_model(
+        submenu->view,
+        SubmenuModel * model,
+        {
+            const size_t items_on_screen = submenu_items_on_screen(model);
+            const size_t items_size = SubmenuItemArray_size(model->items);
+            model->scroll_counter = 0;
+            if(items_size > 0) {
+                // a screenful on, stopping at the ends rather than wrapping
+                if(down) {
+                    model->position = MIN(model->position + items_on_screen, items_size - 1);
+                } else {
+                    model->position =
+                        model->position > items_on_screen ? model->position - items_on_screen : 0;
+                }
+                if(model->position < model->window_position) {
+                    model->window_position = model->position;
+                } else if(model->position >= model->window_position + items_on_screen) {
+                    model->window_position = model->position - (items_on_screen - 1);
+                }
+                if(items_size > items_on_screen &&
+                   model->window_position > items_size - items_on_screen) {
+                    model->window_position = items_size - items_on_screen;
+                }
             }
         },
         true);

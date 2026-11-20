@@ -30,6 +30,7 @@ PREVIEWS = {
     "updater_descent": ["applications/system/updater/views/updater_descent.c"],
     "lock_clock": ["applications/services/desktop/helpers/desktop_lock_clock.c"],
     "keyboard": [],
+    "submenu": [],
 }
 
 GUI_SOURCES = [
