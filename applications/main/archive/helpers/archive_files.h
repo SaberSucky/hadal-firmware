@@ -22,6 +22,7 @@ typedef enum {
     ArchiveFileTypeApplication,
     ArchiveFileTypeUpdateManifest,
     ArchiveFileTypeJS,
+    ArchiveFileTypeDiskImage, /**< a .img: opened in Mass Storage */
     ArchiveFileTypeFolder,
     ArchiveFileTypeUnknown,
     ArchiveFileTypeSetting,

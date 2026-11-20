@@ -40,8 +40,12 @@ void archive_set_file_type(ArchiveFile_t* file, const char* path, bool is_folder
             // Zeroed: path_extract_extension leaves the buffer untouched for a dotless name
             char tmp_extension[MAX_EXT_LEN] = {0};
             path_extract_extension(file->path, tmp_extension, MAX_EXT_LEN);
-            if((strcmp(tmp_extension, ".txt") == 0) || (strcmp(tmp_extension, ".md") == 0)) {
-                file->is_text_file = true;
+            // text Archive can show: notes, logs, configs and data
+            static const char* const text_extensions[] = {
+                ".txt", ".md", ".log", ".csv", ".json", ".cfg", ".conf", ".ini", ".xml", ".yml",
+                ".yaml", ".nmea"};
+            for(size_t i = 0; i < COUNT_OF(text_extensions); i++) {
+                if(strcasecmp(tmp_extension, text_extensions[i]) == 0) file->is_text_file = true;
             }
             file->type = ArchiveFileTypeUnknown;
         }

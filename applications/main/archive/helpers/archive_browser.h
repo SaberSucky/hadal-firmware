@@ -35,6 +35,7 @@ static const char* const known_ext[] = {
     [ArchiveFileTypeT5577] = T5577_FILE_EXTENSION,
     [ArchiveFileTypeApplication] = ".fap",
     [ArchiveFileTypeJS] = ".js",
+    [ArchiveFileTypeDiskImage] = ".img",
     [ArchiveFileTypeUpdateManifest] = ".fuf",
     [ArchiveFileTypeFolder] = "?",
     [ArchiveFileTypeUnknown] = "*",

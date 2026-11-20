@@ -40,6 +40,7 @@ static const Icon* ArchiveItemIcons[] = {
     [ArchiveFileTypeUnknown] = &I_unknown_10px,
     [ArchiveFileTypeLoading] = &I_loading_10px,
     [ArchiveFileTypeJS] = &I_js_script_10px,
+    [ArchiveFileTypeDiskImage] = &I_disk_10px,
 };
 
 void archive_browser_set_callback(

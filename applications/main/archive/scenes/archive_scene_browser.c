@@ -35,6 +35,9 @@ static const char* archive_get_flipper_app_name(ArchiveFileTypeEnum file_type) {
         return "UpdaterApp";
     case ArchiveFileTypeJS:
         return EXT_PATH("apps/assets/js_app.fap");
+    case ArchiveFileTypeDiskImage:
+        // the bundled Mass Storage app shows the image to a computer as a USB drive
+        return EXT_PATH("apps/USB/mass_storage.fap");
     case ArchiveFileTypeFolder:
         return "Archive";
     default:
