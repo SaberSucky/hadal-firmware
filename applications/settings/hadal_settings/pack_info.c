@@ -5,10 +5,10 @@
 #include <strings.h>
 
 /* The packs' own layout, see documentation/AssetPacks.md */
-#define MAX_DEPTH     5
-#define PATH_SIZE     128
-#define ENTRY_SIZE    96
-#define MANIFEST_MAX  16384
+#define MAX_DEPTH    5
+#define PATH_SIZE    128
+#define ENTRY_SIZE   96
+#define MANIFEST_MAX 16384
 
 static bool name_ok(const char* name) {
     size_t length = strlen(name);
@@ -82,7 +82,8 @@ static uint16_t count_manifest_entries(Storage* storage, const char* manifest_pa
 }
 
 /** Icons below dir: .bmx files, and folders holding a `meta` file (animated icons). */
-static void count_icons(Storage* storage, const char* dir_path, unsigned depth, HadalPackInfo* info) {
+static void
+    count_icons(Storage* storage, const char* dir_path, unsigned depth, HadalPackInfo* info) {
     if(depth > MAX_DEPTH) return;
 
     char meta_path[PATH_SIZE];
