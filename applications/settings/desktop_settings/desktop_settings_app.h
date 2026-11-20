@@ -30,23 +30,7 @@ typedef enum {
 } DesktopSettingsAppView;
 
 typedef struct {
-    FuriString* file;
-    FuriString* name;
-} DesktopSettingsMenuStyleEntry;
-
-/** Asset pack folder names are the size of the setting that stores them. */
-#define DESKTOP_SETTINGS_ASSET_PACK_NAME_SIZE \
-    sizeof(((DesktopSettings*)0)->active_asset_pack)
-
-typedef struct {
     DesktopSettings settings;
-    DesktopSettingsMenuStyleEntry* menu_styles;
-    size_t menu_styles_count;
-    bool menu_styles_loaded;
-
-    char (*asset_packs)[DESKTOP_SETTINGS_ASSET_PACK_NAME_SIZE]; /**< sorted folder names */
-    size_t asset_packs_count;
-    bool asset_packs_loaded;
 
     Gui* gui;
     DialogsApp* dialogs;
@@ -71,16 +55,3 @@ typedef struct {
     uint32_t pin_menu_idx;
 } DesktopSettingsApp;
 
-/** Scan the loader plugin directory into app->menu_styles, replacing whatever is there - a scan
- * that fails leaves the list empty.
- *
- * Costs an SD manifest read per plugin, so the caller should have something on screen first.
- * Sets menu_styles_loaded only when the directory was read through to the end, so that a scan cut
- * short - nothing there to look at, or a card removed part way - is retried on the next call
- * rather than remembered.
- */
-void desktop_settings_menu_styles_load(DesktopSettingsApp* app);
-
-/** Scan /ext/asset_packs for pack folders into app->asset_packs. Cheap: names only. Sets
- * asset_packs_loaded only when the directory was read to the end, or is simply not there. */
-void desktop_settings_asset_packs_load(DesktopSettingsApp* app);

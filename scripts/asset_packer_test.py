@@ -3397,6 +3397,66 @@ class SubGhzTextTests(unittest.TestCase):
         self.assertIn("Add_standard_frequencies: true", again)
 
 
+class DolphinLevelTests(unittest.TestCase):
+    """Levels up to 30 (applications/services/dolphin/helpers/dolphin_state.c), the first three
+    where they always were"""
+
+    @classmethod
+    def setUpClass(cls):
+        import subprocess
+
+        cls.build_dir = tempfile.mkdtemp(prefix="lvl_")
+        cls.exe = os.path.join(cls.build_dir, "levels")
+        with open(os.path.join(REPO_ROOT, "applications", "services", "dolphin", "helpers", "dolphin_state.c")) as f:
+            src = f.read()
+        block = src[src.index("/* Levels:"):src.index("void dolphin_state_on_deed(")]
+        driver = (
+            "#include <stdbool.h>\n#include <stdint.h>\n#include <stdio.h>\n"
+            "#define LEVEL2_THRESHOLD 300\n#define LEVEL3_THRESHOLD 1800\n#define DOLPHIN_LEVEL_MAX 30\n"
+            + block +
+            "int main(void) {\n"
+            "  for(uint32_t xp = 0; xp <= 80000; xp++)\n"
+            "    printf(\"%u %u %d %u %u\\n\", xp, dolphin_get_level(xp), dolphin_state_is_levelup(xp),\n"
+            "           dolphin_state_xp_to_levelup(xp), dolphin_state_xp_above_last_levelup(xp));\n"
+            "  return 0;\n}\n"
+        )
+        path = os.path.join(cls.build_dir, "levels.c")
+        with open(path, "w") as f:
+            f.write(driver)
+        subprocess.check_call(["gcc", "-std=gnu11", "-O1", "-Wall", "-Wextra", "-Werror", "-o", cls.exe, path])
+        out = subprocess.run([cls.exe], capture_output=True, text=True, check=True).stdout
+        cls.rows = [tuple(int(v) for v in line.split()) for line in out.splitlines()]
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.build_dir, True)
+
+    def test_the_first_three_levels_did_not_move(self):
+        level = {xp: lvl for xp, lvl, *_ in self.rows}
+        self.assertEqual((level[0], level[300], level[301], level[1800], level[1801]), (1, 1, 2, 2, 3))
+
+    def test_thirty_levels_one_after_another(self):
+        levels = [lvl for _, lvl, *_ in self.rows]
+        self.assertEqual(levels, sorted(levels))
+        self.assertEqual(sorted(set(levels)), list(range(1, 31)))
+        first_30 = next(xp for xp, lvl, *_ in self.rows if lvl == 30)
+        self.assertEqual(first_30, 77401)
+
+    def test_level_ups_happen_at_the_end_of_each_level(self):
+        ups = [xp for xp, _, up, *_ in self.rows if up]
+        self.assertEqual(len(ups), 29)
+        self.assertEqual(ups[:3], [300, 1800, 3300])
+        for xp, lvl, up, to_next, above in self.rows:
+            if lvl < 30:
+                self.assertEqual(up, to_next == 0, xp)
+            else:
+                self.assertFalse(up)
+            # the XP into this level and the XP to the next add up to the level's size
+            if lvl < 30 and xp > 0:
+                size = to_next + above
+                self.assertGreater(size, 0)
+
+
 class ScreenPreviewTests(TempDirCase):
     """The app screens drawn by the firmware's own canvas on the host, under sanitizers"""
 

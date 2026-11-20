@@ -13,6 +13,9 @@ extern "C" {
 
 typedef struct Dolphin Dolphin;
 
+/** The highest level (levels start at 1) */
+#define DOLPHIN_LEVEL_MAX 30
+
 typedef struct {
     uint32_t icounter;
     uint32_t butthurt;

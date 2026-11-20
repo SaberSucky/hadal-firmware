@@ -1,4 +1,5 @@
 #include "dolphin_state.h"
+#include "../dolphin.h"
 #include "dolphin_state_filename.h"
 
 #include <furi.h>
@@ -76,42 +77,45 @@ uint64_t dolphin_state_timestamp(void) {
     return datetime_datetime_to_timestamp(&datetime);
 }
 
+/* Levels: the first three end where they always did (300 and 1800 XP), so nobody's level
+ * changes; from there each needs 1500 XP and 100 more than the one before, up to
+ * DOLPHIN_LEVEL_MAX (level 30 starts after 77400 XP). */
+
+// The XP at which level `level` (1 to DOLPHIN_LEVEL_MAX - 1) is complete
+static uint32_t dolphin_level_end(uint8_t level) {
+    if(level <= 1) return LEVEL2_THRESHOLD;
+    uint32_t end = LEVEL3_THRESHOLD;
+    for(uint8_t next = 3; next <= level; next++) {
+        end += 1500U + (uint32_t)(next - 3) * 100U;
+    }
+    return end;
+}
+
 bool dolphin_state_is_levelup(uint32_t icounter) {
-    return (icounter == LEVEL2_THRESHOLD) || (icounter == LEVEL3_THRESHOLD);
+    for(uint8_t level = 1; level < DOLPHIN_LEVEL_MAX; level++) {
+        if(icounter == dolphin_level_end(level)) return true;
+    }
+    return false;
 }
 
 uint8_t dolphin_get_level(uint32_t icounter) {
-    if(icounter <= LEVEL2_THRESHOLD) {
-        return 1;
-    } else if(icounter <= LEVEL3_THRESHOLD) {
-        return 2;
-    } else {
-        return 3;
+    for(uint8_t level = 1; level < DOLPHIN_LEVEL_MAX; level++) {
+        if(icounter <= dolphin_level_end(level)) return level;
     }
+    return DOLPHIN_LEVEL_MAX;
 }
 
 uint32_t dolphin_state_xp_above_last_levelup(uint32_t icounter) {
-    uint32_t threshold = 0;
-    if(icounter <= LEVEL2_THRESHOLD) {
-        threshold = 0;
-    } else if(icounter <= LEVEL3_THRESHOLD) {
-        threshold = LEVEL2_THRESHOLD + 1;
-    } else {
-        threshold = LEVEL3_THRESHOLD + 1;
-    }
-    return icounter - threshold;
+    const uint8_t level = dolphin_get_level(icounter);
+    const uint32_t start = level == 1 ? 0 : dolphin_level_end(level - 1) + 1;
+    return icounter - start;
 }
 
 uint32_t dolphin_state_xp_to_levelup(uint32_t icounter) {
-    uint32_t threshold = 0;
-    if(icounter <= LEVEL2_THRESHOLD) {
-        threshold = LEVEL2_THRESHOLD;
-    } else if(icounter <= LEVEL3_THRESHOLD) {
-        threshold = LEVEL3_THRESHOLD;
-    } else {
-        threshold = (uint32_t)-1;
-    }
-    return threshold - icounter;
+    const uint8_t level = dolphin_get_level(icounter);
+    // at the top there is no next level: as far as it can be
+    const uint32_t end = level >= DOLPHIN_LEVEL_MAX ? (uint32_t)-1 : dolphin_level_end(level);
+    return end - icounter;
 }
 
 void dolphin_state_on_deed(DolphinState* dolphin_state, DolphinDeed deed) {

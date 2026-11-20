@@ -12,8 +12,6 @@ typedef enum {
     DesktopSettingsAutoPowerOff,
     DesktopSettingsBatteryDisplay,
     DesktopSettingsClockDisplay,
-    DesktopSettingsMenuStyle,
-    DesktopSettingsAssetPack,
     DesktopSettingsChangeName,
     DesktopSettingsHappyMode,
     DesktopSettingsFavoriteLeftShort,
@@ -78,37 +76,6 @@ const uint32_t displayBatteryPercentage_value[BATTERY_VIEW_COUNT] = {
     DISPLAY_BATTERY_RETRO_5,
     DISPLAY_BATTERY_BAR_PERCENT};
 
-static void desktop_settings_scene_start_menu_style_changed(VariableItem* item) {
-    DesktopSettingsApp* app = variable_item_get_context(item);
-    uint8_t index = variable_item_get_current_value_index(item);
-
-    if(index == 0) {
-        variable_item_set_current_value_text(item, "Default");
-        app->settings.menu_style[0] = '\0';
-    } else {
-        const DesktopSettingsMenuStyleEntry* style = &app->menu_styles[index - 1];
-        variable_item_set_current_value_text(item, furi_string_get_cstr(style->name));
-        strlcpy(
-            app->settings.menu_style,
-            furi_string_get_cstr(style->file),
-            sizeof(app->settings.menu_style));
-    }
-}
-
-static void desktop_settings_scene_start_asset_pack_changed(VariableItem* item) {
-    DesktopSettingsApp* app = variable_item_get_context(item);
-    uint8_t index = variable_item_get_current_value_index(item);
-
-    if(index == 0) {
-        variable_item_set_current_value_text(item, "None");
-        app->settings.active_asset_pack[0] = '\0';
-    } else {
-        const char* name = app->asset_packs[index - 1];
-        variable_item_set_current_value_text(item, name);
-        strlcpy(app->settings.active_asset_pack, name, sizeof(app->settings.active_asset_pack));
-    }
-}
-
 static void desktop_settings_scene_start_var_list_enter_callback(void* context, uint32_t index) {
     DesktopSettingsApp* app = context;
     view_dispatcher_send_custom_event(app->view_dispatcher, index);
@@ -152,17 +119,6 @@ void desktop_settings_scene_start_on_enter(void* context) {
 
     VariableItem* item;
     uint8_t value_index;
-
-    // app_alloc already has the loading view up for the first pass; switching again is for a
-    // retry after a scan that could not read the directory, when the settings list is what is on
-    // screen. The scan costs an SD manifest read per plugin, and one that got to the end is kept
-    // for the life of the app rather than repeated on every return to this scene.
-    if(!app->menu_styles_loaded) {
-        view_dispatcher_show_loading(app->view_dispatcher);
-        desktop_settings_menu_styles_load(app);
-    }
-    // Names only, a single directory read; a pack added since the last visit is picked up
-    desktop_settings_asset_packs_load(app);
 
     variable_item_list_add(variable_item_list, "PIN Setup", 1, NULL, NULL);
 
@@ -219,54 +175,7 @@ void desktop_settings_scene_start_on_enter(void* context) {
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, clock_enable_text[value_index]);
 
-    item = variable_item_list_add(
-        variable_item_list,
-        "Menu Style",
-        app->menu_styles_count + 1, // Plus "Default"; MENU_STYLES_MAX keeps this in a uint8_t
-        desktop_settings_scene_start_menu_style_changed,
-        app);
-
-    value_index = 0;
-    for(size_t i = 0; i < app->menu_styles_count; i++) {
-        if(furi_string_equal_str(app->menu_styles[i].file, app->settings.menu_style)) {
-            value_index = i + 1;
-            break;
-        }
-    }
-    variable_item_set_current_value_index(item, value_index);
-    const char* menu_style_text = "Default";
-    if(value_index) {
-        menu_style_text = furi_string_get_cstr(app->menu_styles[value_index - 1].name);
-    } else if(app->settings.menu_style[0]) {
-        // Configured style is not in the list - but say so only if we actually got to look, since
-        // neither "it was deleted" nor "we chose the built-in one" is true when the scan failed
-        menu_style_text = app->menu_styles_loaded ? "Missing" : "Unknown";
-    }
-    variable_item_set_current_value_text(item, menu_style_text);
-
-    item = variable_item_list_add(
-        variable_item_list,
-        "Asset Pack",
-        app->asset_packs_count + 1, // Plus "None"; ASSET_PACKS_MAX keeps this in a uint8_t
-        desktop_settings_scene_start_asset_pack_changed,
-        app);
-
-    value_index = 0;
-    for(size_t i = 0; i < app->asset_packs_count; i++) {
-        if(strcmp(app->asset_packs[i], app->settings.active_asset_pack) == 0) {
-            value_index = i + 1;
-            break;
-        }
-    }
-    variable_item_set_current_value_index(item, value_index);
-    const char* asset_pack_text = "None";
-    if(value_index) {
-        asset_pack_text = app->asset_packs[value_index - 1];
-    } else if(app->settings.active_asset_pack[0]) {
-        // Selected, but its folder is gone (or the card could not be read)
-        asset_pack_text = app->asset_packs_loaded ? "Missing" : "Unknown";
-    }
-    variable_item_set_current_value_text(item, asset_pack_text);
+    // the menu style and the asset pack are set in Settings > Hadal > Interface
 
     variable_item_list_add(variable_item_list, "Change Flipper Name", 0, NULL, app);
 

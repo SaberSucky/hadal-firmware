@@ -1,7 +1,7 @@
 # Asset packs
 
 An asset pack replaces Hadal's animations, icons and fonts with files from the SD card, without
-reflashing. Pick one in **Settings → Hadal → Asset Pack**, which lists the packs on the card, says what is in each (how many animations, icons and fonts) and applies the one you choose at once; **Settings → Desktop → Asset Pack** does the same in a plainer list. With no pack selected nothing changes,
+reflashing. Pick one in **Settings → Hadal → Asset Pack**, which lists the packs on the card, says what is in each (how many animations, icons and fonts) and applies the one you choose at once. With no pack selected nothing changes,
 and anything a pack does not provide (or provides incorrectly) falls back to the built-in asset.
 
 Packs live in `/ext/asset_packs/<Name>/`:
@@ -70,7 +70,7 @@ as the status bar show the built-in icons. Fonts and animations stay as they are
 
 - A pack folder that is missing, empty or full of invalid files simply changes nothing.
 - A pack stays "on probation" until the firmware has run with it for ten seconds. If the Flipper
-  resets before that, the next start turns the pack off (Settings → Desktop → Asset Pack goes back
+  resets before that, the next start turns the pack off (Settings → Hadal → Interface → Asset Pack goes back
   to None) instead of crashing again. This also means that a deliberate reset in the ten seconds
   after choosing a pack will switch it off; just choose it again.
 - Delete the pack's folder from the SD card to remove it.

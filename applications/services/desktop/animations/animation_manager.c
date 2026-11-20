@@ -383,7 +383,9 @@ static bool animation_manager_is_valid_idle_animation(
     if((stats->butthurt < info->min_butthurt) || (stats->butthurt > info->max_butthurt)) {
         result = false;
     }
-    if((stats->level < info->min_level) || (stats->level > info->max_level)) {
+    // a maximum of 3 was the top level when there were three: it means "3 and up"
+    const uint8_t max_level = info->max_level >= 3 ? DOLPHIN_LEVEL_MAX : info->max_level;
+    if((stats->level < info->min_level) || (stats->level > max_level)) {
         result = false;
     }
 
@@ -583,12 +585,11 @@ static void animation_manager_switch_to_one_shot_view(AnimationManager* animatio
     View* next_view = one_shot_view_get_view(animation_manager->one_shot_view);
     view_stack_remove_view(animation_manager->view_stack, prev_view);
     view_stack_add_view(animation_manager->view_stack, next_view);
+    // the second animation for every level after the first
     if(stats.level == 1) {
         one_shot_view_start_animation(animation_manager->one_shot_view, &A_Levelup1_128x64);
-    } else if(stats.level == 2) {
-        one_shot_view_start_animation(animation_manager->one_shot_view, &A_Levelup2_128x64);
     } else {
-        furi_crash();
+        one_shot_view_start_animation(animation_manager->one_shot_view, &A_Levelup2_128x64);
     }
 }
 
