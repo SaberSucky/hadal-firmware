@@ -2,6 +2,7 @@
 #include <gui/elements.h>
 #include <assets_icons.h>
 #include <furi.h>
+#include <stdlib.h>
 
 struct TextInput {
     View* view;
@@ -29,6 +30,7 @@ typedef struct {
 
     uint8_t selected_row;
     uint8_t selected_column;
+    bool symbols; /**< the symbols page is showing */
 
     TextInputValidatorCallback validator_callback;
     void* validator_callback_context;
@@ -42,6 +44,11 @@ static const uint8_t keyboard_row_count = 3;
 
 #define ENTER_KEY     '\r'
 #define BACKSPACE_KEY '\b'
+#define SYMBOLS_KEY   '\x01' /* letters <-> symbols */
+#define SPACE_KEY     ' ' /* a wide key on the symbols page */
+
+#define ENTER_KEY_WIDTH 16
+#define SPACE_KEY_WIDTH 15
 
 static const TextInputKey keyboard_keys_row_1[] = {
     {'q', 1, 8},
@@ -85,54 +92,116 @@ static const TextInputKey keyboard_keys_row_3[] = {
     {'n', 46, 32},
     {'m', 55, 32},
     {'_', 64, 32},
-    {ENTER_KEY, 74, 23},
+    {SYMBOLS_KEY, 73, 32},
+    {ENTER_KEY, 82, 23},
     {'7', 100, 32},
     {'8', 110, 32},
     {'9', 120, 32},
 };
 
-static uint8_t get_row_size(uint8_t row_index) {
-    uint8_t row_size = 0;
+/* The symbols page: every printable ASCII symbol, and a space bar */
+static const TextInputKey keyboard_symbols_row_1[] = {
+    {'!', 1, 8},
+    {'@', 10, 8},
+    {'#', 19, 8},
+    {'$', 28, 8},
+    {'%', 37, 8},
+    {'^', 46, 8},
+    {'&', 55, 8},
+    {'*', 64, 8},
+    {'(', 73, 8},
+    {')', 82, 8},
+    {'~', 91, 8},
+    {'`', 100, 8},
+    {'|', 110, 8},
+    {'\\', 120, 8},
+};
 
-    switch(row_index + 1) {
-    case 1:
-        row_size = COUNT_OF(keyboard_keys_row_1);
-        break;
-    case 2:
-        row_size = COUNT_OF(keyboard_keys_row_2);
-        break;
-    case 3:
-        row_size = COUNT_OF(keyboard_keys_row_3);
-        break;
-    default:
-        furi_crash();
-    }
+static const TextInputKey keyboard_symbols_row_2[] = {
+    {'-', 1, 20},
+    {'+', 10, 20},
+    {'=', 19, 20},
+    {'[', 28, 20},
+    {']', 37, 20},
+    {'{', 46, 20},
+    {'}', 55, 20},
+    {';', 64, 20},
+    {':', 73, 20},
+    {BACKSPACE_KEY, 82, 12},
+    {'<', 100, 20},
+    {'>', 110, 20},
+    {'"', 120, 20},
+};
 
-    return row_size;
+static const TextInputKey keyboard_symbols_row_3[] = {
+    {'\'', 1, 32},
+    {',', 10, 32},
+    {'.', 19, 32},
+    {'/', 28, 32},
+    {'?', 37, 32},
+    {SPACE_KEY, 46, 32},
+    {'_', 64, 32},
+    {SYMBOLS_KEY, 73, 32},
+    {ENTER_KEY, 82, 23},
+    {'7', 100, 32},
+    {'8', 110, 32},
+    {'9', 120, 32},
+};
+
+static uint8_t get_row_size(const TextInputModel* model, uint8_t row_index) {
+    static const uint8_t letters[] = {
+        COUNT_OF(keyboard_keys_row_1),
+        COUNT_OF(keyboard_keys_row_2),
+        COUNT_OF(keyboard_keys_row_3),
+    };
+    static const uint8_t symbols[] = {
+        COUNT_OF(keyboard_symbols_row_1),
+        COUNT_OF(keyboard_symbols_row_2),
+        COUNT_OF(keyboard_symbols_row_3),
+    };
+    furi_check(row_index < keyboard_row_count);
+    return model->symbols ? symbols[row_index] : letters[row_index];
 }
 
-static const TextInputKey* get_row(uint8_t row_index) {
-    const TextInputKey* row = NULL;
-
-    switch(row_index + 1) {
-    case 1:
-        row = keyboard_keys_row_1;
-        break;
-    case 2:
-        row = keyboard_keys_row_2;
-        break;
-    case 3:
-        row = keyboard_keys_row_3;
-        break;
-    default:
-        furi_crash();
-    }
-
-    return row;
+static const TextInputKey* get_row(const TextInputModel* model, uint8_t row_index) {
+    static const TextInputKey* const letters[] = {
+        keyboard_keys_row_1,
+        keyboard_keys_row_2,
+        keyboard_keys_row_3,
+    };
+    static const TextInputKey* const symbols[] = {
+        keyboard_symbols_row_1,
+        keyboard_symbols_row_2,
+        keyboard_symbols_row_3,
+    };
+    furi_check(row_index < keyboard_row_count);
+    return model->symbols ? symbols[row_index] : letters[row_index];
 }
 
 static char get_selected_char(TextInputModel* model) {
-    return get_row(model->selected_row)[model->selected_column].text;
+    return get_row(model, model->selected_row)[model->selected_column].text;
+}
+
+// The middle of a key, for moving between rows to the key under it
+static uint8_t key_center(const TextInputKey* key) {
+    if(key->text == ENTER_KEY || key->text == BACKSPACE_KEY) return key->x + 7;
+    if(key->text == SPACE_KEY) return key->x + 7;
+    return key->x + 2;
+}
+
+// The key of a row nearest to x
+static uint8_t text_input_column_at(const TextInputModel* model, uint8_t row, uint8_t x) {
+    const TextInputKey* keys = get_row(model, row);
+    uint8_t best = 0;
+    int best_distance = 1000;
+    for(uint8_t column = 0; column < get_row_size(model, row); column++) {
+        const int distance = abs((int)key_center(&keys[column]) - (int)x);
+        if(distance < best_distance) {
+            best = column;
+            best_distance = distance;
+        }
+    }
+    return best;
 }
 
 static bool char_is_lowercase(char letter) {
@@ -175,9 +244,11 @@ static void text_input_view_draw_callback(Canvas* canvas, void* _model) {
     canvas_draw_str(canvas, 2, 8, model->header);
     elements_slightly_rounded_frame(canvas, 1, 12, 126, 15);
 
-    char buf[text_length + 1];
+    // room for the text, the cursor put into it, and the "..." a long text is cut to
+    char buf[text_length + 1 + 1 + 3];
+    buf[0] = '\0';
     if(model->text_buffer) {
-        strlcpy(buf, model->text_buffer, sizeof(buf));
+        strlcpy(buf, model->text_buffer, text_length + 1);
     }
     char* str = buf;
 
@@ -217,28 +288,52 @@ static void text_input_view_draw_callback(Canvas* canvas, void* _model) {
     canvas_set_font(canvas, FontKeyboard);
 
     for(uint8_t row = 0; row < keyboard_row_count; row++) {
-        const uint8_t column_count = get_row_size(row);
-        const TextInputKey* keys = get_row(row);
+        const uint8_t column_count = get_row_size(model, row);
+        const TextInputKey* keys = get_row(model, row);
 
         for(size_t column = 0; column < column_count; column++) {
             bool selected = !model->cursor_select && model->selected_row == row &&
                             model->selected_column == column;
 
+            const int32_t key_x = keyboard_origin_x + keys[column].x;
+            const int32_t key_y = keyboard_origin_y + keys[column].y;
             if(keys[column].text == ENTER_KEY) {
+                // a key the width of backspace above it, with a return arrow
                 canvas_set_color(canvas, ColorBlack);
                 if(selected) {
-                    canvas_draw_icon(
-                        canvas,
-                        keyboard_origin_x + keys[column].x,
-                        keyboard_origin_y + keys[column].y,
-                        &I_KeySaveSelected_24x11);
+                    canvas_draw_rbox(canvas, key_x, key_y, ENTER_KEY_WIDTH, 11, 2);
+                    canvas_set_color(canvas, ColorWhite);
                 } else {
-                    canvas_draw_icon(
-                        canvas,
-                        keyboard_origin_x + keys[column].x,
-                        keyboard_origin_y + keys[column].y,
-                        &I_KeySave_24x11);
+                    canvas_draw_rframe(canvas, key_x, key_y, ENTER_KEY_WIDTH, 11, 2);
                 }
+                canvas_draw_line(canvas, key_x + 11, key_y + 2, key_x + 11, key_y + 6);
+                canvas_draw_line(canvas, key_x + 4, key_y + 6, key_x + 11, key_y + 6);
+                canvas_draw_line(canvas, key_x + 6, key_y + 4, key_x + 4, key_y + 6);
+                canvas_draw_line(canvas, key_x + 6, key_y + 8, key_x + 4, key_y + 6);
+                canvas_set_color(canvas, ColorBlack);
+            } else if(keys[column].text == SPACE_KEY) {
+                // a wide key with the space mark on it
+                canvas_set_color(canvas, ColorBlack);
+                if(selected) {
+                    canvas_draw_box(canvas, key_x - 1, key_y - 8, SPACE_KEY_WIDTH, 10);
+                    canvas_set_color(canvas, ColorWhite);
+                }
+                canvas_draw_line(canvas, key_x + 1, key_y - 1, key_x + SPACE_KEY_WIDTH - 4, key_y - 1);
+                canvas_draw_line(canvas, key_x + 1, key_y - 3, key_x + 1, key_y - 1);
+                canvas_draw_line(
+                    canvas, key_x + SPACE_KEY_WIDTH - 4, key_y - 3, key_x + SPACE_KEY_WIDTH - 4, key_y - 1);
+                canvas_set_color(canvas, ColorBlack);
+            } else if(keys[column].text == SYMBOLS_KEY) {
+                // shows the page it switches to
+                if(selected) {
+                    canvas_set_color(canvas, ColorBlack);
+                    canvas_draw_box(canvas, key_x - 1, key_y - 8, 7, 10);
+                    canvas_set_color(canvas, ColorWhite);
+                } else {
+                    canvas_set_color(canvas, ColorBlack);
+                }
+                canvas_draw_glyph(canvas, key_x, key_y, model->symbols ? 'a' : '#');
+                canvas_set_color(canvas, ColorBlack);
             } else if(keys[column].text == BACKSPACE_KEY) {
                 canvas_set_color(canvas, ColorBlack);
                 if(selected) {
@@ -300,10 +395,11 @@ static void text_input_view_draw_callback(Canvas* canvas, void* _model) {
 static void text_input_handle_up(TextInput* text_input, TextInputModel* model) {
     UNUSED(text_input);
     if(model->selected_row > 0) {
+        // to the key above, the nearest by position
+        const uint8_t x =
+            key_center(&get_row(model, model->selected_row)[model->selected_column]);
         model->selected_row--;
-        if(model->selected_column > get_row_size(model->selected_row) - 6) {
-            model->selected_column = model->selected_column + 1;
-        }
+        model->selected_column = text_input_column_at(model, model->selected_row, x);
     } else {
         model->cursor_select = true;
         model->clear_default_text = false;
@@ -315,10 +411,10 @@ static void text_input_handle_down(TextInput* text_input, TextInputModel* model)
     if(model->cursor_select) {
         model->cursor_select = false;
     } else if(model->selected_row < keyboard_row_count - 1) {
+        const uint8_t x =
+            key_center(&get_row(model, model->selected_row)[model->selected_column]);
         model->selected_row++;
-        if(model->selected_column > get_row_size(model->selected_row) - 4) {
-            model->selected_column = model->selected_column - 1;
-        }
+        model->selected_column = text_input_column_at(model, model->selected_row, x);
     }
 }
 
@@ -332,7 +428,7 @@ static void text_input_handle_left(TextInput* text_input, TextInputModel* model)
     } else if(model->selected_column > 0) {
         model->selected_column--;
     } else {
-        model->selected_column = get_row_size(model->selected_row) - 1;
+        model->selected_column = get_row_size(model, model->selected_row) - 1;
     }
 }
 
@@ -341,7 +437,7 @@ static void text_input_handle_right(TextInput* text_input, TextInputModel* model
     if(model->cursor_select) {
         model->clear_default_text = false;
         model->cursor_pos = CLAMP(model->cursor_pos + 1, strlen(model->text_buffer), 0u);
-    } else if(model->selected_column < get_row_size(model->selected_row) - 1) {
+    } else if(model->selected_column < get_row_size(model, model->selected_row) - 1) {
         model->selected_column++;
     } else {
         model->selected_column = 0;
@@ -358,6 +454,14 @@ static void text_input_handle_ok(TextInput* text_input, TextInputModel* model, I
     char selected = get_selected_char(model);
     size_t text_length = strlen(model->text_buffer);
 
+    if(selected == SYMBOLS_KEY) {
+        // the other page, on the same key
+        const uint8_t x =
+            key_center(&get_row(model, model->selected_row)[model->selected_column]);
+        model->symbols = !model->symbols;
+        model->selected_column = text_input_column_at(model, model->selected_row, x);
+        return;
+    }
     if(selected == ENTER_KEY) {
         if(model->validator_callback &&
            (!model->validator_callback(
@@ -551,6 +655,7 @@ void text_input_reset(TextInput* text_input) {
             model->header = "";
             model->selected_row = 0;
             model->selected_column = 0;
+            model->symbols = false;
             model->minimum_length = 1;
             model->clear_default_text = false;
             model->cursor_pos = 0;
@@ -593,8 +698,9 @@ void text_input_set_result_callback(
             if(text_buffer && text_buffer[0] != '\0') {
                 model->cursor_pos = strlen(text_buffer);
                 // Set focus on Save
+                model->symbols = false;
                 model->selected_row = 2;
-                model->selected_column = 8;
+                model->selected_column = 9;
             } else {
                 model->cursor_pos = 0;
             }

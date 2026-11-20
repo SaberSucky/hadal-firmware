@@ -29,6 +29,7 @@ PREVIEWS = {
     "battery_history": ["applications/system/battery_history/battery_stats.c"],
     "updater_descent": ["applications/system/updater/views/updater_descent.c"],
     "lock_clock": ["applications/services/desktop/helpers/desktop_lock_clock.c"],
+    "keyboard": [],
 }
 
 GUI_SOURCES = [

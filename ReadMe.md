@@ -37,6 +37,9 @@ The Flipper ships with ST's "BLE Light" radio stack, which can only advertise an
 - **Interface → Lock Screen:** lock at start or not when a PIN is set, the time and date on the lock screen, and what too many wrong PINs in a row do: nothing, power off, or erase the Flipper (its settings, PIN, pairings and saved keys; the SD card is kept). The PIN screen says how many tries are left
 - **Protocols → Extended Sub-GHz:** the range beyond the radio chip's specification, which used to need a file edited by hand. It asks first, and applies after a restart
 
+### Keyboard
+The on-screen keyboard has a symbols page: the **#** key beside **_** switches between letters and every printable ASCII symbol (`! @ # $ % ^ & * ( ) ~ \` | \ - + = [ ] { } ; : < > " ' , . / ?`), with a space bar, for passwords, URLs and file names. As before, **Up** from the top row moves into the text, where **Left** and **Right** move the cursor.
+
 ### Updates and crashes
 - **The update screen:** a bathyscaphe sinks towards the bottom of the Challenger Deep (10,935 m) as the update goes on, with a depth gauge, the ocean zone it has reached, marine snow rising past it, and the seabed coming up at the end
 - **Only what changed:** an update writes only the SD files that differ (each file's real size and MD5 are checked against the new package), instead of all ~1,700
