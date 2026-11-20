@@ -2954,6 +2954,92 @@ class BleSeenTests(TempDirCase):
             self.assertEqual(r.returncode, 0, r.stderr[-1500:])
 
 
+class IrLearnedTests(unittest.TestCase):
+    """Universal remote codes that worked, sent first next time (lib/infrared/signal/infrared_learned.c)"""
+
+    @classmethod
+    def setUpClass(cls):
+        import subprocess
+
+        if not _have_sanitizer("address,undefined"):
+            raise unittest.SkipTest("gcc with AddressSanitizer is not available")
+        cls.build_dir = tempfile.mkdtemp(prefix="irl_")
+        cls.exe = os.path.join(cls.build_dir, "ir_learned_host")
+        lib = os.path.join(REPO_ROOT, "lib", "infrared", "signal")
+        subprocess.check_call(
+            [
+                "gcc", "-std=gnu11", "-g", "-O1", "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
+                "-Wall", "-Wextra", "-Werror", "-I", lib, "-o", cls.exe,
+                os.path.join(REPO_ROOT, "scripts", "host_tests", "ir_learned_host.c"),
+                os.path.join(lib, "infrared_learned.c"),
+            ]
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.build_dir, True)
+
+    def run_host(self, text, *args):
+        import subprocess
+
+        r = subprocess.run([self.exe, *args], input=text, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+        return r.stdout
+
+    def bump(self, text, library, button, key, weight=1):
+        return self.run_host(text, "bump", library, button, f"{key:X}", str(weight))
+
+    def find(self, text, library, button, limit=8):
+        return [line.split() for line in self.run_host(text, "find", library, button, str(limit)).splitlines()]
+
+    def test_bump_adds_then_raises(self):
+        text = self.bump("", "tv.ir", "Power", 0x1A2B3C4D, 3)
+        self.assertEqual(text, "tv.ir Power 1A2B3C4D 3\n")
+        text = self.bump(text, "tv.ir", "Power", 0x1A2B3C4D, 1)
+        self.assertEqual(text, "tv.ir Power 1A2B3C4D 4\n")
+
+    def test_find_best_first_per_button_and_library(self):
+        text = ""
+        for library, button, key, weight in [
+            ("tv.ir", "Power", 0x11, 1), ("tv.ir", "Power", 0x22, 3), ("tv.ir", "Mute", 0x33, 3),
+            ("audio.ir", "Power", 0x44, 3), ("tv.ir", "Power", 0x55, 1), ("tv.ir", "Power", 0x11, 1),
+        ]:
+            text = self.bump(text, library, button, key, weight)
+        self.assertEqual(self.find(text, "tv.ir", "Power"), [["00000022", "3"], ["00000011", "2"], ["00000055", "1"]])
+        self.assertEqual(self.find(text, "tv.ir", "Power", 2), [["00000022", "3"], ["00000011", "2"]])
+        self.assertEqual(self.find(text, "audio.ir", "Power"), [["00000044", "3"]])
+        self.assertEqual(self.find(text, "tv.ir", "Vol_up"), [])
+
+    def test_the_score_stops_growing(self):
+        text = ""
+        for _ in range(30):
+            text = self.bump(text, "tv.ir", "Power", 0x11, 3)
+        self.assertEqual(text, "tv.ir Power 00000011 50\n")
+
+    def test_bad_lines_and_names(self):
+        text = "junk\ntv.ir Power zz 3\ntv.ir Power 00000011 0\ntv.ir Power 00000022 7 extra\ntv.ir Mute 00000033 2\n"
+        self.assertEqual(self.find(text, "tv.ir", "Mute"), [["00000033", "2"]])
+        self.assertEqual(self.find(text, "tv.ir", "Power"), [])
+        self.assertEqual(self.bump(text, "tv.ir", "Mute", 0x33, 1), "tv.ir Mute 00000033 3\n")
+        self.assertEqual(self.bump("", "tv.ir", "Vol up", 0x33, 1), "NULL\n")       # a space cannot be stored
+        self.assertEqual(self.bump("", "tv.ir", "B" * 40, 0x33, 1), "NULL\n")
+
+    def test_a_full_file_drops_the_lowest(self):
+        text = "".join(f"tv.ir B{i} {i:08X} {2 if i else 1}\n" for i in range(200))
+        out = self.bump(text, "tv.ir", "New", 0xABC, 3)
+        lines = out.splitlines()
+        self.assertEqual(len(lines), 200)
+        self.assertNotIn("tv.ir B0 00000000 1", lines)          # the lowest score made room
+        self.assertEqual(lines[-1], "tv.ir New 00000ABC 3")
+
+    def test_fuzz(self):
+        import subprocess
+
+        for seed in ("1", "77"):
+            r = subprocess.run([self.exe, "fuzz", "3000", seed], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+
+
 class ScreenPreviewTests(TempDirCase):
     """The app screens drawn by the firmware's own canvas on the host, under sanitizers"""
 

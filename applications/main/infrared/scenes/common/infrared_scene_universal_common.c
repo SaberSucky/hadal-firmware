@@ -138,6 +138,8 @@ static void infrared_scene_universal_common_handle_popup_input(
                brute_force, scene_state.signal_index, infrared->current_signal)) {
             infrared_text_store_set(
                 infrared, 1, "%s", infrared_brute_force_get_current_record_name(brute_force));
+            // it worked: next time it goes first
+            infrared_brute_force_learn(brute_force, scene_state.signal_index, true);
             infrared_brute_force_stop(brute_force);
             infrared_scene_universal_common_hide_popup(infrared);
             scene_manager_next_scene(scene_manager, InfraredSceneUniversalSave);
@@ -162,6 +164,7 @@ static void infrared_scene_universal_common_handle_popup_input(
         }
         infrared_text_store_set(
             infrared, 1, "%s", infrared_brute_force_get_current_record_name(brute_force));
+        infrared_brute_force_learn(brute_force, scene_state.signal_index, true);
         infrared_brute_force_stop(brute_force);
         infrared_scene_universal_common_hide_popup(infrared);
         if(count == 1) {
@@ -182,6 +185,8 @@ static void infrared_scene_universal_common_handle_popup_input(
         infrared_play_notification_message(infrared, InfraredNotificationMessageBlinkStartSend);
         infrared_brute_force_send(infrared->brute_force, scene_state.signal_index);
         infrared_play_notification_message(infrared, InfraredNotificationMessageBlinkStop);
+        // sent again by hand: probably the one that worked (a weak sign; saving is a strong one)
+        infrared_brute_force_learn(infrared->brute_force, scene_state.signal_index, false);
         break;
     }
 

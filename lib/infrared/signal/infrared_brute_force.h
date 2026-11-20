@@ -128,6 +128,18 @@ void infrared_brute_force_set_fast(InfraredBruteForce* brute_force, bool fast);
 void infrared_brute_force_set_speed(InfraredBruteForce* brute_force, InfraredTxSpeed speed);
 
 /**
+ * @brief Remember that a signal of the running category worked, so that it is sent first the
+ * next time this category runs (kept in /ext/apps_data/infrared/learned.txt).
+ *
+ * @param[in] brute_force pointer to the instance
+ * @param[in] signal_index the signal, as for infrared_brute_force_send()
+ * @param[in] saved true when the user saved it (a strong sign), false when they only sent it
+ *                  again by hand
+ * @returns true if it was remembered
+ */
+bool infrared_brute_force_learn(InfraredBruteForce* brute_force, uint32_t signal_index, bool saved);
+
+/**
  * @brief Load a signal from the chosen category without transmitting it.
  *
  * @param[in] brute_force pointer to the instance

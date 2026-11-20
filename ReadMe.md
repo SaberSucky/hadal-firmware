@@ -51,6 +51,7 @@ The Flipper ships with ST's "BLE Light" radio stack, which can only advertise an
 - **Most-used codes first:** each button sends the codes that the most device models use first, counted in the public [Flipper IR database](https://github.com/Lucaslhm/Flipper-IRDB) (`scripts/rank_ir_library.py` writes the order next to each library; the libraries themselves are unchanged)
 - **No repeats:** a code the library holds more than once (twice for one model, as NEC and as NECext, or once recorded raw) is sent once, the clean version when there is one. Projector Power goes from 138 codes to 67, LED Power on from 70 to 48
 - **Speed** (Infrared → Settings → Universal Speed): *Normal* keeps the original timings; *Fast* (default) leaves the gap a real remote leaves between repeats; *Turbo* leaves only the silence an IR receiver needs after the code's longest burst, and sends raw codes once (Sony-style codes three times, as Sony devices want). A full TV Power run takes about 45 s in Fast and 27 s in Turbo
+- **Learns your devices:** a code you save from a universal remote run, or send again by hand from the pause screen, goes first the next time you press that button (kept in `/ext/apps_data/infrared/learned.txt`). Your TV's Power code ends up being the first one sent
 - **Remote Finder:** when a code works, pause and *save all* to keep that device's whole remote
 - The pause screen fits all its options
 

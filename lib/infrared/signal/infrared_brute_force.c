@@ -7,6 +7,7 @@
 
 #include <storage/storage.h>
 
+#include "infrared_learned.h"
 #include "infrared_signal.h"
 #include "infrared_signal_key.h"
 
@@ -206,6 +207,71 @@ static void
     free(wanted);
 }
 
+/* ------------------------------------------------------------------ */
+/* Codes that worked: sent first next time                             */
+/* ------------------------------------------------------------------ */
+
+#define IR_BF_LEARNED_DIR      EXT_PATH("apps_data/infrared")
+#define IR_BF_LEARNED_PATH     IR_BF_LEARNED_DIR "/learned.txt"
+#define IR_BF_LEARNED_MAX_SIZE (16U * 1024U)
+// Learned codes moved to the front of one button's list
+#define IR_BF_LEARNED_FRONT (8U)
+
+// The whole learned file, or NULL
+static char* ir_bf_learned_read(Storage* storage) {
+    File* file = storage_file_alloc(storage);
+    char* text = NULL;
+    if(storage_file_open(file, IR_BF_LEARNED_PATH, FSAM_READ, FSOM_OPEN_EXISTING)) {
+        const uint64_t size = storage_file_size(file);
+        if(size <= IR_BF_LEARNED_MAX_SIZE) {
+            text = malloc((size_t)size + 1);
+            const size_t read = storage_file_read(file, text, (size_t)size);
+            text[read] = '\0';
+        }
+    }
+    storage_file_free(file);
+    return text;
+}
+
+static bool ir_bf_learned_write(Storage* storage, const char* text) {
+    storage_simply_mkdir(storage, IR_BF_LEARNED_DIR);
+    File* file = storage_file_alloc(storage);
+    const size_t length = strlen(text);
+    bool success = storage_file_open(file, IR_BF_LEARNED_PATH, FSAM_WRITE, FSOM_CREATE_ALWAYS) &&
+                   storage_file_write(file, text, length) == length;
+    storage_file_free(file);
+    return success;
+}
+
+// "/ext/infrared/assets/tv.ir" -> "tv.ir"
+static const char* ir_bf_library_name(const char* db_filename) {
+    const char* slash = strrchr(db_filename, '/');
+    return slash ? slash + 1 : db_filename;
+}
+
+// Move the codes that worked before to the front, best first; the rest keep their order
+static void ir_bf_learned_front(
+    InfraredBruteForceCandidate* kept,
+    size_t kept_count,
+    const char* learned_text,
+    const char* library,
+    const char* button) {
+    if(!learned_text || !kept_count) return;
+    InfraredLearnedCode codes[IR_BF_LEARNED_FRONT];
+    const size_t count =
+        infrared_learned_find(learned_text, library, button, codes, IR_BF_LEARNED_FRONT);
+    size_t front = 0;
+    for(size_t c = 0; c < count; c++) {
+        for(size_t k = front; k < kept_count; k++) {
+            if(kept[k].key != codes[c].key) continue;
+            const InfraredBruteForceCandidate moved = kept[k];
+            memmove(&kept[front + 1], &kept[front], (k - front) * sizeof(InfraredBruteForceCandidate));
+            kept[front++] = moved;
+            break;
+        }
+    }
+}
+
 // Fill the record's signal list from its candidates, in sending order, without a code that
 // was already in the list (the database often has one code several times: a model's remote
 // was added twice, or as NEC and as NECext, or once parsed and once raw). Of a parsed signal
@@ -214,7 +280,9 @@ static void
 static void ir_bf_record_finish(
     InfraredBruteForceRecord* record,
     const char* name,
-    FlipperFormat* order_ff) {
+    FlipperFormat* order_ff,
+    const char* learned_text,
+    const char* library) {
     const size_t count = InfraredBruteForceCandidateArray_size(record->candidates);
     uint32_t* order = malloc(sizeof(uint32_t) * (count ? count : 1));
     ir_bf_order_read(order_ff, name, order, count);
@@ -236,6 +304,8 @@ static void ir_bf_record_finish(
             kept[k] = *candidate;
         }
     }
+
+    ir_bf_learned_front(kept, kept_count, learned_text, library, name);
 
     SignalPositionArray_reset(record->signals);
     for(size_t k = 0; k < kept_count; k++) {
@@ -315,6 +385,8 @@ InfraredErrorCode infrared_brute_force_calculate_messages(InfraredBruteForce* br
     // Put each record's signals in sending order, once each (on error the records stay empty)
     FlipperFormat* order_ff =
         INFRARED_ERROR_PRESENT(error) ? NULL : ir_bf_order_open(storage, brute_force->db_filename);
+    char* learned_text = INFRARED_ERROR_PRESENT(error) ? NULL : ir_bf_learned_read(storage);
+    const char* library = ir_bf_library_name(brute_force->db_filename);
     for(InfraredBruteForceRecordDict_it(it, brute_force->records);
         !InfraredBruteForceRecordDict_end_p(it);
         InfraredBruteForceRecordDict_next(it)) {
@@ -322,10 +394,12 @@ InfraredErrorCode infrared_brute_force_calculate_messages(InfraredBruteForce* br
         if(INFRARED_ERROR_PRESENT(error)) {
             InfraredBruteForceCandidateArray_reset(ref->value.candidates);
         } else {
-            ir_bf_record_finish(&ref->value, furi_string_get_cstr(ref->key), order_ff);
+            ir_bf_record_finish(
+                &ref->value, furi_string_get_cstr(ref->key), order_ff, learned_text, library);
         }
     }
     if(order_ff) flipper_format_free(order_ff);
+    free(learned_text);
 
     infrared_free_decoder(decoder);
     infrared_signal_free(signal);
@@ -421,6 +495,37 @@ bool infrared_brute_force_send(InfraredBruteForce* brute_force, uint32_t signal_
 
     infrared_signal_transmit_at(brute_force->current_signal, brute_force->speed);
     return true;
+}
+
+bool infrared_brute_force_learn(InfraredBruteForce* brute_force, uint32_t signal_index, bool saved) {
+    furi_check(brute_force);
+    furi_assert(brute_force->is_started);
+    if(!brute_force->db_filename) return false;
+
+    InfraredSignal* signal = infrared_signal_alloc();
+    bool success = infrared_brute_force_load_signal(brute_force, signal_index, signal);
+    if(success) {
+        // the decoder is only needed to read a raw capture
+        InfraredDecoderHandler* decoder =
+            infrared_signal_is_raw(signal) ? infrared_alloc_decoder() : NULL;
+        const uint32_t key = ir_bf_signal_key(signal, decoder);
+        if(decoder) infrared_free_decoder(decoder);
+
+        Storage* storage = furi_record_open(RECORD_STORAGE);
+        char* text = ir_bf_learned_read(storage);
+        char* updated = infrared_learned_bump(
+            text ? text : "",
+            ir_bf_library_name(brute_force->db_filename),
+            furi_string_get_cstr(brute_force->current_record_name),
+            key,
+            saved ? InfraredLearnedSaved : InfraredLearnedSentAgain);
+        success = updated && ir_bf_learned_write(storage, updated);
+        free(updated);
+        free(text);
+        furi_record_close(RECORD_STORAGE);
+    }
+    infrared_signal_free(signal);
+    return success;
 }
 
 void infrared_brute_force_add_record(
