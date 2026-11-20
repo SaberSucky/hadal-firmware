@@ -140,6 +140,25 @@ void variable_item_set_values_text(VariableItem* item, const char* const* values
  */
 void variable_item_set_locked(VariableItem* item, bool locked, const char* locked_message);
 
+/** Hide an item, or show it again: for a setting that means nothing while another is off (Night
+ * Shift's start and end while it is off). A hidden item keeps its place and its index (the enter
+ * callback and variable_item_list_get count it as before); Up and Down pass over it. Shown or
+ * hidden while the list is on screen, it slides out from under the row above, or back under it.
+ * The cursor never stays on a hidden item: it moves to the one above.
+ *
+ * @param      item    VariableItem* instance
+ * @param      hidden  true to hide it
+ */
+void variable_item_set_hidden(VariableItem* item, bool hidden);
+
+/** Indent an item under the one it belongs to: 1 for a setting of the item above it, 2 for one
+ * of that setting's own (at most 2)
+ *
+ * @param      item   VariableItem* instance
+ * @param      level  0 (not indented), 1 or 2
+ */
+void variable_item_set_indent(VariableItem* item, uint8_t level);
+
 /** Get item current selected index
  *
  * @param      item  VariableItem* instance

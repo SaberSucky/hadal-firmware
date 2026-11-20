@@ -1,5 +1,5 @@
 entry,status,name,type,params
-Version,+,88.33,,
+Version,+,88.34,,
 Header,+,applications/drivers/subghz/cc1101_ext/cc1101_ext_interconnect.h,,
 Header,+,applications/services/applications.h,,
 Header,+,applications/services/bt/bt_service/bt.h,,
@@ -1268,8 +1268,8 @@ Function,+,file_browser_worker_alloc,BrowserWorker*,"FuriString*, const char*, c
 Function,+,file_browser_worker_folder_enter,void,"BrowserWorker*, FuriString*, int32_t"
 Function,+,file_browser_worker_folder_exit,void,BrowserWorker*
 Function,+,file_browser_worker_folder_refresh,void,"BrowserWorker*, int32_t"
-Function,-,file_browser_worker_get_item_info,const FileInfo*,BrowserWorker*
 Function,+,file_browser_worker_free,void,BrowserWorker*
+Function,-,file_browser_worker_get_item_info,const FileInfo*,BrowserWorker*
 Function,+,file_browser_worker_is_in_start_folder,_Bool,BrowserWorker*
 Function,+,file_browser_worker_load,void,"BrowserWorker*, uint32_t, uint32_t"
 Function,+,file_browser_worker_set_callback_context,void,"BrowserWorker*, void*"
@@ -1877,6 +1877,7 @@ Function,+,furi_hal_spi_release,void,const FuriHalSpiBusHandle*
 Function,-,furi_hal_subghz_dump_state,void,
 Function,+,furi_hal_subghz_flush_rx,void,
 Function,+,furi_hal_subghz_flush_tx,void,
+Function,+,furi_hal_subghz_get_dangerous_frequency,_Bool,
 Function,+,furi_hal_subghz_get_data_gpio,const GpioPin*,
 Function,+,furi_hal_subghz_get_ext_leds_and_amp,_Bool,
 Function,+,furi_hal_subghz_get_lqi,uint8_t,
@@ -5219,6 +5220,8 @@ Function,+,variable_item_list_set_enter_callback,void,"VariableItemList*, Variab
 Function,+,variable_item_list_set_selected_item,void,"VariableItemList*, uint8_t"
 Function,+,variable_item_set_current_value_index,void,"VariableItem*, uint8_t"
 Function,+,variable_item_set_current_value_text,void,"VariableItem*, const char*"
+Function,+,variable_item_set_hidden,void,"VariableItem*, _Bool"
+Function,+,variable_item_set_indent,void,"VariableItem*, uint8_t"
 Function,+,variable_item_set_item_label,void,"VariableItem*, const char*"
 Function,+,variable_item_set_locked,void,"VariableItem*, _Bool, const char*"
 Function,+,variable_item_set_values_count,void,"VariableItem*, uint8_t"

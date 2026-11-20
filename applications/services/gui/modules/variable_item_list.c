@@ -1,6 +1,7 @@
 #include "variable_item_list.h"
 #include <gui/elements.h>
 #include <gui/canvas.h>
+#include "../canvas_i.h"
 #include <furi.h>
 #include <assets_icons.h>
 #include <m-array.h>
@@ -22,6 +23,11 @@
 // a dropdown row: its selection, two clear rows over the capitals and one under the descenders
 #define DROPDOWN_ROW_H    12
 #define TEXT_PAD          3 // either side of a text, inside what holds it
+#define ITEM_H            16
+#define ITEMS_ON_SCREEN   4
+#define INDENT_W          8 // an indented item's label, per level
+#define INDENT_MAX        2
+#define SLIDE_INTERVAL    20 // ms between the frames of a row sliding in or out
 
 typedef enum {
     VariableItemControlArrows, // < value >, as Flipper always drew it
@@ -41,6 +47,9 @@ struct VariableItem {
 
     VariableItemChangeCallback change_callback;
     bool locked;
+    bool hidden;
+    uint8_t indent;
+    uint8_t height; // as drawn: ITEM_H when shown, 0 when hidden, between while it slides
     FuriString* locked_message;
     void* context;
 };
@@ -53,6 +62,7 @@ struct VariableItemList {
     void* context;
     FuriTimer* scroll_timer;
     FuriTimer* locked_timer;
+    FuriTimer* slide_timer;
 };
 
 typedef struct {
@@ -67,6 +77,9 @@ typedef struct {
     // the selected item's label or value is too long and scrolls: the timer redraws only then
     bool selected_scrolls;
     uint8_t dropdown_window;
+    // rows take their heights at once on the next draw (a new list, or one coming on screen)
+    bool snap;
+    FuriTimer* slide_timer; // the list's: the draw starts it while a row slides
 } VariableItemListModel;
 
 static void variable_item_list_process_up(VariableItemList* variable_item_list);
@@ -147,6 +160,49 @@ static VariableItemControl
         return VariableItemControlSegments;
     }
     return VariableItemControlDropdown;
+}
+
+/** The guides of a group: a dotted line from just under the first letter of the item the group
+ * is under, down through its rows, ending at the last one's text with a tick to it. Dots on odd
+ * rows, the same in every row, so they line up from row to row */
+#define GUIDE_TICK_Y 9 // the tick, in the middle of the text's lowercase
+
+static int32_t variable_item_guide_x(uint8_t level) {
+    return 6 + (level - 1) * INDENT_W + 1; // under the first letter of a label at level - 1
+}
+
+/** The top of a group's line, in the row of the item it is under: under its first letter */
+static void variable_item_draw_guide_start(
+    Canvas* canvas,
+    const VariableItem* item,
+    int32_t item_y,
+    Color ink) {
+    const int32_t x = variable_item_guide_x(item->indent + 1);
+    canvas_set_color(canvas, ink); // in the selection, if it is selected
+    canvas_draw_dot(canvas, x, item_y + 13);
+    canvas_set_color(canvas, ColorBlack); // under the selection, whatever
+    canvas_draw_dot(canvas, x, item_y + 15);
+    canvas_set_color(canvas, ink);
+}
+
+static void variable_item_draw_guides(
+    Canvas* canvas,
+    const VariableItem* item,
+    uint8_t next_indent,
+    int32_t item_y) {
+    const int32_t tick = item_y + GUIDE_TICK_Y;
+    for(uint8_t level = 1; level <= item->indent; level++) {
+        const int32_t x = variable_item_guide_x(level);
+        const int32_t bottom = next_indent >= level ? item_y + ITEM_H - 1 : tick;
+        for(int32_t y = item_y + 1; y <= bottom; y += 2) {
+            canvas_draw_dot(canvas, x, y);
+        }
+        if(level == item->indent) {
+            for(int32_t dx = 2; dx < INDENT_W - 2; dx += 2) {
+                canvas_draw_dot(canvas, x + dx, tick);
+            }
+        }
+    }
 }
 
 /** A switch, its right end at x, its top at y: filled with the knob on the right when on */
@@ -267,28 +323,140 @@ static void variable_item_list_draw_dropdown(
     elements_hint_bar(canvas, "ud=Choose;ok=Set;back=Cancel");
 }
 
+/* ---- hidden items ----
+ * The cursor and the window are items' indexes, as before, so the apps' indexes still hold;
+ * where they sit among the shown items (their rank) is what moving and the window go by */
+
+static bool variable_item_list_hidden(const VariableItemListModel* model, size_t index) {
+    return VariableItemArray_cget(model->items, index)->hidden;
+}
+
+/** How many shown items come before index */
+static size_t variable_item_list_rank(const VariableItemListModel* model, size_t index) {
+    size_t rank = 0;
+    const size_t count = MIN(index, VariableItemArray_size(model->items));
+    for(size_t i = 0; i < count; i++) {
+        rank += !variable_item_list_hidden(model, i);
+    }
+    return rank;
+}
+
+/** The shown item of that rank (the last shown one past the end) */
+static size_t variable_item_list_at_rank(const VariableItemListModel* model, size_t rank) {
+    const size_t count = VariableItemArray_size(model->items);
+    size_t last = 0;
+    for(size_t i = 0; i < count; i++) {
+        if(variable_item_list_hidden(model, i)) continue;
+        if(!rank--) return i;
+        last = i;
+    }
+    return last;
+}
+
+/** The window over the cursor as Up and Down always kept it: a row above the cursor and one
+ * under it while there are more, and no empty rows at the bottom (bar under an open dropdown,
+ * which moves the cursor up out from under its hint bar) */
+static void variable_item_list_fit_window(VariableItemListModel* model) {
+    const size_t shown = variable_item_list_rank(model, VariableItemArray_size(model->items));
+    const size_t cursor = variable_item_list_rank(model, model->position);
+    size_t window = variable_item_list_rank(model, model->window_position);
+    size_t last = shown > ITEMS_ON_SCREEN ? shown - ITEMS_ON_SCREEN : 0;
+    if(model->dropdown_open && cursor > 2) last = MAX(last, cursor - 2);
+    if(cursor > window + 2) window = cursor - 2;
+    if(cursor < window + 1) window = cursor ? cursor - 1 : 0;
+    window = MIN(window, last);
+    model->window_position = variable_item_list_at_rank(model, window);
+}
+
+/** Before a draw: rows snapped to their heights if the list is new, the cursor off a hidden item
+ * (to the one above it: an item hides those under it), the window over it. Returns whether a row
+ * is still sliding */
+static bool variable_item_list_settle(VariableItemListModel* model) {
+    const size_t count = VariableItemArray_size(model->items);
+    bool sliding = false;
+    for(size_t i = 0; i < count; i++) {
+        VariableItem* item = VariableItemArray_get(model->items, i);
+        const uint8_t height = item->hidden ? 0 : ITEM_H;
+        if(model->snap) item->height = height;
+        sliding |= item->height != height;
+    }
+    model->snap = false;
+    if(!count) return false;
+    if(model->position >= count) model->position = 0;
+    size_t position = model->position;
+    while(position > 0 && variable_item_list_hidden(model, position)) position--;
+    while(position + 1 < count && variable_item_list_hidden(model, position)) position++;
+    model->position = position;
+    variable_item_list_fit_window(model);
+    return sliding;
+}
+
+/** A frame of the rows sliding: each a step nearer its height, quick at first, then slowing */
+static void variable_item_list_slide_timer_callback(void* context) {
+    VariableItemList* variable_item_list = context;
+    with_view_model(
+        variable_item_list->view,
+        VariableItemListModel * model,
+        {
+            VariableItemArray_it_t it;
+            for(VariableItemArray_it(it, model->items); !VariableItemArray_end_p(it);
+                VariableItemArray_next(it)) {
+                VariableItem* item = VariableItemArray_ref(it);
+                const uint8_t height = item->hidden ? 0 : ITEM_H;
+                if(item->height < height) {
+                    item->height += (height - item->height + 1) / 2;
+                } else if(item->height > height) {
+                    item->height -= (item->height - height + 1) / 2;
+                }
+            }
+        },
+        true);
+}
+
 static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
     VariableItemListModel* model = _model;
 
-    const uint8_t item_height = 16;
+    const uint8_t item_height = ITEM_H;
     const uint8_t item_width = 123;
 
     canvas_clear(canvas);
+    // the next frame, if a row is still on its way: started here, where every change shows
+    if(variable_item_list_settle(model) && model->slide_timer) {
+        furi_timer_start(model->slide_timer, furi_ms_to_ticks(SLIDE_INTERVAL));
+    }
 
-    uint8_t position = 0;
-    VariableItemArray_it_t it;
+    int32_t selected_y = -1;
+    int32_t rows_end = 0; // where the rows drawn so far end
+    const int32_t screen_y = canvas->offset_y;
 
     canvas_set_font(canvas, FontSecondary);
-    for(VariableItemArray_it(it, model->items); !VariableItemArray_end_p(it);
-        VariableItemArray_next(it)) {
-        uint8_t item_position = position - model->window_position;
-        uint8_t items_on_screen = 4;
-        uint8_t y_offset = 0;
-
-        if(item_position < items_on_screen) {
-            VariableItem* item = VariableItemArray_ref(it);
-            uint8_t item_y = y_offset + (item_position * item_height);
-            uint8_t item_text_y = item_y + item_height - 4;
+    for(size_t position = model->window_position;
+        position < VariableItemArray_size(model->items) && rows_end < 64;
+        position++) {
+        {
+            VariableItem* item = VariableItemArray_get(model->items, position);
+            if(!item->height) continue;
+            // a row sliding in comes out from under the one above: drawn whole, ending where its
+            // row ends, and only its row shows
+            const int32_t row_top = rows_end;
+            rows_end += item->height;
+            const int32_t item_y = rows_end - item_height;
+            const bool clipped = item->height < item_height;
+            if(clipped) {
+                u8g2_SetClipWindow(
+                    &canvas->fb, 0, screen_y + row_top, 128, screen_y + MIN(rows_end, 64));
+            }
+            const int32_t item_text_y = item_y + item_height - 4;
+            const int32_t indent = item->indent * INDENT_W;
+            // whether the group goes on under this row: the next row's indent
+            uint8_t next_indent = 0;
+            for(size_t next = position + 1; next < VariableItemArray_size(model->items); next++) {
+                const VariableItem* below = VariableItemArray_cget(model->items, next);
+                if(below->height) {
+                    next_indent = below->indent;
+                    break;
+                }
+            }
             size_t scroll_counter = 0;
 
             if(position == model->position) {
@@ -326,7 +494,10 @@ static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
                 temp_w_default = CONTROL_RIGHT + 1 - segments - 4 - 6;
             }
 
+            temp_w_default -= indent; // an indented label starts further in, ending where it did
+
             if(position == model->position) {
+                selected_y = item_y;
                 const size_t value_room =
                     control == VariableItemControlDropdown ? (size_t)(CONTROL_RIGHT - 9 - temp_x_default) :
                     (control == VariableItemControlArrows || control == VariableItemControlMeter) ?
@@ -340,17 +511,22 @@ static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
 
             if(item->current_value_index == 0 && furi_string_empty(item->current_value_text)) {
                 // Only left text, no right text
-                canvas_draw_str(canvas, 6, item_text_y, item->label);
+                canvas_draw_str(canvas, 6 + indent, item_text_y, item->label);
             } else {
                 elements_scrollable_text_line_str(
                     canvas,
-                    6,
+                    6 + indent,
                     item_text_y,
                     temp_w_default,
                     item->label,
                     scroll_counter,
                     false,
                     false);
+            }
+
+            if(item->indent) variable_item_draw_guides(canvas, item, next_indent, item_y);
+            if(next_indent > item->indent) {
+                variable_item_draw_guide_start(canvas, item, item_y, ink);
             }
 
             bool on = false;
@@ -401,16 +577,18 @@ static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
                     canvas_draw_str(canvas, 115, item_text_y, ">");
                 }
             }
+            if(clipped) u8g2_SetMaxClipWindow(&canvas->fb);
         }
-
-        position++;
     }
 
-    elements_scrollbar(canvas, model->position, VariableItemArray_size(model->items));
+    elements_scrollbar(
+        canvas,
+        variable_item_list_rank(model, model->position),
+        variable_item_list_rank(model, VariableItemArray_size(model->items)));
 
     if(model->dropdown_open && model->position < VariableItemArray_size(model->items)) {
         const VariableItem* item = VariableItemArray_cget(model->items, model->position);
-        const uint8_t item_y = (model->position - model->window_position) * 16;
+        const uint8_t item_y = selected_y >= 0 ? selected_y : 0;
         if(item->values_text) variable_item_list_draw_dropdown(canvas, model, item, item_y);
     }
 
@@ -438,25 +616,13 @@ void variable_item_list_set_selected_item(VariableItemList* variable_item_list, 
         variable_item_list->view,
         VariableItemListModel * model,
         {
-            uint8_t position = index;
-            if(position >= VariableItemArray_size(model->items)) {
-                position = 0;
-            }
-
-            model->position = position;
-            model->window_position = position;
-
-            if(model->window_position > 0) {
-                model->window_position -= 1;
-            }
-
-            if(VariableItemArray_size(model->items) <= 4) {
-                model->window_position = 0;
-            } else {
-                if(model->window_position >= (VariableItemArray_size(model->items) - 4)) {
-                    model->window_position = (VariableItemArray_size(model->items) - 4);
-                }
-            }
+            const size_t count = VariableItemArray_size(model->items);
+            model->position = index < count ? index : 0;
+            // off a hidden one, then the window from a row above it
+            variable_item_list_settle(model);
+            const size_t cursor = variable_item_list_rank(model, model->position);
+            model->window_position = variable_item_list_at_rank(model, cursor ? cursor - 1 : 0);
+            variable_item_list_fit_window(model);
         },
         true);
 }
@@ -526,11 +692,16 @@ static bool variable_item_list_input_callback(InputEvent* event, void* context) 
         false);
 
     bool dropdown_open = false;
+    bool empty = false;
     with_view_model(
         variable_item_list->view,
         VariableItemListModel * model,
-        { dropdown_open = model->dropdown_open; },
+        {
+            dropdown_open = model->dropdown_open;
+            empty = VariableItemArray_empty_p(model->items);
+        },
         false);
+    if(empty) return false; // nothing to move to or change: Back still leaves
     if(dropdown_open) return variable_item_list_dropdown_input(variable_item_list, event);
 
     if((!(event->type == InputTypePress) && !(event->type == InputTypeRelease)) &&
@@ -591,68 +762,38 @@ static bool variable_item_list_input_callback(InputEvent* event, void* context) 
     return consumed;
 }
 
-void variable_item_list_process_up(VariableItemList* variable_item_list) {
+/** The cursor to the shown item before or after it, round from either end; the window follows */
+static void variable_item_list_move(VariableItemList* variable_item_list, bool down) {
     with_view_model(
         variable_item_list->view,
         VariableItemListModel * model,
         {
-            uint8_t items_on_screen = 4;
-            if(model->position > 0) {
-                model->position--;
-
-                if((model->position == model->window_position) && (model->window_position > 0)) {
-                    model->window_position--;
-                }
-            } else {
-                model->position = VariableItemArray_size(model->items) - 1;
-                if(model->position > (items_on_screen - 1)) {
-                    model->window_position = model->position - (items_on_screen - 1);
-                }
+            const size_t shown =
+                variable_item_list_rank(model, VariableItemArray_size(model->items));
+            if(shown) {
+                const size_t cursor = variable_item_list_rank(model, model->position);
+                const size_t next = down ? (cursor + 1) % shown :
+                                           (cursor ? cursor - 1 : shown - 1);
+                model->position = variable_item_list_at_rank(model, next);
+                if(!next) model->window_position = 0;
+                variable_item_list_fit_window(model);
             }
             model->scroll_counter = 0;
         },
         true);
+}
+
+void variable_item_list_process_up(VariableItemList* variable_item_list) {
+    variable_item_list_move(variable_item_list, false);
 }
 
 void variable_item_list_process_down(VariableItemList* variable_item_list) {
-    with_view_model(
-        variable_item_list->view,
-        VariableItemListModel * model,
-        {
-            uint8_t items_on_screen = 4;
-            if(model->position < (VariableItemArray_size(model->items) - 1)) {
-                model->position++;
-                if((model->position - model->window_position) > (items_on_screen - 2) &&
-                   model->window_position <
-                       (VariableItemArray_size(model->items) - items_on_screen)) {
-                    model->window_position++;
-                }
-            } else {
-                model->position = 0;
-                model->window_position = 0;
-            }
-            model->scroll_counter = 0;
-        },
-        true);
+    variable_item_list_move(variable_item_list, true);
 }
 
 VariableItem* variable_item_list_get_selected_item(VariableItemListModel* model) {
-    VariableItem* item = NULL;
-
-    VariableItemArray_it_t it;
-    uint8_t position = 0;
-    for(VariableItemArray_it(it, model->items); !VariableItemArray_end_p(it);
-        VariableItemArray_next(it)) {
-        if(position == model->position) {
-            break;
-        }
-        position++;
-    }
-
-    item = VariableItemArray_ref(it);
-
-    furi_assert(item);
-    return item;
+    furi_check(model->position < VariableItemArray_size(model->items));
+    return VariableItemArray_get(model->items, model->position);
 }
 
 void variable_item_list_process_left(VariableItemList* variable_item_list) {
@@ -727,9 +868,7 @@ void variable_item_list_process_ok(VariableItemList* variable_item_list) {
                 model->dropdown_index = item->current_value_index;
                 model->dropdown_window = 0;
                 // the hint bar covers the bottom row: the item scrolls up to stay in sight
-                if(model->position > model->window_position + 2) {
-                    model->window_position = model->position - 2;
-                }
+                variable_item_list_fit_window(model);
                 const uint8_t rows = MIN(item->values_count, DROPDOWN_ROWS);
                 if(model->dropdown_index >= rows) model->dropdown_window = model->dropdown_index - rows + 1;
             } else if(variable_item_list->callback) {
@@ -761,6 +900,7 @@ static void variable_item_list_enter_callback(void* context) {
         {
             model->scroll_counter = 0;
             model->dropdown_open = false;
+            model->snap = true; // what changed off screen is simply there
         },
         false);
     furi_timer_start(variable_item_list->scroll_timer, SCROLL_INTERVAL);
@@ -769,6 +909,7 @@ static void variable_item_list_enter_callback(void* context) {
 static void variable_item_list_exit_callback(void* context) {
     VariableItemList* variable_item_list = context;
     furi_timer_stop(variable_item_list->scroll_timer);
+    furi_timer_stop(variable_item_list->slide_timer);
 }
 
 void variable_item_list_locked_timer_callback(void* context) {
@@ -795,6 +936,8 @@ VariableItemList* variable_item_list_alloc(void) {
 
     variable_item_list->locked_timer = furi_timer_alloc(
         variable_item_list_locked_timer_callback, FuriTimerTypeOnce, variable_item_list);
+    variable_item_list->slide_timer = furi_timer_alloc(
+        variable_item_list_slide_timer_callback, FuriTimerTypeOnce, variable_item_list);
 
     with_view_model(
         variable_item_list->view,
@@ -804,6 +947,8 @@ VariableItemList* variable_item_list_alloc(void) {
             model->position = 0;
             model->window_position = 0;
             model->scroll_counter = 0;
+            model->snap = true;
+            model->slide_timer = variable_item_list->slide_timer;
         },
         true);
     // Started on view enter, not here: a list that is allocated but not on screen asked the GUI
@@ -834,6 +979,8 @@ void variable_item_list_free(VariableItemList* variable_item_list) {
     furi_timer_free(variable_item_list->scroll_timer);
     furi_timer_stop(variable_item_list->locked_timer);
     furi_timer_free(variable_item_list->locked_timer);
+    furi_timer_stop(variable_item_list->slide_timer);
+    furi_timer_free(variable_item_list->slide_timer);
     view_free(variable_item_list->view);
     free(variable_item_list);
 }
@@ -853,6 +1000,7 @@ void variable_item_list_reset(VariableItemList* variable_item_list) {
             }
             VariableItemArray_reset(model->items);
             model->dropdown_open = false;
+            model->snap = true;
         },
         false);
 }
@@ -886,7 +1034,11 @@ VariableItem* variable_item_list_add(
             item->values_text = NULL;
             item->control = VariableItemControlArrows;
             item->locked = false;
+            item->hidden = false;
+            item->indent = 0;
+            item->height = ITEM_H;
             item->locked_message = furi_string_alloc();
+            model->snap = true; // the list is being built: its rows show as they are
         },
         true);
 
@@ -953,6 +1105,16 @@ void variable_item_set_locked(VariableItem* item, bool locked, const char* locke
         furi_assert(locked_message);
         furi_string_set(item->locked_message, locked_message);
     }
+}
+
+void variable_item_set_hidden(VariableItem* item, bool hidden) {
+    furi_check(item);
+    item->hidden = hidden; // the next draw slides it, and moves the cursor off it
+}
+
+void variable_item_set_indent(VariableItem* item, uint8_t level) {
+    furi_check(item);
+    item->indent = MIN(level, INDENT_MAX);
 }
 
 uint8_t variable_item_get_current_value_index(VariableItem* item) {

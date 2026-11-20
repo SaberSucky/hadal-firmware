@@ -2,6 +2,7 @@
 
 #include <flipper_format/flipper_format.h>
 #include <power/power_service/power.h>
+#include <furi_hal_subghz.h>
 
 /* Sub-GHz: the range beyond the radio chip's specification. The firmware reads the setting when
  * it starts, so a change asks for a restart. */
@@ -54,10 +55,18 @@ bool hadal_settings_extended_range_set(Storage* storage, bool on) {
     return saved;
 }
 
+/** "Restart to apply" only while what is saved is not what the radio started with */
+static void restart_update(HadalSettings* app, bool on) {
+    variable_item_set_hidden(
+        variable_item_list_get(app->variable_list, ProtocolsRestart),
+        on == furi_hal_subghz_get_dangerous_frequency());
+}
+
 static void extended_changed(VariableItem* item) {
     HadalSettings* app = variable_item_get_context(item);
     const uint8_t index = variable_item_get_current_value_index(item);
     variable_item_set_current_value_text(item, off_on[index]);
+    if(!index) restart_update(app, false); // on waits for the warning to be read
     view_dispatcher_send_custom_event(
         app->view_dispatcher, index ? EventExtendedOn : EventExtendedOff);
 }
@@ -80,6 +89,8 @@ void hadal_settings_scene_protocols_on_enter(void* context) {
     variable_item_set_current_value_text(item, off_on[on]);
     variable_item_set_values_text(item, off_on);
     item = variable_item_list_add(app->variable_list, "Restart to apply", 0, NULL, app);
+    variable_item_set_indent(item, 1);
+    restart_update(app, on);
     item = variable_item_list_add(app->variable_list, "Sub-GHz Frequencies", 0, NULL, app);
     variable_item_list_set_enter_callback(app->variable_list, enter_callback, app);
     view_dispatcher_switch_to_view(app->view_dispatcher, HadalViewVariableList);

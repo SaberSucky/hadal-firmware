@@ -77,6 +77,10 @@ void furi_hal_subghz_set_dangerous_frequency(bool state_i) {
     furi_hal_subghz.dangerous_frequency_i = state_i;
 }
 
+bool furi_hal_subghz_get_dangerous_frequency(void) {
+    return furi_hal_subghz.dangerous_frequency_i;
+}
+
 void furi_hal_subghz_set_async_mirror_pin(const GpioPin* pin) {
     furi_hal_subghz.async_mirror_pin = pin;
 }

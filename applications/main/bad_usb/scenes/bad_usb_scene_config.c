@@ -15,8 +15,9 @@ enum ConfigIndexBle {
     ConfigIndexBleRemovePairing,
 };
 
+// both sets are in the list, the one for the other connection hidden: each item its own index
 enum ConfigIndexUsb {
-    ConfigIndexUsbSetManufacturerName = ConfigIndexConnection + 1,
+    ConfigIndexUsbSetManufacturerName = ConfigIndexBleRemovePairing + 1,
     ConfigIndexUsbSetProductName,
     ConfigIndexUsbSetVidPid,
     ConfigIndexUsbRandomizeVidPid,
@@ -72,6 +73,27 @@ void bad_usb_scene_config_select_callback(void* context, uint32_t index) {
     view_dispatcher_send_custom_event(bad_usb->view_dispatcher, index);
 }
 
+/** The connection's own options under it, the other's hidden; the BLE ones' values as they are */
+static void config_update(BadUsbApp* bad_usb) {
+    VariableItemList* var_item_list = bad_usb->var_item_list;
+    const bool ble = bad_usb->interface == BadUsbHidInterfaceBle;
+    for(uint8_t i = ConfigIndexBlePersistPairing; i <= ConfigIndexBleRemovePairing; i++) {
+        variable_item_set_hidden(variable_item_list_get(var_item_list, i), !ble);
+    }
+    for(uint8_t i = ConfigIndexUsbSetManufacturerName; i <= ConfigIndexUsbRestoreDefaults; i++) {
+        variable_item_set_hidden(variable_item_list_get(var_item_list, i), ble);
+    }
+
+    const BleProfileHidExtParams* ble_hid_cfg = &bad_usb->script_hid_cfg.ble;
+    VariableItem* item = variable_item_list_get(var_item_list, ConfigIndexBlePersistPairing);
+    variable_item_set_current_value_index(item, ble_hid_cfg->bonding);
+    variable_item_set_current_value_text(item, ble_hid_cfg->bonding ? "ON" : "OFF");
+    item = variable_item_list_get(var_item_list, ConfigIndexBlePairingMode);
+    const uint8_t pairing = ble_hid_cfg->pairing < GapPairingCount ? ble_hid_cfg->pairing : 0;
+    variable_item_set_current_value_index(item, pairing);
+    variable_item_set_current_value_text(item, ble_pairing_mode_names[pairing]);
+}
+
 static void draw_menu(BadUsbApp* bad_usb) {
     VariableItemList* var_item_list = bad_usb->var_item_list;
     VariableItem* item;
@@ -87,49 +109,34 @@ static void draw_menu(BadUsbApp* bad_usb) {
     variable_item_set_current_value_text(
         item, bad_usb->interface == BadUsbHidInterfaceBle ? "BLE" : "USB");
 
-    if(bad_usb->interface == BadUsbHidInterfaceBle) {
-        BleProfileHidExtParams* ble_hid_cfg = &bad_usb->script_hid_cfg.ble;
+    // BLE
+    item = variable_item_list_add(
+        var_item_list, "Persist Pairing", 2, bad_usb_scene_config_ble_persist_pairing_callback, bad_usb);
+    variable_item_set_values_text(item, on_off_text);
+    item = variable_item_list_add(
+        var_item_list,
+        "Pairing Mode",
+        GapPairingCount,
+        bad_usb_scene_config_ble_pairing_mode_callback,
+        bad_usb);
+    variable_item_set_values_text(item, ble_pairing_mode_names);
+    variable_item_list_add(var_item_list, "Set Device Name", 0, NULL, NULL);
+    variable_item_list_add(var_item_list, "Set MAC Address", 0, NULL, NULL);
+    variable_item_list_add(var_item_list, "Randomize MAC Address", 0, NULL, NULL);
+    variable_item_list_add(var_item_list, "Restore BLE Defaults", 0, NULL, NULL);
+    variable_item_list_add(var_item_list, "Remove BLE Pairing", 0, NULL, NULL);
 
-        item = variable_item_list_add(
-            var_item_list,
-            "Persist Pairing",
-            2,
-            bad_usb_scene_config_ble_persist_pairing_callback,
-            bad_usb);
-        variable_item_set_values_text(item, on_off_text);
-        variable_item_set_current_value_index(item, ble_hid_cfg->bonding);
-        variable_item_set_current_value_text(item, ble_hid_cfg->bonding ? "ON" : "OFF");
+    // USB
+    variable_item_list_add(var_item_list, "Set Manufacturer Name", 0, NULL, NULL);
+    variable_item_list_add(var_item_list, "Set Product Name", 0, NULL, NULL);
+    variable_item_list_add(var_item_list, "Set VID and PID", 0, NULL, NULL);
+    variable_item_list_add(var_item_list, "Randomize VID and PID", 0, NULL, NULL);
+    variable_item_list_add(var_item_list, "Restore USB Defaults", 0, NULL, NULL);
 
-        item = variable_item_list_add(
-            var_item_list,
-            "Pairing Mode",
-            GapPairingCount,
-            bad_usb_scene_config_ble_pairing_mode_callback,
-            bad_usb);
-        variable_item_set_values_text(item, ble_pairing_mode_names);
-        variable_item_set_current_value_index(item, ble_hid_cfg->pairing);
-        variable_item_set_current_value_text(item, ble_pairing_mode_names[ble_hid_cfg->pairing]);
-
-        variable_item_list_add(var_item_list, "Set Device Name", 0, NULL, NULL);
-
-        variable_item_list_add(var_item_list, "Set MAC Address", 0, NULL, NULL);
-
-        variable_item_list_add(var_item_list, "Randomize MAC Address", 0, NULL, NULL);
-
-        variable_item_list_add(var_item_list, "Restore BLE Defaults", 0, NULL, NULL);
-
-        variable_item_list_add(var_item_list, "Remove BLE Pairing", 0, NULL, NULL);
-    } else {
-        variable_item_list_add(var_item_list, "Set Manufacturer Name", 0, NULL, NULL);
-
-        variable_item_list_add(var_item_list, "Set Product Name", 0, NULL, NULL);
-
-        variable_item_list_add(var_item_list, "Set VID and PID", 0, NULL, NULL);
-
-        variable_item_list_add(var_item_list, "Randomize VID and PID", 0, NULL, NULL);
-
-        variable_item_list_add(var_item_list, "Restore USB Defaults", 0, NULL, NULL);
+    for(uint8_t i = ConfigIndexBlePersistPairing; i <= ConfigIndexUsbRestoreDefaults; i++) {
+        variable_item_set_indent(variable_item_list_get(var_item_list, i), 1);
     }
+    config_update(bad_usb);
 }
 
 void bad_usb_scene_config_on_enter(void* context) {
@@ -161,8 +168,8 @@ bool bad_usb_scene_config_on_event(void* context, SceneManagerEvent event) {
         case ConfigIndexConnection:
             // Refresh default values for new interface
             hid->adjust_config(&bad_usb->script_hid_cfg);
-            // Redraw menu with new interface options
-            draw_menu(bad_usb);
+            // the new connection's options slide out under it
+            config_update(bad_usb);
             break;
         default:
             break;

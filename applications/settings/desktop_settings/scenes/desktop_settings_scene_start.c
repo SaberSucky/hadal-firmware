@@ -103,6 +103,10 @@ static void desktop_settings_scene_start_auto_lock_delay_changed(VariableItem* i
 
     variable_item_set_current_value_text(item, auto_lock_delay_text[index]);
     app->settings.auto_lock_delay_ms = auto_lock_delay_value[index];
+    // "not on USB" means nothing while it never locks by itself
+    variable_item_set_hidden(
+        variable_item_list_get(app->variable_item_list, DesktopSettingsAutoLockDelay + 1),
+        index == 0);
 }
 
 static void desktop_settings_scene_start_usb_inhibit_auto_lock_delay_changed(VariableItem* item) {
@@ -135,10 +139,11 @@ void desktop_settings_scene_start_on_enter(void* context) {
     variable_item_set_current_value_text(item, auto_lock_delay_text[value_index]);
     variable_item_set_values_text(item, auto_lock_delay_text);
 
+    const bool never_locks = value_index == 0;
     // USB connection Inhibit autolock OFF|ON|with opened RPC session
     item = variable_item_list_add(
         variable_item_list,
-        "No auto lock on USB",
+        "Not on USB",
         USB_INHIBIT_AUTO_LOCK_DELAY_COUNT,
         desktop_settings_scene_start_usb_inhibit_auto_lock_delay_changed,
         app);
@@ -150,6 +155,8 @@ void desktop_settings_scene_start_on_enter(void* context) {
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, usb_inhibit_auto_lock_delay_text[value_index]);
     variable_item_set_values_text(item, usb_inhibit_auto_lock_delay_text);
+    variable_item_set_indent(item, 1);
+    variable_item_set_hidden(item, never_locks);
 
     item = variable_item_list_add(
         variable_item_list,

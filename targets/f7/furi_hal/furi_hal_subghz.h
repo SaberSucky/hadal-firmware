@@ -178,6 +178,13 @@ bool furi_hal_subghz_is_tx_allowed(uint32_t value);
  */
 int32_t furi_hal_subghz_get_rolling_counter_mult(void);
 
+/** Whether the radio allows the range beyond its specification: read from the SD card once, when
+ * the Flipper starts (a changed setting waits for a restart)
+ *
+ * @return     true if extended
+ */
+bool furi_hal_subghz_get_dangerous_frequency(void);
+
 /** Set the current rolling protocols counter ++/-- value
  * @param      mult int32_t = -1, -10, -50, 0, 1, 10, 50 
  */

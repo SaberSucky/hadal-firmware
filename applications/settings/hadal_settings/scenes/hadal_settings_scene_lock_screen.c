@@ -7,6 +7,13 @@ enum {
     EventEraseChosen,
 };
 
+enum {
+    ItemBoot,
+    ItemClock,
+    ItemFailAction,
+    ItemFailLimit,
+};
+
 static const char* const on_off[] = {"On", "Off"}; /* lock at start: 0 is on */
 static const char* const off_on[] = {"Off", "On"};
 static const char* const fail_actions[] = {"Nothing", "Power off", "Erase"};
@@ -63,6 +70,10 @@ static void action_changed(VariableItem* item) {
     }
     variable_item_set_current_value_text(item, fail_actions[index]);
     update(app, set_action, index);
+    // how many means nothing while they do nothing
+    variable_item_set_hidden(
+        variable_item_list_get(app->variable_list, ItemFailLimit),
+        index == DesktopPinFailActionNone);
 }
 
 static void limit_changed(VariableItem* item) {
@@ -97,6 +108,8 @@ void hadal_settings_scene_lock_screen_on_enter(void* context) {
 
     item = variable_item_list_add(
         app->variable_list, "After this many", COUNT_OF(fail_limits), limit_changed, app);
+    variable_item_set_indent(item, 1);
+    variable_item_set_hidden(item, action == DesktopPinFailActionNone);
     const size_t limit = fail_limit_index(settings->pin_fail_limit);
     variable_item_set_current_value_index(item, limit);
     variable_item_set_current_value_text(item, fail_limit_texts[limit]);

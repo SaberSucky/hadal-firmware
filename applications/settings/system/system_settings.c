@@ -23,10 +23,30 @@ const uint32_t log_level_value[] = {
     FuriLogLevelTrace,
 };
 
+enum {
+    SystemSettingsIndexLogLevel = 4,
+    SystemSettingsIndexLogDevice,
+    SystemSettingsIndexLogBaudRate,
+};
+
+/** Where logs go means nothing while none are written, and their speed nothing while they go
+ * nowhere */
+static void log_items_update(VariableItemList* list) {
+    const bool none = log_level_value[variable_item_get_current_value_index(variable_item_list_get(
+                          list, SystemSettingsIndexLogLevel))] == FuriLogLevelNone;
+    VariableItem* device = variable_item_list_get(list, SystemSettingsIndexLogDevice);
+    variable_item_set_hidden(device, none);
+    const bool nowhere = furi_hal_rtc_get_log_device() == FuriHalRtcLogDeviceNone;
+    variable_item_set_hidden(
+        variable_item_list_get(list, SystemSettingsIndexLogBaudRate), none || nowhere);
+}
+
 static void log_level_changed(VariableItem* item) {
     uint8_t index = variable_item_get_current_value_index(item);
     variable_item_set_current_value_text(item, log_level_text[index]);
     furi_hal_rtc_set_log_level(log_level_value[index]);
+    SystemSettings* app = variable_item_get_context(item);
+    log_items_update(app->var_item_list);
 }
 
 const char* const log_device_text[] = {
@@ -44,6 +64,8 @@ static void log_device_changed(VariableItem* item) {
     uint8_t index = variable_item_get_current_value_index(item);
     variable_item_set_current_value_text(item, log_device_text[index]);
     furi_hal_rtc_set_log_device(log_device_value[index]);
+    SystemSettings* app = variable_item_get_context(item);
+    log_items_update(app->var_item_list);
 }
 
 const char* const log_baud_rate_text[] = {
@@ -278,6 +300,7 @@ SystemSettings* system_settings_alloc(void) {
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, log_device_text[value_index]);
     variable_item_set_values_text(item, log_device_text);
+    variable_item_set_indent(item, 1);
 
     item = variable_item_list_add(
         app->var_item_list,
@@ -290,6 +313,8 @@ SystemSettings* system_settings_alloc(void) {
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, log_baud_rate_text[value_index]);
     variable_item_set_values_text(item, log_baud_rate_text);
+    variable_item_set_indent(item, 2);
+    log_items_update(app->var_item_list);
 
     item = variable_item_list_add(
         app->var_item_list, "Debug", COUNT_OF(debug_text), debug_changed, app);

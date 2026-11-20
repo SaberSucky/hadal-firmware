@@ -16,6 +16,8 @@ static VariableItem* add(const char* label, uint8_t count, uint8_t index, const 
     item->current_value_index = index;
     item->current_value_text = furi_string_alloc_set_str(text);
     item->locked_message = furi_string_alloc();
+    item->height = ITEM_H;
+    model.snap = true; // as variable_item_list_add does
     return item;
 }
 
@@ -110,6 +112,65 @@ int main(int argc, char** argv) {
     model.dropdown_window = 25;
     preview_draw("list_subghz_frequencies", draw, NULL);
     model.dropdown_open = false;
+
+    // settings that mean nothing while another is off: hidden, then sliding out, indented
+    static const char* const night_shift[] = {"OFF", "-10%", "-20%", "-30%", "-40%", "-50%", "-60%"};
+    static const char* const hours[] = {"18:00", "19:00", "20:00", "21:00", "22:00", "23:00"};
+    static const char* const effects[] = {"OFF", "Rainbow", "Wave"};
+    static const char* const steps[] = {"1", "2", "3"};
+    clear();
+    add("Backlight Time", 2, 0, "30s");
+    add("Night Shift", COUNT_OF(night_shift), 0, "OFF")->values_text = night_shift;
+    VariableItem* start = add("Start", COUNT_OF(hours), 3, "21:00");
+    start->values_text = hours;
+    start->indent = 1;
+    VariableItem* end = add("End", COUNT_OF(hours), 1, "19:00");
+    end->values_text = hours;
+    end->indent = 1;
+    add("LED Brightness", COUNT_OF(percent), 14, "70%")->values_text = percent;
+    add("Volume", COUNT_OF(percent), 7, "35%")->values_text = percent;
+    start->hidden = end->hidden = true;
+    model.position = 1;
+    model.window_position = 0;
+    preview_draw("list_children_hidden", draw, NULL);
+    // Night Shift turned on: each frame as the slide timer steps it
+    VariableItem* night = VariableItemArray_get(model.items, 1);
+    night->current_value_index = 3;
+    furi_string_set(night->current_value_text, "-30%");
+    start->hidden = end->hidden = false;
+    const uint8_t frames[] = {8, 12, 14};
+    for(size_t f = 0; f < COUNT_OF(frames); f++) {
+        start->height = end->height = frames[f];
+        char name[32];
+        snprintf(name, sizeof(name), "list_children_slide_%u", (unsigned)f);
+        preview_draw(name, draw, NULL);
+    }
+    start->height = end->height = ITEM_H;
+    preview_draw("list_children_shown", draw, NULL);
+    model.position = 2;
+    preview_draw("list_children_child_selected", draw, NULL);
+    // hidden while the cursor was on one: it goes to the item they belong to
+    start->hidden = end->hidden = true;
+    preview_draw("list_children_cursor_moved", draw, NULL);
+    furi_check(model.position == 1);
+
+    clear();
+    add("RGB backlight installed", 2, 1, "ON")->values_text = on_off;
+    VariableItem* fx = add("Effects", COUNT_OF(effects), 1, "Rainbow");
+    fx->values_text = effects;
+    fx->indent = 1;
+    VariableItem* speed = add("Speed", 21, 4, "20%");
+    speed->values_text = percent;
+    speed->indent = 2;
+    VariableItem* step = add("Color step", COUNT_OF(steps), 1, "2");
+    step->values_text = steps;
+    step->indent = 2;
+    VariableItem* sat = add("Saturation", COUNT_OF(percent), 20, "100%");
+    sat->values_text = percent;
+    sat->indent = 2;
+    model.position = 1;
+    model.window_position = 0;
+    preview_draw("list_children_nested", draw, NULL);
 
     // every position, with and without the dropdown, for the sanitizers
     Canvas* canvas = preview_canvas();

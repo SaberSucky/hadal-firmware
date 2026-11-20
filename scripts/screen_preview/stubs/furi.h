@@ -47,6 +47,9 @@ static inline uint32_t furi_get_tick(void) {
 static inline uint32_t furi_kernel_get_tick_frequency(void) {
     return 1000;
 }
+static inline uint32_t furi_ms_to_ticks(uint32_t milliseconds) {
+    return milliseconds;
+}
 static inline void furi_delay_ms(uint32_t ms) {
     (void)ms;
 }

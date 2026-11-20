@@ -41,6 +41,8 @@ static void input_settings_vibro_touch_level_changed(VariableItem* item) {
 
     InputSettingsApp* app = variable_item_get_context(item);
     app->settings->vibro_touch_level = vibro_touch_level_value[index];
+    // the trigger means nothing while the buttons do not buzz
+    variable_item_set_hidden(variable_item_list_get(app->variable_item_list, 1), index == 0);
 
     // use RECORD for access to input service instance and set settings
     InputSettings* service_settings = furi_record_open(RECORD_INPUT_SETTINGS);
@@ -93,12 +95,15 @@ InputSettingsApp* input_settings_app_alloc(void) {
     variable_item_set_current_value_text(item, vibro_touch_level_text[value_index]);
     variable_item_set_values_text(item, vibro_touch_level_text);
 
+    const bool vibro_off = value_index == 0;
     item = variable_item_list_add(
         app->variable_item_list,
-        "Vibro Trigger",
+        "Trigger",
         VIBRO_TOUCH_TRIGGER_MASK_COUNT,
         input_settings_vibro_touch_trigger_mask_changed,
         app);
+    variable_item_set_indent(item, 1);
+    variable_item_set_hidden(item, vibro_off);
 
     value_index = value_index_uint32(
         app->settings->vibro_touch_trigger_mask,
