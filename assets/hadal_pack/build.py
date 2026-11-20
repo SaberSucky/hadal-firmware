@@ -23,7 +23,6 @@ sys.path.insert(0, os.path.join(REPO, "scripts"))
 import anims  # noqa: E402
 import boot  # noqa: E402
 import creatures  # noqa: E402
-import fontstyle  # noqa: E402
 import icons  # noqa: E402
 from flipper.assets import pack  # noqa: E402
 from pixel import contact_sheet  # noqa: E402
@@ -142,11 +141,7 @@ def write_sources(src):
     for path, make in icons.ANIMATED_ICONS.items():
         write_animated_icon(src, path, make, sheets_icons)
 
-    fonts_dir = os.path.join(src, "Fonts")
-    os.makedirs(fonts_dir)
-    for slot, data in fontstyle.build_fonts().items():
-        with open(os.path.join(fonts_dir, slot + ".u8f"), "wb") as f:
-            f.write(data)
+    # no fonts: the pack keeps the stock text fonts (Hadal's title font is built in)
     return sheets, sheets_icons
 
 
@@ -218,25 +213,12 @@ def write_previews(out_dir, sheets, icon_sheets):
     os.makedirs(out_dir, exist_ok=True)
     for name, frames in sheets.items():
         contact_sheet(frames, os.path.join(out_dir, name + ".png"), columns=4, scale=2)
-    status = [c[0] for p, c in icon_sheets.items() if p.startswith(("StatusBar/", "SubGhz/"))]
-    contact_sheet(status, os.path.join(out_dir, "icons_status.png"), columns=7, scale=8, gap=10)
-    menu = [c for p, c in icon_sheets.items() if p.startswith("MainMenu/")]
-    contact_sheet([frames[0] for frames in menu], os.path.join(out_dir, "icons_menu.png"), columns=7, scale=8, gap=10)
+    for path, frames in icon_sheets.items():
+        name = "icon_" + path.replace("/", "_")
+        contact_sheet(frames, os.path.join(out_dir, name + ".png"), columns=7, scale=4, gap=10)
     first, update = slideshow_frames()
     contact_sheet(first, os.path.join(out_dir, "slideshow_first_start.png"), columns=2, scale=3)
     contact_sheet(update, os.path.join(out_dir, "slideshow_update.png"), columns=2, scale=3)
-    # the fonts, as the firmware will draw them next to the built-in ones
-    from flipper.assets import u8g2font
-    from pixel import Canvas
-
-    rows = []
-    for slot, data in fontstyle.build_fonts().items():
-        text = "0123456789:" if slot == "BigNumbers" else "Hadal NFC Sub-GHz 0123 Remote"
-        for font in (boot.stock_font(slot), u8g2font.parse_font(data)):
-            c = Canvas(128, 26 if slot == "BigNumbers" else 16)
-            font.draw_text(c.image, 1, 20 if slot == "BigNumbers" else 11, text, lit=0)
-            rows.append(c)
-    contact_sheet(rows, os.path.join(out_dir, "fonts.png"), columns=1, scale=4)
 
 
 def main():
