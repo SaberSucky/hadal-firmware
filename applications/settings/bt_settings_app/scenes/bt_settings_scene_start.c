@@ -49,9 +49,11 @@ void bt_settings_scene_start_on_enter(void* context) {
         if(app->settings.enabled) {
             variable_item_set_current_value_index(item, BtSettingOn);
             variable_item_set_current_value_text(item, bt_settings_text[BtSettingOn]);
+            variable_item_set_values_text(item, bt_settings_text);
         } else {
             variable_item_set_current_value_index(item, BtSettingOff);
             variable_item_set_current_value_text(item, bt_settings_text[BtSettingOff]);
+            variable_item_set_values_text(item, bt_settings_text);
         }
         variable_item_list_add(var_item_list, "Unpair All Devices", 1, NULL, NULL);
         variable_item_list_set_enter_callback(

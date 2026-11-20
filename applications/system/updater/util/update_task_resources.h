@@ -26,3 +26,10 @@ bool update_task_resources_next_extra(UpdateTask* update_task, size_t* offset, F
 
 /** Whether a resource the old firmware installed stays when the new one has no such file */
 bool update_task_resources_is_kept(const char* name);
+
+/** Size in bytes of a file, 0 when it cannot be read */
+uint64_t update_task_resources_file_size(UpdateTask* update_task, const char* path);
+
+/** Size in bytes of the main resource archive and every extra one: what a single progress bar
+ * over all of them is measured against */
+uint64_t update_task_resources_total_size(UpdateTask* update_task, const char* archive_path);

@@ -2303,8 +2303,8 @@ class RealAssetsTests(TempDirCase):
         base = os.path.join(REPO_ROOT, "assets", "icons")
         index = pack.source_icon_index(base)
         # 245 static + 19 animated; nested folders such as BLE/BLE_HID must be included
-        # 264 + Archive/disk_10px + the control centre's 12 icons
-        self.assertEqual(len(index), 277)
+        # 264 + Archive/disk_10px + the control centre's 13 icons + the hint bar's 3 glyphs
+        self.assertEqual(len(index), 281)
         self.assertIn("BLE/BLE_HID/Ok_btn_9x9", index)
         self.assertEqual(index["BLE/BLE_HID/Ok_btn_9x9"], (9, 9, 1))
         hashes = {pack.icon_path_hash(p) for p in index}

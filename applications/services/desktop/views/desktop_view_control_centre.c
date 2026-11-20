@@ -2,6 +2,7 @@
 
 #include <furi.h>
 #include <gui/elements.h>
+#include <gui/hadal_title_font.h>
 #include <assets_icons.h>
 
 #define TILE_COLUMNS   5
@@ -23,6 +24,12 @@
 
 #define SLIDER_STEP 0.05f
 
+// The app picker: a row of app tiles, the chosen one in the middle, its name below
+#define PICKER_CELL_STEP 24
+#define PICKER_TILES_Y   15
+#define PICKER_NAME_Y    46
+#define PICKER_SIDE      2 // tiles shown either side of the chosen one
+
 struct DesktopControlCentreView {
     View* view;
     DesktopControlCentreCallback callback;
@@ -34,6 +41,12 @@ typedef struct {
     uint8_t column; // 0..4 tiles, 5 brightness, 6 volume
     uint8_t row;
     ControlCentreTile chosen;
+    // the app picker, while it is open
+    bool picking;
+    uint8_t pick_slot;
+    size_t pick_index;
+    const DesktopApp* apps;
+    size_t app_count;
 } ControlCentreModel;
 
 static const Icon* const tile_icons[ControlCentreTileCount] = {
@@ -42,8 +55,8 @@ static const Icon* const tile_icons[ControlCentreTileCount] = {
     [ControlCentreTileBluetooth] = &I_cc_bluetooth_12x12,
     [ControlCentreTileStealth] = &I_cc_mute_12x12,
     [ControlCentreTileDark] = &I_cc_dark_12x12,
-    [ControlCentreTileLeftHanded] = &I_cc_flip_12x12,
-    [ControlCentreTileHadal] = &I_cc_hadal_12x12,
+    [ControlCentreTileLeftHanded] = &I_cc_rotate_12x12,
+    [ControlCentreTileHadal] = &I_cc_hadal_14x14,
     [ControlCentreTileApp1] = NULL,
     [ControlCentreTileApp2] = NULL,
     [ControlCentreTileDummy] = &I_cc_dummy_12x12,
@@ -88,20 +101,16 @@ static void control_centre_label(const ControlCentreModel* model, char* out, siz
         snprintf(out, size, state->pin_set ? "Lock, no PIN to unlock" : "Lock");
         break;
     case ControlCentreTilePinLock:
-        snprintf(out, size, state->pin_set ? "Lock with PIN" : "Set a PIN: Settings > Desktop");
+        snprintf(out, size, state->pin_set ? "Lock with PIN" : "PIN lock: set a PIN first");
         break;
     case ControlCentreTileHadal:
         snprintf(out, size, "Hadal Settings");
         break;
     case ControlCentreTileApp1:
-    case ControlCentreTileApp2: {
-        const char* label = state->app_label[tile - ControlCentreTileApp1];
-        if(label[0]) {
-            snprintf(out, size, "%s", label);
-        } else {
-            snprintf(out, size, "Pick an app: Hadal Settings");
-        }
-    } break;
+    case ControlCentreTileApp2:
+        // drawn with its hint by control_centre_draw_app_label()
+        out[0] = '\0';
+        break;
     default:
         snprintf(out, size, "%s: %s", switch_names[tile], state->on[tile] ? "on" : "off");
         break;
@@ -133,6 +142,27 @@ static void control_centre_draw_header(Canvas* canvas, const ControlCentreState*
     if(state->charging) canvas_draw_icon(canvas, bx - 9 - width, 1, &I_cc_bolt_5x7);
 }
 
+/** A tile's picture, centred in its cell: an icon, or the label's initial when there is none */
+static void control_centre_draw_glyph(
+    Canvas* canvas,
+    uint8_t x,
+    uint8_t y,
+    const Icon* icon,
+    const char* label) {
+    if(icon) {
+        canvas_draw_icon(
+            canvas,
+            x + (CELL - icon_get_width(icon)) / 2,
+            y + (CELL - icon_get_height(icon)) / 2,
+            icon);
+    } else if(label && label[0]) {
+        char initial[2] = {label[0], '\0'};
+        canvas_set_font(canvas, FontPrimary);
+        canvas_draw_str_aligned(
+            canvas, x + CELL / 2, y + CELL / 2 + 1, AlignCenter, AlignCenter, initial);
+    }
+}
+
 static void control_centre_draw_tile(
     Canvas* canvas,
     const ControlCentreModel* model,
@@ -155,18 +185,13 @@ static void control_centre_draw_tile(
 
     const Icon* icon = tile_icons[tile];
     if(icon) {
-        canvas_draw_icon(canvas, x + 4, y + 4, icon);
+        control_centre_draw_glyph(canvas, x, y, icon, NULL);
     } else {
-        // an app shortcut: its initial, or + when none is chosen
-        const char* label = state->app_label[tile - ControlCentreTileApp1];
-        if(label[0]) {
-            char initial[2] = {label[0], '\0'};
-            canvas_set_font(canvas, FontPrimary);
-            canvas_draw_str_aligned(
-                canvas, x + CELL / 2, y + CELL / 2 + 1, AlignCenter, AlignCenter, initial);
-        } else {
-            canvas_draw_icon(canvas, x + 4, y + 4, &I_cc_add_12x12);
-        }
+        // an app shortcut: its icon, its initial if it has none, or + when none is chosen
+        const uint8_t slot = tile - ControlCentreTileApp1;
+        const char* label = state->app_label[slot];
+        control_centre_draw_glyph(
+            canvas, x, y, label[0] ? state->app_icon[slot] : &I_cc_add_12x12, label);
     }
     canvas_set_color(canvas, ColorBlack);
 }
@@ -193,9 +218,71 @@ static void control_centre_draw_slider(
     // the icon sits in the well's foot and shows through whatever covers it
     canvas_set_bitmap_mode(canvas, true); // only the icon's own pixels
     canvas_set_color(canvas, ColorXOR);
-    canvas_draw_icon(canvas, x + 2, y + SLIDER_H - 10, icon);
+    canvas_draw_icon(canvas, x + (SLIDER_W - icon_get_width(icon)) / 2, y + SLIDER_H - 10, icon);
     canvas_set_color(canvas, ColorBlack);
     canvas_set_bitmap_mode(canvas, false);
+}
+
+/** An app tile's line: its app and how to change it, or how to choose one */
+static void control_centre_draw_app_label(Canvas* canvas, const char* label) {
+    if(!label[0]) {
+        elements_hints(canvas, 64, 62, AlignCenter, "ok=Choose an app");
+        return;
+    }
+    const uint16_t hint = elements_hints(canvas, 127, 62, AlignRight, "ok=Hold: change");
+    FuriString* name = furi_string_alloc_set_str(label);
+    canvas_set_font(canvas, FontSecondary);
+    elements_string_fit_width(canvas, name, 127 - hint - 6);
+    canvas_draw_str(canvas, 1, 62, furi_string_get_cstr(name));
+    furi_string_free(name);
+}
+
+/** The app picker, over the whole panel */
+static void control_centre_draw_picker(Canvas* canvas, const ControlCentreModel* model) {
+    canvas_clear(canvas);
+    const size_t count = model->app_count;
+    if(!count) return;
+
+    // header: what this is, and where in the list
+    canvas_set_custom_u8g2_font(canvas, hadal_title_font);
+    canvas_draw_str(canvas, 1, 1 + HADAL_TITLE_FONT_HEIGHT, "PICK AN APP");
+    char position[24];
+    snprintf(
+        position, sizeof(position), "%u/%u", (unsigned)(model->pick_index + 1), (unsigned)count);
+    canvas_set_font(canvas, FontSecondary);
+    canvas_draw_str_aligned(canvas, 127, 1, AlignRight, AlignTop, position);
+    for(uint8_t x = 1; x < 128; x += 2) {
+        canvas_draw_dot(canvas, x, 12);
+    }
+
+    // the row: as many either side as there are apps to fill it without repeating one
+    const int32_t before = MIN((int32_t)(count - 1) / 2, PICKER_SIDE);
+    const int32_t after = MIN((int32_t)count / 2, PICKER_SIDE);
+    for(int32_t offset = -before; offset <= after; offset++) {
+        const size_t index = (model->pick_index + count * PICKER_SIDE + offset) % count;
+        const DesktopApp* app = &model->apps[index];
+        const uint8_t x = 64 - CELL / 2 + offset * PICKER_CELL_STEP;
+        const uint8_t y = PICKER_TILES_Y;
+        if(offset == 0) {
+            canvas_draw_rframe(canvas, x, y, CELL, CELL, 4);
+            canvas_draw_rbox(canvas, x + 1, y + 1, CELL - 2, CELL - 2, 3);
+            canvas_set_color(canvas, ColorWhite);
+        } else {
+            canvas_draw_rframe(canvas, x + 1, y + 1, CELL - 2, CELL - 2, 3);
+        }
+        control_centre_draw_glyph(canvas, x, y, app->icon, app->label);
+        canvas_set_color(canvas, ColorBlack);
+    }
+
+    // the chosen one's name
+    FuriString* name = furi_string_alloc_set_str(model->apps[model->pick_index].label);
+    canvas_set_font(canvas, FontPrimary);
+    elements_string_fit_width(canvas, name, 124);
+    canvas_draw_str_aligned(
+        canvas, 64, PICKER_NAME_Y, AlignCenter, AlignBottom, furi_string_get_cstr(name));
+    furi_string_free(name);
+
+    elements_hint_bar(canvas, "lr=Browse;ok=Choose;back=Cancel");
 }
 
 static void control_centre_draw_callback(Canvas* canvas, void* model_) {
@@ -221,12 +308,20 @@ static void control_centre_draw_callback(Canvas* canvas, void* model_) {
         SLIDER_X1,
         model->state.volume,
         model->column == TILE_COLUMNS + 1,
-        &I_cc_speaker_7x7);
+        &I_cc_speaker_9x7);
 
-    char label[40];
-    control_centre_label(model, label, sizeof(label));
-    canvas_set_font(canvas, FontSecondary);
-    canvas_draw_str_aligned(canvas, 64, 63, AlignCenter, AlignBottom, label);
+    const ControlCentreTile tile = control_centre_tile_at(model->column, model->row);
+    if(model->column < TILE_COLUMNS &&
+       (tile == ControlCentreTileApp1 || tile == ControlCentreTileApp2)) {
+        control_centre_draw_app_label(canvas, model->state.app_label[tile - ControlCentreTileApp1]);
+    } else {
+        char label[40];
+        control_centre_label(model, label, sizeof(label));
+        canvas_set_font(canvas, FontSecondary);
+        canvas_draw_str_aligned(canvas, 64, 63, AlignCenter, AlignBottom, label);
+    }
+
+    if(model->picking) control_centre_draw_picker(canvas, model);
 }
 
 static float control_centre_step(float value, bool up) {
@@ -237,9 +332,63 @@ static float control_centre_step(float value, bool up) {
     return (float)(int)(value / SLIDER_STEP + 0.5f) * SLIDER_STEP;
 }
 
+static bool control_centre_picker_input(DesktopControlCentreView* control_centre, InputEvent* event) {
+    DesktopEvent send = DesktopControlCentreEventNone;
+    if(event->type == InputTypeShort && event->key == InputKeyBack) {
+        send = DesktopControlCentreEventPickCancel;
+    } else if(event->type == InputTypeShort && event->key == InputKeyOk) {
+        send = DesktopControlCentreEventPick;
+    } else if(
+        (event->type == InputTypeShort || event->type == InputTypeRepeat) &&
+        (event->key == InputKeyLeft || event->key == InputKeyRight)) {
+        with_view_model(
+            control_centre->view,
+            ControlCentreModel * model,
+            {
+                const size_t count = model->app_count;
+                if(count) {
+                    model->pick_index = event->key == InputKeyLeft ?
+                                            (model->pick_index + count - 1) % count :
+                                            (model->pick_index + 1) % count;
+                }
+            },
+            true);
+    }
+    if(send != DesktopControlCentreEventNone && control_centre->callback) {
+        control_centre->callback(send, control_centre->context);
+    }
+    return true;
+}
+
 static bool control_centre_input_callback(InputEvent* event, void* context) {
     DesktopControlCentreView* control_centre = context;
+    bool picking = false;
+    with_view_model(
+        control_centre->view, ControlCentreModel * model, { picking = model->picking; }, false);
+    if(picking) return control_centre_picker_input(control_centre, event);
+
     if(event->key == InputKeyBack) return false;
+    if(event->type == InputTypeLong && event->key == InputKeyOk) {
+        // held on an app tile with an app: choose another
+        bool change = false;
+        with_view_model(
+            control_centre->view,
+            ControlCentreModel * model,
+            {
+                const ControlCentreTile tile = control_centre_tile_at(model->column, model->row);
+                if(model->column < TILE_COLUMNS &&
+                   (tile == ControlCentreTileApp1 || tile == ControlCentreTileApp2) &&
+                   model->state.app_label[tile - ControlCentreTileApp1][0]) {
+                    model->chosen = tile;
+                    change = true;
+                }
+            },
+            false);
+        if(change && control_centre->callback) {
+            control_centre->callback(DesktopControlCentreEventChangeApp, control_centre->context);
+        }
+        return true;
+    }
     if(event->type != InputTypeShort && event->type != InputTypeRepeat) return true;
 
     DesktopEvent send = DesktopControlCentreEventNone;
@@ -344,6 +493,54 @@ ControlCentreTile desktop_control_centre_get_tile(DesktopControlCentreView* cont
     with_view_model(
         control_centre->view, ControlCentreModel * model, { tile = model->chosen; }, false);
     return tile;
+}
+
+void desktop_control_centre_open_picker(
+    DesktopControlCentreView* control_centre,
+    uint8_t slot,
+    const DesktopApp* apps,
+    size_t count,
+    size_t index) {
+    furi_check(control_centre);
+    furi_check(apps || !count);
+    with_view_model(
+        control_centre->view,
+        ControlCentreModel * model,
+        {
+            model->picking = true;
+            model->pick_slot = slot;
+            model->apps = apps;
+            model->app_count = count;
+            model->pick_index = index < count ? index : 0;
+        },
+        true);
+}
+
+void desktop_control_centre_close_picker(DesktopControlCentreView* control_centre) {
+    furi_check(control_centre);
+    with_view_model(
+        control_centre->view,
+        ControlCentreModel * model,
+        {
+            model->picking = false;
+            model->apps = NULL;
+            model->app_count = 0;
+        },
+        true);
+}
+
+size_t desktop_control_centre_get_pick(DesktopControlCentreView* control_centre, uint8_t* slot) {
+    furi_check(control_centre);
+    size_t index = 0;
+    with_view_model(
+        control_centre->view,
+        ControlCentreModel * model,
+        {
+            index = model->pick_index;
+            if(slot) *slot = model->pick_slot;
+        },
+        false);
+    return index;
 }
 
 void desktop_control_centre_reset_focus(DesktopControlCentreView* control_centre) {

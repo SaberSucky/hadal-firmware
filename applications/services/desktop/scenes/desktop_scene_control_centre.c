@@ -5,7 +5,6 @@
 #include <loader/loader.h>
 #include <bt/bt_service/bt_i.h>
 #include <bt/bt_service/bt_settings_api_i.h>
-#include <toolbox/path.h>
 #include <locale/locale.h>
 
 #include "../desktop_i.h"
@@ -49,19 +48,25 @@ static void desktop_scene_control_centre_toggle_bt(void) {
     furi_record_close(RECORD_BT);
 }
 
-/** An app tile's label: what it is bound to, without folders or ".fap" */
-static void desktop_scene_control_centre_app_label(
-    Desktop* desktop,
-    DesktopKeybind bind,
-    char* label,
-    size_t size) {
-    label[0] = '\0';
+static DesktopKeybind desktop_scene_control_centre_bind(uint8_t slot) {
+    return slot ? DesktopKeybindControl2 : DesktopKeybindControl1;
+}
+
+/** An app tile's label and icon: the app it is bound to, by name, with the app's own icon */
+static void
+    desktop_scene_control_centre_app(Desktop* desktop, uint8_t slot, ControlCentreState* state) {
+    state->app_label[slot][0] = '\0';
+    state->app_icon[slot] = NULL;
     FuriString* action = furi_string_alloc();
-    if(desktop_keybind_read(desktop, bind, action)) {
-        FuriString* name = furi_string_alloc();
-        path_extract_filename(action, name, true);
-        snprintf(label, size, "%s", furi_string_get_cstr(name));
-        furi_string_free(name);
+    if(desktop_keybind_read(desktop, desktop_scene_control_centre_bind(slot), action) &&
+       !furi_string_empty(action)) {
+        FuriString* label = furi_string_alloc();
+        state->app_icon[slot] = desktop_app_describe(
+            furi_string_get_cstr(action), label, &desktop->control_app_icons[slot]);
+        snprintf(
+            state->app_label[slot], sizeof(state->app_label[slot]), "%s", furi_string_get_cstr(label));
+        if(!state->app_label[slot][0]) state->app_label[slot][0] = '?';
+        furi_string_free(label);
     }
     furi_string_free(action);
 }
@@ -81,7 +86,11 @@ static void desktop_scene_control_centre_refresh(Desktop* desktop, bool everythi
     ControlCentreState state;
     desktop_control_centre_get_state(desktop->control_centre, &state);
     if(everything) {
+        // the app tiles stay as they were read: see desktop_scene_control_centre_load_apps()
+        ControlCentreState apps = state;
         memset(&state, 0, sizeof(state));
+        memcpy(state.app_label, apps.app_label, sizeof(state.app_label));
+        memcpy(state.app_icon, apps.app_icon, sizeof(state.app_icon));
         state.on[ControlCentreTileBluetooth] = desktop_scene_control_centre_bt_enabled();
         state.on[ControlCentreTileStealth] = furi_hal_rtc_is_flag_set(FuriHalRtcFlagStealthMode);
         state.on[ControlCentreTileDark] = desktop->settings.dark_mode;
@@ -91,12 +100,18 @@ static void desktop_scene_control_centre_refresh(Desktop* desktop, bool everythi
         state.brightness = desktop->notification->settings.display_brightness;
         state.volume = desktop->notification->settings.speaker_volume;
         state.vibro = desktop->notification->settings.vibro_on;
-        desktop_scene_control_centre_app_label(
-            desktop, DesktopKeybindControl1, state.app_label[0], sizeof(state.app_label[0]));
-        desktop_scene_control_centre_app_label(
-            desktop, DesktopKeybindControl2, state.app_label[1], sizeof(state.app_label[1]));
     }
     desktop_scene_control_centre_time(desktop, &state);
+    desktop_control_centre_set_state(desktop->control_centre, &state);
+}
+
+/** Read what the app tiles are bound to, with their apps' icons: this reads the SD card, so it is
+ * done when the panel opens and when a tile gets a new app, not on every refresh */
+static void desktop_scene_control_centre_load_apps(Desktop* desktop) {
+    ControlCentreState state;
+    desktop_control_centre_get_state(desktop->control_centre, &state);
+    desktop_scene_control_centre_app(desktop, 0, &state);
+    desktop_scene_control_centre_app(desktop, 1, &state);
     desktop_control_centre_set_state(desktop->control_centre, &state);
 }
 
@@ -118,6 +133,7 @@ void desktop_scene_control_centre_on_enter(void* context) {
         desktop->control_centre, desktop_scene_control_centre_callback, desktop);
     desktop_control_centre_reset_focus(desktop->control_centre);
     desktop_scene_control_centre_refresh(desktop, true);
+    desktop_scene_control_centre_load_apps(desktop);
 
     // the panel has its own clock and battery: the whole screen is its
     desktop->gui->status_bar_hidden = true;
@@ -132,6 +148,48 @@ static void desktop_scene_control_centre_close(Desktop* desktop) {
 static void desktop_scene_control_centre_open_app(Desktop* desktop, const char* app) {
     desktop_scene_control_centre_close(desktop);
     loader_start_detached_with_gui_error(desktop->loader, app, NULL);
+}
+
+/** Open the app picker for an app tile, on the app it has now */
+static void desktop_scene_control_centre_open_picker(Desktop* desktop, ControlCentreTile tile) {
+    const uint8_t slot = tile - ControlCentreTileApp1;
+    desktop_app_list_clear(&desktop->control_apps);
+    desktop_app_list_load(&desktop->control_apps);
+
+    FuriString* action = furi_string_alloc();
+    size_t index = 1; // the first app, for a tile with none
+    if(desktop_keybind_read(desktop, desktop_scene_control_centre_bind(slot), action)) {
+        index = desktop_app_list_find(&desktop->control_apps, furi_string_get_cstr(action));
+    }
+    furi_string_free(action);
+    if(index >= desktop->control_apps.count) index = 0;
+
+    desktop_control_centre_open_picker(
+        desktop->control_centre,
+        slot,
+        desktop->control_apps.items,
+        desktop->control_apps.count,
+        index);
+}
+
+static void desktop_scene_control_centre_close_picker(Desktop* desktop) {
+    desktop_control_centre_close_picker(desktop->control_centre);
+    desktop_app_list_clear(&desktop->control_apps);
+}
+
+/** Bind the tile the picker was for to the app chosen in it */
+static void desktop_scene_control_centre_pick(Desktop* desktop) {
+    uint8_t slot = 0;
+    const size_t index = desktop_control_centre_get_pick(desktop->control_centre, &slot);
+    if(index < desktop->control_apps.count) {
+        const DesktopApp* app = &desktop->control_apps.items[index];
+        if(!desktop_keybinds_file_set(
+               desktop->storage, desktop_scene_control_centre_bind(slot), app->action)) {
+            FURI_LOG_E(TAG, "Cannot save the app tile");
+        }
+    }
+    desktop_scene_control_centre_close_picker(desktop);
+    desktop_scene_control_centre_load_apps(desktop);
 }
 
 static void desktop_scene_control_centre_tile(Desktop* desktop, ControlCentreTile tile) {
@@ -175,12 +233,18 @@ static void desktop_scene_control_centre_tile(Desktop* desktop, ControlCentreTil
         break;
     case ControlCentreTileApp1:
     case ControlCentreTileApp2: {
-        const DesktopKeybind bind = tile == ControlCentreTileApp1 ? DesktopKeybindControl1 :
-                                                                    DesktopKeybindControl2;
-        desktop_scene_control_centre_close(desktop);
-        // a tile with no app takes you to where one is chosen
-        if(!desktop_keybind_run(desktop, bind)) {
-            loader_start_detached_with_gui_error(desktop->loader, HADAL_SETTINGS_APP, NULL);
+        const DesktopKeybind bind =
+            desktop_scene_control_centre_bind(tile - ControlCentreTileApp1);
+        FuriString* action = furi_string_alloc();
+        const bool bound = desktop_keybind_read(desktop, bind, action) &&
+                           !furi_string_empty(action);
+        furi_string_free(action);
+        if(bound) {
+            desktop_scene_control_centre_close(desktop);
+            desktop_keybind_run(desktop, bind);
+        } else {
+            // a tile with no app: choose one, right here
+            desktop_scene_control_centre_open_picker(desktop, tile);
         }
     } break;
     case ControlCentreTileDummy:
@@ -228,6 +292,16 @@ bool desktop_scene_control_centre_on_event(void* context, SceneManagerEvent even
             scene_manager_set_scene_state(
                 desktop->scene_manager, DesktopSceneControlCentre, CONTROL_CENTRE_DIRTY);
             break;
+        case DesktopControlCentreEventChangeApp:
+            desktop_scene_control_centre_open_picker(
+                desktop, desktop_control_centre_get_tile(desktop->control_centre));
+            break;
+        case DesktopControlCentreEventPick:
+            desktop_scene_control_centre_pick(desktop);
+            break;
+        case DesktopControlCentreEventPickCancel:
+            desktop_scene_control_centre_close_picker(desktop);
+            break;
         case DesktopControlCentreEventVibro:
             settings->vibro_on = state.vibro;
             if(state.vibro) notification_message(desktop->notification, &sequence_single_vibro);
@@ -244,6 +318,7 @@ bool desktop_scene_control_centre_on_event(void* context, SceneManagerEvent even
 
 void desktop_scene_control_centre_on_exit(void* context) {
     Desktop* desktop = context;
+    desktop_scene_control_centre_close_picker(desktop);
     desktop_scene_control_centre_save(desktop);
     desktop->gui->status_bar_hidden = false;
     gui_update(desktop->gui);

@@ -288,6 +288,35 @@ void elements_text_box(
     const char* text,
     bool strip_to_dots);
 
+/** Height of the hint bar along the bottom of the screen, its dotted rule included */
+#define ELEMENTS_HINT_BAR_HEIGHT 11
+
+/** Draw a line of button hints: each hint is a button's glyph and what that button does.
+ *
+ * The hints are written "button=what it does", one after another with ';' between them, e.g.
+ * "lr=Browse;ok=Choose;back=Cancel". The buttons are ok, back, lr (left and right), ud (up and
+ * down), left, right, up and down; a hint with nothing before '=' is its text alone.
+ *
+ * @param      canvas      Canvas instance
+ * @param[in]  x           the line's left end, centre or right end, as horizontal says
+ * @param[in]  y           the text's baseline
+ * @param[in]  horizontal  where x is on the line
+ * @param[in]  hints       the hints, as above
+ *
+ * @return     the line's width in pixels
+ */
+uint16_t elements_hints(Canvas* canvas, int32_t x, int32_t y, Align horizontal, const char* hints);
+
+/** Draw the hint bar: a dotted rule and a line of hints, centred, along the screen's bottom
+ * ELEMENTS_HINT_BAR_HEIGHT pixels, which it clears first. Hints are written as for
+ * elements_hints(). This is where a screen says which buttons do what, so that its title and
+ * its items do not have to.
+ *
+ * @param      canvas  Canvas instance
+ * @param[in]  hints   the hints
+ */
+void elements_hint_bar(Canvas* canvas, const char* hints);
+
 #ifdef __cplusplus
 }
 #endif

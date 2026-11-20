@@ -135,6 +135,14 @@ void submenu_set_selected_item(Submenu* submenu, uint32_t index);
  */
 void submenu_set_header(Submenu* submenu, const char* header);
 
+/** Set the hints along the bottom: which buttons do what on this screen, as for
+ * elements_hint_bar() ("ok=Edit;back=Save"). The header then says only what the screen is.
+ *
+ * @param      submenu  Submenu instance
+ * @param      hints    the hints, NULL or "" for none
+ */
+void submenu_set_hints(Submenu* submenu, const char* hints);
+
 /** Set submenu orientation
  *
  * @param      submenu  Submenu instance

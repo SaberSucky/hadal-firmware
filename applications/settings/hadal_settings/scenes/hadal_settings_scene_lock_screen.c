@@ -80,10 +80,12 @@ void hadal_settings_scene_lock_screen_on_enter(void* context) {
         variable_item_list_add(app->variable_list, "Lock at start", 2, boot_changed, app);
     variable_item_set_current_value_index(item, settings->boot_unlocked ? 1 : 0);
     variable_item_set_current_value_text(item, on_off[settings->boot_unlocked ? 1 : 0]);
+    variable_item_set_values_text(item, on_off);
 
     item = variable_item_list_add(app->variable_list, "Clock", 2, clock_changed, app);
     variable_item_set_current_value_index(item, settings->lock_clock ? 1 : 0);
     variable_item_set_current_value_text(item, off_on[settings->lock_clock ? 1 : 0]);
+    variable_item_set_values_text(item, off_on);
 
     item = variable_item_list_add(
         app->variable_list, "Wrong PINs do", COUNT_OF(fail_actions), action_changed, app);
@@ -91,12 +93,14 @@ void hadal_settings_scene_lock_screen_on_enter(void* context) {
         settings->pin_fail_action < COUNT_OF(fail_actions) ? settings->pin_fail_action : 0;
     variable_item_set_current_value_index(item, action);
     variable_item_set_current_value_text(item, fail_actions[action]);
+    variable_item_set_values_text(item, fail_actions);
 
     item = variable_item_list_add(
         app->variable_list, "After this many", COUNT_OF(fail_limits), limit_changed, app);
     const size_t limit = fail_limit_index(settings->pin_fail_limit);
     variable_item_set_current_value_index(item, limit);
     variable_item_set_current_value_text(item, fail_limit_texts[limit]);
+    variable_item_set_values_text(item, fail_limit_texts);
 
     free(settings);
     variable_item_list_set_selected_item(

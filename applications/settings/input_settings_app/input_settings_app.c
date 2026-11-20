@@ -91,6 +91,7 @@ InputSettingsApp* input_settings_app_alloc(void) {
         app->settings->vibro_touch_level, vibro_touch_level_value, VIBRO_TOUCH_LEVEL_COUNT);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, vibro_touch_level_text[value_index]);
+    variable_item_set_values_text(item, vibro_touch_level_text);
 
     item = variable_item_list_add(
         app->variable_item_list,
@@ -105,6 +106,7 @@ InputSettingsApp* input_settings_app_alloc(void) {
         VIBRO_TOUCH_TRIGGER_MASK_COUNT);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, vibro_touch_trigger_mask_text[value_index]);
+    variable_item_set_values_text(item, vibro_touch_trigger_mask_text);
 
     // create and setup view and view dispatcher
     app->view_dispatcher = view_dispatcher_alloc();

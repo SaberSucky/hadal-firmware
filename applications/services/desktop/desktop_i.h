@@ -10,6 +10,8 @@
 #include "views/desktop_view_main.h"
 #include "views/desktop_view_control_centre.h"
 #include "helpers/desktop_keybinds.h"
+#include "helpers/desktop_keybinds_file.h"
+#include "helpers/desktop_apps.h"
 #include "views/desktop_view_debug.h"
 #include "views/desktop_view_slideshow.h"
 
@@ -95,6 +97,11 @@ struct Desktop {
     bool locked;
     /** The lock in place, or the next one, opens without the PIN (control centre's Lock) */
     bool keypad_lock;
+
+    /** The control centre's app tiles: icons of apps on the SD card, read from their manifests */
+    DesktopFapIcon control_app_icons[2];
+    /** The apps the control centre's picker shows, while it is open */
+    DesktopAppList control_apps;
 };
 
 void desktop_lock(Desktop* desktop);

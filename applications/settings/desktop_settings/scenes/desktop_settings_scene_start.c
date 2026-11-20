@@ -133,11 +133,12 @@ void desktop_settings_scene_start_on_enter(void* context) {
         app->settings.auto_lock_delay_ms, auto_lock_delay_value, AUTO_LOCK_DELAY_COUNT);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, auto_lock_delay_text[value_index]);
+    variable_item_set_values_text(item, auto_lock_delay_text);
 
     // USB connection Inhibit autolock OFF|ON|with opened RPC session
     item = variable_item_list_add(
         variable_item_list,
-        "Auto Lock disarm by active USB session",
+        "No auto lock on USB",
         USB_INHIBIT_AUTO_LOCK_DELAY_COUNT,
         desktop_settings_scene_start_usb_inhibit_auto_lock_delay_changed,
         app);
@@ -148,6 +149,7 @@ void desktop_settings_scene_start_on_enter(void* context) {
         USB_INHIBIT_AUTO_LOCK_DELAY_COUNT);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, usb_inhibit_auto_lock_delay_text[value_index]);
+    variable_item_set_values_text(item, usb_inhibit_auto_lock_delay_text);
 
     item = variable_item_list_add(
         variable_item_list,
@@ -162,6 +164,7 @@ void desktop_settings_scene_start_on_enter(void* context) {
         BATTERY_VIEW_COUNT);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, battery_view_count_text[value_index]);
+    variable_item_set_values_text(item, battery_view_count_text);
 
     item = variable_item_list_add(
         variable_item_list,
@@ -174,6 +177,7 @@ void desktop_settings_scene_start_on_enter(void* context) {
         value_index_uint32(app->settings.display_clock, clock_enable_value, CLOCK_ENABLE_COUNT);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, clock_enable_text[value_index]);
+    variable_item_set_values_text(item, clock_enable_text);
 
     // the menu style and the asset pack are set in Settings > Hadal > Interface
 
@@ -181,21 +185,21 @@ void desktop_settings_scene_start_on_enter(void* context) {
 
     variable_item_list_add(variable_item_list, "Happy Mode", 1, NULL, NULL);
 
-    variable_item_list_add(variable_item_list, "Favorite App - Left Short", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "Favorite App - Left Long", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "Favorite App - Right Short", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "Favorite App - Right Long", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "Favorite App - Ok Long", 1, NULL, NULL);
+    variable_item_list_add(variable_item_list, "Left press opens", 1, NULL, NULL);
+    variable_item_list_add(variable_item_list, "Left hold opens", 1, NULL, NULL);
+    variable_item_list_add(variable_item_list, "Right press opens", 1, NULL, NULL);
+    variable_item_list_add(variable_item_list, "Right hold opens", 1, NULL, NULL);
+    variable_item_list_add(variable_item_list, "OK hold opens", 1, NULL, NULL);
 
-    variable_item_list_add(variable_item_list, "DummyMode - Left", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "DummyMode - Left Long", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "DummyMode - Right", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "DummyMode - Right Long", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "DummyMode - Up Long", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "DummyMode - Down", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "DummyMode - Down Long", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "DummyMode - Ok", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "DummyMode - Ok Long", 1, NULL, NULL);
+    variable_item_list_add(variable_item_list, "Dummy: Left", 1, NULL, NULL);
+    variable_item_list_add(variable_item_list, "Dummy: Left hold", 1, NULL, NULL);
+    variable_item_list_add(variable_item_list, "Dummy: Right", 1, NULL, NULL);
+    variable_item_list_add(variable_item_list, "Dummy: Right hold", 1, NULL, NULL);
+    variable_item_list_add(variable_item_list, "Dummy: Up hold", 1, NULL, NULL);
+    variable_item_list_add(variable_item_list, "Dummy: Down", 1, NULL, NULL);
+    variable_item_list_add(variable_item_list, "Dummy: Down hold", 1, NULL, NULL);
+    variable_item_list_add(variable_item_list, "Dummy: OK", 1, NULL, NULL);
+    variable_item_list_add(variable_item_list, "Dummy: OK hold", 1, NULL, NULL);
 
     variable_item_list_set_enter_callback(
         variable_item_list, desktop_settings_scene_start_var_list_enter_callback, app);

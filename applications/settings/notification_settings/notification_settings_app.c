@@ -611,6 +611,7 @@ static NotificationAppSettings* alloc_settings(void) {
         value_index_int32(app->notification->settings.contrast, contrast_value, CONTRAST_COUNT);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, contrast_text[value_index]);
+    variable_item_set_values_text(item, contrast_text);
 
     item = variable_item_list_add(
         app->variable_item_list, "LCD Backlight", BACKLIGHT_COUNT, backlight_changed, app);
@@ -618,6 +619,7 @@ static NotificationAppSettings* alloc_settings(void) {
         app->notification->settings.display_brightness, backlight_value, BACKLIGHT_COUNT);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, backlight_text[value_index]);
+    variable_item_set_values_text(item, backlight_text);
 
     item = variable_item_list_add(
         app->variable_item_list, "Backlight Time", DELAY_COUNT, screen_changed, app);
@@ -625,6 +627,7 @@ static NotificationAppSettings* alloc_settings(void) {
         app->notification->settings.display_off_delay_ms, delay_value, DELAY_COUNT);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, delay_text[value_index]);
+    variable_item_set_values_text(item, delay_text);
 
     // --- NIGHT SHIFT ---
     item = variable_item_list_add(
@@ -633,6 +636,7 @@ static NotificationAppSettings* alloc_settings(void) {
         app->notification->settings.night_shift, night_shift_value, NIGHT_SHIFT_COUNT);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, night_shift_text[value_index]);
+    variable_item_set_values_text(item, night_shift_text);
 
     item = variable_item_list_add(
         app->variable_item_list,
@@ -646,6 +650,7 @@ static NotificationAppSettings* alloc_settings(void) {
         NIGHT_SHIFT_START_COUNT);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, night_shift_start_text[value_index]);
+    variable_item_set_values_text(item, night_shift_start_text);
     variable_item_set_locked(
         item, (app->notification->settings.night_shift == 1), "Night Shift \nOFF!");
 
@@ -655,6 +660,7 @@ static NotificationAppSettings* alloc_settings(void) {
         app->notification->settings.night_shift_end, night_shift_end_value, NIGHT_SHIFT_END_COUNT);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, night_shift_end_text[value_index]);
+    variable_item_set_values_text(item, night_shift_end_text);
     variable_item_set_locked(
         item, (app->notification->settings.night_shift == 1), "Night Shift \nOFF!");
 
@@ -666,6 +672,7 @@ static NotificationAppSettings* alloc_settings(void) {
         app->notification->settings.led_brightness, backlight_value, BACKLIGHT_COUNT);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, backlight_text[value_index]);
+    variable_item_set_values_text(item, backlight_text);
 
     if(furi_hal_rtc_is_flag_set(FuriHalRtcFlagStealthMode)) {
         item = variable_item_list_add(app->variable_item_list, "Volume", 1, NULL, app);
@@ -679,6 +686,7 @@ static NotificationAppSettings* alloc_settings(void) {
             app->notification->settings.speaker_volume, volume_value, VOLUME_COUNT);
         variable_item_set_current_value_index(item, value_index);
         variable_item_set_current_value_text(item, volume_text[value_index]);
+        variable_item_set_values_text(item, volume_text);
     }
 
     if(furi_hal_rtc_is_flag_set(FuriHalRtcFlagStealthMode)) {
@@ -693,6 +701,7 @@ static NotificationAppSettings* alloc_settings(void) {
             value_index_bool(app->notification->settings.vibro_on, vibro_value, VIBRO_COUNT);
         variable_item_set_current_value_index(item, value_index);
         variable_item_set_current_value_text(item, vibro_text[value_index]);
+        variable_item_set_values_text(item, vibro_text);
     }
 
     item = variable_item_list_add(
@@ -701,6 +710,7 @@ static NotificationAppSettings* alloc_settings(void) {
         app->notification->settings.lcd_inversion, lcd_inversion_value, LCD_INVERSION_COUNT);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, lcd_inversion_text[value_index]);
+    variable_item_set_values_text(item, lcd_inversion_text);
 
     //--- RGB BACKLIGHT ---
     item = variable_item_list_add(app->variable_item_list, "RGB Mod Settings", 0, NULL, app);
@@ -724,6 +734,7 @@ static NotificationAppSettings* alloc_settings(void) {
         RGB_BACKLIGHT_INSTALLED_COUNT);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, rgb_backlight_installed_text[value_index]);
+    variable_item_set_values_text(item, rgb_backlight_installed_text);
 
     // We (humans) are numbering LEDs from left to right as 1..3, but hardware have another order from right to left 2..0
     // led_1 color
@@ -778,6 +789,7 @@ static NotificationAppSettings* alloc_settings(void) {
         RGB_BACKLIGHT_RAINBOW_MODE_COUNT);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, rgb_backlight_rainbow_mode_text[value_index]);
+    variable_item_set_values_text(item, rgb_backlight_rainbow_mode_text);
     variable_item_set_locked(
         item, (app->notification->settings.rgb.rgb_backlight_installed == 0), "RGB MOD \nOFF!");
 
@@ -793,6 +805,7 @@ static NotificationAppSettings* alloc_settings(void) {
         RGB_BACKLIGHT_RAINBOW_SPEED_COUNT);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, rgb_backlight_rainbow_speed_text[value_index]);
+    variable_item_set_values_text(item, rgb_backlight_rainbow_speed_text);
     variable_item_set_locked(
         item, (app->notification->settings.rgb.rgb_backlight_installed == 0), "RGB MOD \nOFF!");
 
@@ -808,6 +821,7 @@ static NotificationAppSettings* alloc_settings(void) {
         RGB_BACKLIGHT_RAINBOW_STEP_COUNT);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, rgb_backlight_rainbow_step_text[value_index]);
+    variable_item_set_values_text(item, rgb_backlight_rainbow_step_text);
     variable_item_set_locked(
         item, (app->notification->settings.rgb.rgb_backlight_installed == 0), "RGB MOD \nOFF!");
 
@@ -837,6 +851,7 @@ static NotificationAppSettings* alloc_settings(void) {
         RGB_BACKLIGHT_RAINBOW_WIDE_COUNT);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, rgb_backlight_rainbow_wide_text[value_index]);
+    variable_item_set_values_text(item, rgb_backlight_rainbow_wide_text);
     variable_item_set_locked(
         item, (app->notification->settings.rgb.rgb_backlight_installed == 0), "RGB MOD \nOFF!");
 

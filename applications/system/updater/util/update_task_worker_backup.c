@@ -43,6 +43,10 @@ static bool update_task_pre_update(UpdateTask* update_task) {
 typedef struct {
     UpdateTask* update_task;
     TarArchive* archive;
+    // One progress bar over every archive: sizes of the archives done, of all, of this one
+    uint64_t bytes_done;
+    uint64_t bytes_all;
+    uint64_t bytes_current;
 } TarUnpackProgress;
 
 static bool update_task_resource_unpack_cb(const char* name, bool is_directory, void* context) {
@@ -51,8 +55,12 @@ static bool update_task_resource_unpack_cb(const char* name, bool is_directory, 
     TarUnpackProgress* unpack_progress = context;
     int32_t progress = 0, total = 0;
     tar_archive_get_read_progress(unpack_progress->archive, &progress, &total);
+    const uint64_t here =
+        unpack_progress->bytes_current * (uint64_t)progress / (uint64_t)(total + 1);
     update_task_set_progress(
-        unpack_progress->update_task, UpdateTaskStageProgress, (progress * 100) / (total + 1));
+        unpack_progress->update_task,
+        UpdateTaskStageProgress,
+        (unpack_progress->bytes_done + here) * 100 / (unpack_progress->bytes_all + 1));
     return true;
 }
 
@@ -179,9 +187,15 @@ static bool update_task_post_update(UpdateTask* update_task) {
 
                 update_task_cleanup_resources(update_task);
 
+                // the bar runs once over all the archives, by their sizes
+                progress.bytes_all = update_task_resources_total_size(
+                    update_task, furi_string_get_cstr(file_path));
+                progress.bytes_current =
+                    update_task_resources_file_size(update_task, furi_string_get_cstr(file_path));
                 update_task_set_progress(update_task, UpdateTaskStageResourcesFileUnpack, 0);
                 tar_archive_set_file_callback(archive, update_task_resource_unpack_cb, &progress);
                 CHECK_RESULT(tar_archive_unpack_to(archive, STORAGE_EXT_PATH_PREFIX, NULL));
+                progress.bytes_done += progress.bytes_current;
 
                 FuriString* extra = furi_string_alloc();
                 bool extras_ok = true;
@@ -189,6 +203,8 @@ static bool update_task_post_update(UpdateTask* update_task) {
                                                         update_task, &offset, extra);) {
                     TarArchive* extra_archive = tar_archive_alloc(update_task->storage);
                     progress.archive = extra_archive;
+                    progress.bytes_current = update_task_resources_file_size(
+                        update_task, furi_string_get_cstr(extra));
                     extras_ok = tar_archive_open(
                         extra_archive, furi_string_get_cstr(extra), TarOpenModeReadHeatshrink);
                     if(extras_ok) {
@@ -198,6 +214,7 @@ static bool update_task_post_update(UpdateTask* update_task) {
                             tar_archive_unpack_to(extra_archive, STORAGE_EXT_PATH_PREFIX, NULL);
                     }
                     tar_archive_free(extra_archive);
+                    progress.bytes_done += progress.bytes_current;
                 }
                 progress.archive = archive;
                 furi_string_free(extra);

@@ -78,6 +78,7 @@ void hadal_settings_scene_protocols_on_enter(void* context) {
     const bool on = hadal_settings_extended_range_get(app->storage);
     variable_item_set_current_value_index(item, on);
     variable_item_set_current_value_text(item, off_on[on]);
+    variable_item_set_values_text(item, off_on);
     item = variable_item_list_add(app->variable_list, "Restart to apply", 0, NULL, app);
     item = variable_item_list_add(app->variable_list, "Sub-GHz Frequencies", 0, NULL, app);
     variable_item_list_set_enter_callback(app->variable_list, enter_callback, app);

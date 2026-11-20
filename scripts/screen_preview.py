@@ -32,6 +32,7 @@ PREVIEWS = {
     "keyboard": [],
     "submenu": [],
     "control_centre": [],
+    "variable_item_list": [],
 }
 
 GUI_SOURCES = [

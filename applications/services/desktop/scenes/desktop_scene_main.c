@@ -92,37 +92,13 @@ static void desktop_scene_main_start_favorite(Desktop* desktop, FavoriteApp* app
 
 /* ---- keybinds: what a button does, from the SD card (helpers/desktop_keybinds.h) ---- */
 
-#define KEYBINDS_FILE_MAX (4096U)
-
 _Static_assert(
     DesktopMainEventKeybindEnd - DesktopMainEventKeybind == DesktopKeybindButtonCount,
     "an event for every button's keybind");
 
 // The action bound to a button or tile, the file's last line for it; false if there is none
 bool desktop_keybind_read(Desktop* desktop, DesktopKeybind bind, FuriString* out) {
-    File* file = storage_file_alloc(desktop->storage);
-    bool found = false;
-    if(storage_file_open(file, DESKTOP_KEYBINDS_PATH, FSAM_READ, FSOM_OPEN_EXISTING)) {
-        char* text = malloc(KEYBINDS_FILE_MAX);
-        const size_t size = storage_file_read(file, text, KEYBINDS_FILE_MAX);
-        for(size_t start = 0; start < size;) {
-            const char* line = text + start;
-            const char* end = memchr(line, '\n', size - start);
-            const size_t length = end ? (size_t)(end - line) : size - start;
-            DesktopKeybind line_bind;
-            const char* action;
-            size_t action_length;
-            if(desktop_keybinds_parse_line(line, length, &line_bind, &action, &action_length) &&
-               line_bind == bind) {
-                furi_string_set_strn(out, action, action_length);
-                found = true;
-            }
-            start += length + 1;
-        }
-        free(text);
-    }
-    storage_file_free(file);
-    return found;
+    return desktop_keybinds_file_get(desktop->storage, bind, out);
 }
 
 // What a button did before keybinds: the event the scene already knows

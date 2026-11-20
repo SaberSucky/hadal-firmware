@@ -16,7 +16,30 @@ static void add(const char* label) {
 int main(int argc, char** argv) {
     if(argc > 1) preview_set_dir(argv[1]);
     SubmenuItemArray_init(model.items);
-    model.header = furi_string_alloc_set_str("Desktop Keys");
+    model.hints = furi_string_alloc();
+    model.header = furi_string_alloc_set_str("Main Menu");
+    furi_string_set_str(model.hints, "ok=Move or remove;back=Done");
+    add("Sub-GHz");
+    add("125 kHz RFID");
+    add("NFC");
+    add("Infrared");
+    model.position = 1;
+    preview_draw("submenu_hints", draw, NULL);
+    furi_string_set_str(model.header, "Spoofing");
+    furi_string_set_str(model.hints, "=Changes apply after a restart");
+    model.position = 0;
+    preview_draw("submenu_hints_text", draw, NULL);
+    model.position = 3;
+    model.window_position = 1;
+    for(size_t step = 0; step < 30; step++) {
+        model.scroll_counter = step;
+        draw(preview_canvas(), NULL);
+    }
+    SubmenuItemArray_reset(model.items);
+    furi_string_reset(model.hints);
+    model.position = 0;
+    model.window_position = 0;
+    furi_string_set_str(model.header, "Desktop Keys");
     add("Up: Lock Menu");
     add("Up held: battery_history_with_a_long_name");
     add("Down: Archive");

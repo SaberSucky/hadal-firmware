@@ -8,7 +8,8 @@
 void hadal_settings_scene_main_menu_on_enter(void* context) {
     HadalSettings* app = context;
     submenu_reset(app->submenu);
-    submenu_set_header(app->submenu, "Main Menu: OK to edit");
+    submenu_set_header(app->submenu, "Main Menu");
+    submenu_set_hints(app->submenu, "ok=Move or remove;back=Done");
     for(size_t i = 0; i < app->main_menu.count; i++) {
         submenu_add_item(
             app->submenu,

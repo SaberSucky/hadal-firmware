@@ -1,5 +1,5 @@
 entry,status,name,type,params
-Version,+,88.31,,
+Version,+,88.32,,
 Header,+,applications/drivers/subghz/cc1101_ext/cc1101_ext_interconnect.h,,
 Header,+,applications/services/applications.h,,
 Header,+,applications/services/bt/bt_service/bt.h,,
@@ -1139,6 +1139,8 @@ Function,+,elements_button_left,void,"Canvas*, const char*"
 Function,+,elements_button_right,void,"Canvas*, const char*"
 Function,+,elements_button_up,void,"Canvas*, const char*"
 Function,+,elements_frame,void,"Canvas*, int32_t, int32_t, size_t, size_t"
+Function,+,elements_hint_bar,void,"Canvas*, const char*"
+Function,+,elements_hints,uint16_t,"Canvas*, int32_t, int32_t, Align, const char*"
 Function,+,elements_multiline_text,void,"Canvas*, int32_t, int32_t, const char*"
 Function,+,elements_multiline_text_aligned,void,"Canvas*, int32_t, int32_t, Align, Align, const char*"
 Function,+,elements_multiline_text_framed,void,"Canvas*, int32_t, int32_t, const char*"
@@ -4024,6 +4026,7 @@ Function,+,submenu_get_view,View*,Submenu*
 Function,+,submenu_remove_item,void,"Submenu*, uint32_t"
 Function,+,submenu_reset,void,Submenu*
 Function,+,submenu_set_header,void,"Submenu*, const char*"
+Function,+,submenu_set_hints,void,"Submenu*, const char*"
 Function,+,submenu_set_orientation,void,"Submenu*, ViewOrientation"
 Function,+,submenu_set_selected_item,void,"Submenu*, uint32_t"
 Function,-,system,int,const char*
@@ -5216,6 +5219,7 @@ Function,+,variable_item_set_current_value_text,void,"VariableItem*, const char*
 Function,+,variable_item_set_item_label,void,"VariableItem*, const char*"
 Function,+,variable_item_set_locked,void,"VariableItem*, _Bool, const char*"
 Function,+,variable_item_set_values_count,void,"VariableItem*, uint8_t"
+Function,+,variable_item_set_values_text,void,"VariableItem*, const char* const*"
 Function,+,varint_int32_length,size_t,int32_t
 Function,+,varint_int32_pack,size_t,"int32_t, uint8_t*"
 Function,+,varint_int32_unpack,size_t,"int32_t*, const uint8_t*, size_t"

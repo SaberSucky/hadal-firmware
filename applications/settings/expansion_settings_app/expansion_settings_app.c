@@ -51,6 +51,7 @@ static ExpansionSettingsApp* expansion_settings_app_alloc(void) {
     value_index = app->settings.uart_index;
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, expansion_uart_text[value_index]);
+    variable_item_set_values_text(item, expansion_uart_text);
 
     view_set_previous_callback(
         variable_item_list_get_view(app->var_item_list), expansion_settings_app_exit);

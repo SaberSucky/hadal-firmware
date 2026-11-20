@@ -233,6 +233,7 @@ SystemSettings* system_settings_alloc(void) {
     value_index = furi_hal_rtc_is_flag_set(FuriHalRtcFlagHandOrient) ? 1 : 0;
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, hand_mode[value_index]);
+    variable_item_set_values_text(item, hand_mode);
 
     item = variable_item_list_add(
         app->var_item_list,
@@ -244,6 +245,7 @@ SystemSettings* system_settings_alloc(void) {
         locale_get_measurement_unit(), measurement_units_value, COUNT_OF(measurement_units_value));
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, measurement_units_text[value_index]);
+    variable_item_set_values_text(item, measurement_units_text);
 
     item = variable_item_list_add(
         app->var_item_list, "Time Format", COUNT_OF(time_format_text), time_format_changed, app);
@@ -251,6 +253,7 @@ SystemSettings* system_settings_alloc(void) {
         locale_get_time_format(), time_format_value, COUNT_OF(time_format_value));
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, time_format_text[value_index]);
+    variable_item_set_values_text(item, time_format_text);
 
     item = variable_item_list_add(
         app->var_item_list, "Date Format", COUNT_OF(date_format_text), date_format_changed, app);
@@ -258,6 +261,7 @@ SystemSettings* system_settings_alloc(void) {
         locale_get_date_format(), date_format_value, COUNT_OF(date_format_value));
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, date_format_text[value_index]);
+    variable_item_set_values_text(item, date_format_text);
 
     item = variable_item_list_add(
         app->var_item_list, "Log Level", COUNT_OF(log_level_text), log_level_changed, app);
@@ -265,6 +269,7 @@ SystemSettings* system_settings_alloc(void) {
         furi_hal_rtc_get_log_level(), log_level_value, COUNT_OF(log_level_text));
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, log_level_text[value_index]);
+    variable_item_set_values_text(item, log_level_text);
 
     item = variable_item_list_add(
         app->var_item_list, "Log Device", COUNT_OF(log_device_text), log_device_changed, app);
@@ -272,6 +277,7 @@ SystemSettings* system_settings_alloc(void) {
         furi_hal_rtc_get_log_device(), log_device_value, COUNT_OF(log_device_text));
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, log_device_text[value_index]);
+    variable_item_set_values_text(item, log_device_text);
 
     item = variable_item_list_add(
         app->var_item_list,
@@ -283,12 +289,14 @@ SystemSettings* system_settings_alloc(void) {
         furi_hal_rtc_get_log_baud_rate(), log_baud_rate_value, COUNT_OF(log_baud_rate_text));
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, log_baud_rate_text[value_index]);
+    variable_item_set_values_text(item, log_baud_rate_text);
 
     item = variable_item_list_add(
         app->var_item_list, "Debug", COUNT_OF(debug_text), debug_changed, app);
     value_index = furi_hal_rtc_is_flag_set(FuriHalRtcFlagDebug) ? 1 : 0;
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, debug_text[value_index]);
+    variable_item_set_values_text(item, debug_text);
 
     item = variable_item_list_add(
         app->var_item_list,
@@ -301,18 +309,21 @@ SystemSettings* system_settings_alloc(void) {
     furi_hal_rtc_set_heap_track_mode(heap_trace_mode_value[value_index]);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, heap_trace_mode_text[value_index]);
+    variable_item_set_values_text(item, heap_trace_mode_text);
 
     item = variable_item_list_add(
         app->var_item_list, "Sleep Method", COUNT_OF(sleep_method), sleep_method_changed, app);
     value_index = furi_hal_rtc_is_flag_set(FuriHalRtcFlagLegacySleep) ? 1 : 0;
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, sleep_method[value_index]);
+    variable_item_set_values_text(item, sleep_method);
 
     item = variable_item_list_add(
         app->var_item_list, "File Naming", COUNT_OF(filename_scheme), filename_scheme_changed, app);
     value_index = furi_hal_rtc_is_flag_set(FuriHalRtcFlagDetailedFilename) ? 1 : 0;
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, filename_scheme[value_index]);
+    variable_item_set_values_text(item, filename_scheme);
 
     view_set_previous_callback(
         variable_item_list_get_view(app->var_item_list), system_settings_exit);

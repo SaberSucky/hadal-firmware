@@ -1014,3 +1014,123 @@ void elements_text_box(
     }
     canvas_set_font(canvas, FontSecondary);
 }
+
+/* ---- hints: which button does what, along the bottom ---- */
+
+#define HINT_GLYPH_GAP 2 // between a button's glyph and its text
+#define HINT_GAP       6 // between hints
+#define HINT_GAP_TIGHT 3 // between hints, when they would not fit otherwise
+#define HINT_TEXT_MAX  32
+
+static const Icon* elements_hint_glyph(const char* button, size_t length) {
+    static const struct {
+        const char* name;
+        const Icon* icon;
+    } glyphs[] = {
+        {"ok", &I_ButtonCenter_7x7},
+        {"back", &I_hint_back_8x7},
+        {"lr", &I_hint_lr_9x7},
+        {"ud", &I_hint_ud_7x7},
+        {"left", &I_ButtonLeft_4x7},
+        {"right", &I_ButtonRight_4x7},
+        {"up", &I_ButtonUp_7x4},
+        {"down", &I_ButtonDown_7x4},
+    };
+    for(size_t i = 0; i < COUNT_OF(glyphs); i++) {
+        if(strlen(glyphs[i].name) == length && strncmp(glyphs[i].name, button, length) == 0) {
+            return glyphs[i].icon;
+        }
+    }
+    return NULL;
+}
+
+typedef struct {
+    const Icon* glyph; // NULL: text alone
+    char text[HINT_TEXT_MAX];
+} ElementsHint;
+
+/** The next hint in the string, from *cursor on; false when there are no more */
+static bool elements_hint_next(const char** cursor, ElementsHint* hint) {
+    const char* start = *cursor;
+    if(!*start) return false;
+    const char* end = strchr(start, ';');
+    if(!end) end = start + strlen(start);
+    *cursor = *end ? end + 1 : end;
+
+    const char* equals = memchr(start, '=', end - start);
+    const char* text = start;
+    hint->glyph = NULL;
+    if(equals) {
+        hint->glyph = elements_hint_glyph(start, equals - start);
+        text = equals + 1;
+    }
+    const size_t length = MIN((size_t)(end - text), sizeof(hint->text) - 1);
+    memcpy(hint->text, text, length);
+    hint->text[length] = '\0';
+    return true;
+}
+
+static uint16_t elements_hint_width(Canvas* canvas, const ElementsHint* hint) {
+    uint16_t width = 0;
+    if(hint->glyph) width += icon_get_width(hint->glyph);
+    if(hint->text[0]) {
+        if(hint->glyph) width += HINT_GLYPH_GAP;
+        width += canvas_string_width(canvas, hint->text);
+    }
+    return width;
+}
+
+uint16_t elements_hints(Canvas* canvas, int32_t x, int32_t y, Align horizontal, const char* hints) {
+    furi_check(canvas);
+    furi_check(hints);
+    canvas_set_font(canvas, FontSecondary);
+
+    // measure first: the gaps close up when the line would not fit across the screen
+    ElementsHint hint;
+    uint16_t width = 0;
+    size_t count = 0;
+    for(const char* cursor = hints; elements_hint_next(&cursor, &hint); count++) {
+        width += elements_hint_width(canvas, &hint);
+    }
+    if(!count) return 0;
+    uint8_t gap = HINT_GAP;
+    if(width + (count - 1) * gap > canvas_width(canvas)) gap = HINT_GAP_TIGHT;
+    width += (count - 1) * gap;
+
+    if(horizontal == AlignCenter) {
+        x -= width / 2;
+    } else if(horizontal == AlignRight) {
+        x -= width;
+    }
+
+    for(const char* cursor = hints; elements_hint_next(&cursor, &hint);) {
+        if(hint.glyph) {
+            // glyphs sit on the baseline, the short ones in the middle of the text's height
+            const int32_t height = icon_get_height(hint.glyph);
+            canvas_draw_icon(canvas, x, y - 7 + (7 - height) / 2, hint.glyph);
+            x += icon_get_width(hint.glyph);
+            if(hint.text[0]) x += HINT_GLYPH_GAP;
+        }
+        if(hint.text[0]) {
+            canvas_draw_str(canvas, x, y, hint.text);
+            x += canvas_string_width(canvas, hint.text);
+        }
+        x += gap;
+    }
+    return width;
+}
+
+void elements_hint_bar(Canvas* canvas, const char* hints) {
+    furi_check(canvas);
+    furi_check(hints);
+    const int32_t width = canvas_width(canvas);
+    const int32_t top = canvas_height(canvas) - ELEMENTS_HINT_BAR_HEIGHT;
+
+    canvas_set_color(canvas, ColorWhite);
+    canvas_draw_box(canvas, 0, top, width, ELEMENTS_HINT_BAR_HEIGHT);
+    canvas_set_color(canvas, ColorBlack);
+    for(int32_t x = 1; x < width; x += 2) {
+        canvas_draw_dot(canvas, x, top);
+    }
+    elements_hints(canvas, width / 2, canvas_height(canvas) - 2, AlignCenter, hints);
+}

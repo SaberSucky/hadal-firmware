@@ -111,6 +111,23 @@ void variable_item_set_item_label(VariableItem* item, const char* label);
  */
 void variable_item_set_current_value_text(VariableItem* item, const char* current_value_text);
 
+/** Give every value's text, so the list can show the item as a control that suits it.
+ *
+ * Two or three short values are drawn side by side, the chosen one filled; more are a
+ * dropdown: OK opens them as a list to choose from. Either way Left and Right still step
+ * through the values. An On/Off item is a switch, whose value OK turns over. In every case the
+ * list's enter callback no longer hears OK on this item.
+ *
+ * Items without their texts are drawn as before: a switch for On/Off, a meter for numbers with
+ * many steps, arrows for the rest; OK on a switch turns it over only in a list that has no
+ * enter callback.
+ *
+ * @param      item         VariableItem* instance
+ * @param      values_text  the texts, values_count of them, kept by pointer: they must
+ *                          outlive the item (a static array is best); NULL to go back
+ */
+void variable_item_set_values_text(VariableItem* item, const char* const* values_text);
+
 /** Set item locked state and text
  *
  * @param      item                VariableItem* instance

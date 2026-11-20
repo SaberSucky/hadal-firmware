@@ -5,13 +5,34 @@
 #include <assets_icons.h>
 #include <m-array.h>
 #include <stdint.h>
+#include <strings.h>
 
 #define SCROLL_INTERVAL (333)
+
+// Controls: how an item's value is drawn, chosen from what the item is (see the header)
+#define VALUE_RIGHT       122 // the value area's right end
+#define SWITCH_W          17
+#define SWITCH_H          9
+#define METER_MIN_VALUES  5 // a numeric value with this many steps or more gets a meter
+#define SEGMENTS_MAX      3
+#define SEGMENT_PAD       3 // either side of a segment's text
+#define SEGMENTS_WIDTH_MAX 64
+#define DROPDOWN_ROWS     4
+#define DROPDOWN_ROW_H    11
+
+typedef enum {
+    VariableItemControlArrows, // < value >, as Flipper always drew it
+    VariableItemControlSwitch, // on or off
+    VariableItemControlMeter, // a number, with how far along its range it is
+    VariableItemControlSegments, // two or three short choices side by side
+    VariableItemControlDropdown, // OK opens the choices as a list
+} VariableItemControl;
 
 struct VariableItem {
     const char* label;
     uint8_t current_value_index;
     FuriString* current_value_text;
+    const char* const* values_text; // every value's text, when the app gave them
     uint8_t values_count;
     VariableItemChangeCallback change_callback;
     bool locked;
@@ -35,6 +56,10 @@ typedef struct {
     uint8_t window_position;
     size_t scroll_counter;
     bool locked_message_visible;
+    // a dropdown's list of choices, while it is open, over the item at position
+    bool dropdown_open;
+    uint8_t dropdown_index;
+    uint8_t dropdown_window;
 } VariableItemListModel;
 
 static void variable_item_list_process_up(VariableItemList* variable_item_list);
@@ -42,6 +67,175 @@ static void variable_item_list_process_down(VariableItemList* variable_item_list
 static void variable_item_list_process_left(VariableItemList* variable_item_list);
 static void variable_item_list_process_right(VariableItemList* variable_item_list);
 static void variable_item_list_process_ok(VariableItemList* variable_item_list);
+
+VariableItem* variable_item_list_get_selected_item(VariableItemListModel* model);
+
+/* ---- controls ---- */
+
+static bool variable_item_text_is(const char* text, const char* const* words) {
+    for(; *words; words++) {
+        if(strcasecmp(text, *words) == 0) return true;
+    }
+    return false;
+}
+
+static const char* const switch_on_words[] = {"on", "yes", "enabled", "enable", "true", NULL};
+static const char* const switch_off_words[] = {"off", "no", "disabled", "disable", "false", NULL};
+
+/** Whether a two-valued item reads as on or off, and which it is now */
+static bool variable_item_is_switch(const VariableItem* item, bool* on) {
+    if(item->values_count != 2) return false;
+    const char* text = furi_string_get_cstr(item->current_value_text);
+    if(variable_item_text_is(text, switch_on_words)) {
+        if(on) *on = true;
+        return true;
+    }
+    if(variable_item_text_is(text, switch_off_words)) {
+        if(on) *on = false;
+        return true;
+    }
+    return false;
+}
+
+/** A value that is a number ("70%", "-3 dB", "30s"), or the "Off" that comes before them */
+static bool variable_item_is_number(const VariableItem* item) {
+    const char* text = furi_string_get_cstr(item->current_value_text);
+    if(text[0] == '-' || text[0] == '+') text++;
+    if(text[0] >= '0' && text[0] <= '9') return true;
+    return item->current_value_index == 0 && variable_item_text_is(text, switch_off_words);
+}
+
+/** The segments' total width, or 0 when they do not fit in width */
+static uint16_t variable_item_segments_width(Canvas* canvas, const VariableItem* item, uint16_t width) {
+    uint16_t total = 0;
+    for(uint8_t i = 0; i < item->values_count; i++) {
+        total += canvas_string_width(canvas, item->values_text[i]) + 2 * SEGMENT_PAD;
+    }
+    return total <= width ? total : 0;
+}
+
+static VariableItemControl
+    variable_item_control(Canvas* canvas, const VariableItem* item, uint16_t width) {
+    if(variable_item_is_switch(item, NULL)) return VariableItemControlSwitch;
+    if(item->values_text) {
+        if(item->values_count <= SEGMENTS_MAX && variable_item_segments_width(canvas, item, width)) {
+            return VariableItemControlSegments;
+        }
+        if(item->values_count > 2 && !variable_item_is_number(item)) {
+            return VariableItemControlDropdown;
+        }
+    }
+    if(item->values_count >= METER_MIN_VALUES && variable_item_is_number(item)) {
+        return VariableItemControlMeter;
+    }
+    return VariableItemControlArrows;
+}
+
+/** A switch, its right end at x, its top at y: filled with the knob on the right when on */
+static void variable_item_draw_switch(Canvas* canvas, int32_t x, int32_t y, bool on, Color ink) {
+    const Color paper = ink == ColorBlack ? ColorWhite : ColorBlack;
+    x -= SWITCH_W;
+    canvas_set_color(canvas, ink);
+    if(on) {
+        canvas_draw_rbox(canvas, x, y, SWITCH_W, SWITCH_H, 4);
+        canvas_set_color(canvas, paper);
+        canvas_draw_disc(canvas, x + SWITCH_W - 5, y + 4, 2);
+    } else {
+        canvas_draw_rframe(canvas, x, y, SWITCH_W, SWITCH_H, 4);
+        canvas_draw_disc(canvas, x + 4, y + 4, 2);
+    }
+    canvas_set_color(canvas, ink);
+}
+
+/** Segments from x to the value area's end: the chosen one filled */
+static void variable_item_draw_segments(
+    Canvas* canvas,
+    const VariableItem* item,
+    int32_t y,
+    uint16_t total,
+    Color ink) {
+    const Color paper = ink == ColorBlack ? ColorWhite : ColorBlack;
+    int32_t x = VALUE_RIGHT - total;
+    canvas_set_color(canvas, ink);
+    canvas_draw_rframe(canvas, x, y, total, 11, 2);
+    for(uint8_t i = 0; i < item->values_count; i++) {
+        const uint16_t width = canvas_string_width(canvas, item->values_text[i]) + 2 * SEGMENT_PAD;
+        if(i == item->current_value_index) {
+            canvas_draw_rbox(canvas, x, y, width, 11, 2);
+            canvas_set_color(canvas, paper);
+        } else if(i > 0 && i != item->current_value_index + 1) {
+            // a divider, where neither side is the chosen one
+            canvas_draw_line(canvas, x, y + 2, x, y + 8);
+        }
+        canvas_draw_str(canvas, x + SEGMENT_PAD, y + 9, item->values_text[i]);
+        canvas_set_color(canvas, ink);
+        x += width;
+    }
+}
+
+/** How far along its values an item is, as a line under its text: solid as far as it has come,
+ * dotted for the rest */
+static void variable_item_draw_meter(
+    Canvas* canvas,
+    const VariableItem* item,
+    int32_t x0,
+    int32_t x1,
+    int32_t y) {
+    const int32_t width = x1 - x0 + 1;
+    const int32_t fill = item->values_count > 1 ?
+                             width * item->current_value_index / (item->values_count - 1) :
+                             0;
+    if(fill) canvas_draw_line(canvas, x0, y, x0 + fill - 1, y);
+    for(int32_t x = x0 + fill + 1; x <= x1; x += 2) {
+        canvas_draw_dot(canvas, x, y);
+    }
+}
+
+/** The open dropdown: the item's choices in a box over the list, the one under the cursor
+ * filled */
+static void variable_item_list_draw_dropdown(
+    Canvas* canvas,
+    const VariableItemListModel* model,
+    const VariableItem* item,
+    uint8_t item_y) {
+    canvas_set_font(canvas, FontSecondary);
+    uint16_t text_width = 0;
+    for(uint8_t i = 0; i < item->values_count; i++) {
+        text_width = MAX(text_width, canvas_string_width(canvas, item->values_text[i]));
+    }
+    const uint8_t rows = MIN(item->values_count, DROPDOWN_ROWS);
+    const bool scrolls = item->values_count > rows;
+    const int32_t width = MIN((int32_t)text_width + 10 + (scrolls ? 4 : 0), 108);
+    const int32_t height = rows * DROPDOWN_ROW_H + 3;
+    const int32_t x = 126 - width;
+    int32_t y = item_y + 8 - height / 2;
+    y = CLAMP(y, 64 - height - ELEMENTS_HINT_BAR_HEIGHT, 0);
+
+    canvas_set_color(canvas, ColorWhite);
+    canvas_draw_box(canvas, x - 2, y - 1, width + 4, height + 2);
+    canvas_set_color(canvas, ColorBlack);
+    canvas_draw_rframe(canvas, x, y, width, height, 3);
+    canvas_draw_rframe(canvas, x - 1, y, width + 2, height, 3); // a heavier side edge: it floats
+
+    for(uint8_t row = 0; row < rows; row++) {
+        const uint8_t index = model->dropdown_window + row;
+        const int32_t row_y = y + 2 + row * DROPDOWN_ROW_H;
+        if(index == model->dropdown_index) {
+            canvas_draw_rbox(canvas, x + 2, row_y, width - 4 - (scrolls ? 4 : 0), DROPDOWN_ROW_H - 1, 2);
+            canvas_set_color(canvas, ColorWhite);
+        }
+        FuriString* text = furi_string_alloc_set_str(item->values_text[index]);
+        elements_string_fit_width(canvas, text, width - 10 - (scrolls ? 4 : 0));
+        canvas_draw_str(canvas, x + 5, row_y + 8, furi_string_get_cstr(text));
+        furi_string_free(text);
+        canvas_set_color(canvas, ColorBlack);
+    }
+    if(scrolls) {
+        elements_scrollbar_pos(
+            canvas, x + width - 3, y + 2, height - 4, model->dropdown_index, item->values_count);
+    }
+    elements_hint_bar(canvas, "ud=Choose;ok=Set;back=Cancel");
+}
 
 static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
     VariableItemListModel* model = _model;
@@ -83,14 +277,28 @@ static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
 
             uint8_t temp_x_default = 73;
             uint8_t temp_w_default = 66;
+            if(furi_string_size(item->current_value_text) < (size_t)4) {
+                temp_x_default = 80;
+                temp_w_default = 71;
+            }
+
+            const Color ink = position == model->position ? ColorWhite : ColorBlack;
+            const VariableItemControl control =
+                item->locked ? VariableItemControlArrows :
+                               variable_item_control(canvas, item, SEGMENTS_WIDTH_MAX);
+            uint16_t segments = 0;
+            if(control == VariableItemControlSwitch) {
+                // the label has the room the arrows took
+                temp_w_default = VALUE_RIGHT - 2 - SWITCH_W - 4 - 6;
+            } else if(control == VariableItemControlSegments) {
+                segments = variable_item_segments_width(canvas, item, SEGMENTS_WIDTH_MAX);
+                temp_w_default = VALUE_RIGHT - segments - 4 - 6;
+            }
+
             if(item->current_value_index == 0 && furi_string_empty(item->current_value_text)) {
                 // Only left text, no right text
                 canvas_draw_str(canvas, 6, item_text_y, item->label);
             } else {
-                if(furi_string_size(item->current_value_text) < (size_t)4) {
-                    temp_x_default = 80;
-                    temp_w_default = 71;
-                }
                 elements_scrollable_text_line_str(
                     canvas,
                     6,
@@ -102,9 +310,33 @@ static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
                     false);
             }
 
+            bool on = false;
             if(item->locked) {
                 canvas_draw_icon(canvas, 110, item_text_y - 8, &I_Lock_7x8);
+            } else if(control == VariableItemControlSwitch) {
+                variable_item_is_switch(item, &on);
+                variable_item_draw_switch(canvas, VALUE_RIGHT - 2, item_y + 4, on, ink);
+            } else if(control == VariableItemControlSegments) {
+                variable_item_draw_segments(canvas, item, item_y + 3, segments, ink);
+            } else if(control == VariableItemControlDropdown) {
+                elements_scrollable_text_line_str(
+                    canvas,
+                    (VALUE_RIGHT - 8 + temp_x_default) / 2,
+                    item_text_y,
+                    VALUE_RIGHT - 8 - temp_x_default,
+                    furi_string_get_cstr(item->current_value_text),
+                    scroll_counter,
+                    false,
+                    true);
+                // a chevron: OK opens the choices
+                canvas_draw_line(canvas, VALUE_RIGHT - 6, item_text_y - 5, VALUE_RIGHT - 3, item_text_y - 2);
+                canvas_draw_line(canvas, VALUE_RIGHT - 3, item_text_y - 2, VALUE_RIGHT, item_text_y - 5);
+                canvas_draw_line(canvas, VALUE_RIGHT - 6, item_text_y - 4, VALUE_RIGHT - 3, item_text_y - 1);
+                canvas_draw_line(canvas, VALUE_RIGHT - 3, item_text_y - 1, VALUE_RIGHT, item_text_y - 4);
             } else {
+                if(control == VariableItemControlMeter) {
+                    variable_item_draw_meter(canvas, item, temp_x_default + 7, 112, item_y + 13);
+                }
                 if(item->current_value_index > 0) {
                     canvas_draw_str(canvas, temp_x_default, item_text_y, "<");
                 }
@@ -129,6 +361,12 @@ static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
     }
 
     elements_scrollbar(canvas, model->position, VariableItemArray_size(model->items));
+
+    if(model->dropdown_open && model->position < VariableItemArray_size(model->items)) {
+        const VariableItem* item = VariableItemArray_cget(model->items, model->position);
+        const uint8_t item_y = (model->position - model->window_position) * 16;
+        if(item->values_text) variable_item_list_draw_dropdown(canvas, model, item, item_y);
+    }
 
     if(model->locked_message_visible) {
         canvas_set_color(canvas, ColorWhite);
@@ -185,6 +423,50 @@ uint8_t variable_item_list_get_selected_item_index(VariableItemList* variable_it
     return idx;
 }
 
+/** Up and Down go through the open dropdown's choices, OK sets the item to one, Back leaves it */
+static bool variable_item_list_dropdown_input(VariableItemList* variable_item_list, InputEvent* event) {
+    if(event->type != InputTypeShort && event->type != InputTypeRepeat) return true;
+    with_view_model(
+        variable_item_list->view,
+        VariableItemListModel * model,
+        {
+            VariableItem* item = variable_item_list_get_selected_item(model);
+            const uint8_t count = item->values_count;
+            const uint8_t rows = MIN(count, DROPDOWN_ROWS);
+            switch(event->key) {
+            case InputKeyUp:
+                model->dropdown_index = model->dropdown_index ? model->dropdown_index - 1 :
+                                                                count - 1;
+                break;
+            case InputKeyDown:
+                model->dropdown_index = (model->dropdown_index + 1) % count;
+                break;
+            case InputKeyOk:
+                if(event->type != InputTypeShort) break;
+                model->dropdown_open = false;
+                if(item->current_value_index != model->dropdown_index) {
+                    item->current_value_index = model->dropdown_index;
+                    model->scroll_counter = 0;
+                    if(item->change_callback) item->change_callback(item);
+                }
+                break;
+            case InputKeyBack:
+                if(event->type == InputTypeShort) model->dropdown_open = false;
+                break;
+            default:
+                break;
+            }
+            // keep the cursor in the box
+            if(model->dropdown_index < model->dropdown_window) {
+                model->dropdown_window = model->dropdown_index;
+            } else if(model->dropdown_index >= model->dropdown_window + rows) {
+                model->dropdown_window = model->dropdown_index - rows + 1;
+            }
+        },
+        true);
+    return true;
+}
+
 static bool variable_item_list_input_callback(InputEvent* event, void* context) {
     VariableItemList* variable_item_list = context;
     furi_assert(variable_item_list);
@@ -196,6 +478,14 @@ static bool variable_item_list_input_callback(InputEvent* event, void* context) 
         VariableItemListModel * model,
         { locked_message_visible = model->locked_message_visible; },
         false);
+
+    bool dropdown_open = false;
+    with_view_model(
+        variable_item_list->view,
+        VariableItemListModel * model,
+        { dropdown_open = model->dropdown_open; },
+        false);
+    if(dropdown_open) return variable_item_list_dropdown_input(variable_item_list, event);
 
     if((!(event->type == InputTypePress) && !(event->type == InputTypeRelease)) &&
        locked_message_visible) {
@@ -367,10 +657,24 @@ void variable_item_list_process_ok(VariableItemList* variable_item_list) {
         VariableItemListModel * model,
         {
             VariableItem* item = variable_item_list_get_selected_item(model);
+            // OK works a switch or opens a dropdown for the apps that gave their values' texts
+            // (they know OK is the list's), and for a switch in a list that does not use OK
+            const bool takes_ok = item->values_text || !variable_item_list->callback;
+            bool on = false;
             if(item->locked) {
                 model->locked_message_visible = true;
                 furi_timer_start(
                     variable_item_list->locked_timer, furi_kernel_get_tick_frequency() * 3);
+            } else if(takes_ok && variable_item_is_switch(item, &on)) {
+                item->current_value_index = !item->current_value_index;
+                model->scroll_counter = 0;
+                if(item->change_callback) item->change_callback(item);
+            } else if(item->values_text && item->values_count > 2) {
+                model->dropdown_open = true;
+                model->dropdown_index = item->current_value_index;
+                model->dropdown_window = 0;
+                const uint8_t rows = MIN(item->values_count, DROPDOWN_ROWS);
+                if(model->dropdown_index >= rows) model->dropdown_window = model->dropdown_index - rows + 1;
             } else if(variable_item_list->callback) {
                 variable_item_list->callback(variable_item_list->context, model->position);
             }
@@ -392,7 +696,10 @@ static void variable_item_list_enter_callback(void* context) {
     with_view_model(
         variable_item_list->view,
         VariableItemListModel * model,
-        { model->scroll_counter = 0; },
+        {
+            model->scroll_counter = 0;
+            model->dropdown_open = false;
+        },
         false);
     furi_timer_start(variable_item_list->scroll_timer, SCROLL_INTERVAL);
 }
@@ -483,6 +790,7 @@ void variable_item_list_reset(VariableItemList* variable_item_list) {
                 furi_string_free(VariableItemArray_ref(it)->locked_message);
             }
             VariableItemArray_reset(model->items);
+            model->dropdown_open = false;
         },
         false);
 }
@@ -513,6 +821,7 @@ VariableItem* variable_item_list_add(
             item->context = context;
             item->current_value_index = 0;
             item->current_value_text = furi_string_alloc();
+            item->values_text = NULL;
             item->locked = false;
             item->locked_message = furi_string_alloc();
         },
@@ -591,4 +900,9 @@ uint8_t variable_item_get_current_value_index(VariableItem* item) {
 void* variable_item_get_context(VariableItem* item) {
     furi_check(item);
     return item->context;
+}
+
+void variable_item_set_values_text(VariableItem* item, const char* const* values_text) {
+    furi_check(item);
+    item->values_text = values_text;
 }

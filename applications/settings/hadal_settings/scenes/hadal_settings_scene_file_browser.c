@@ -65,14 +65,17 @@ void hadal_settings_scene_file_browser_on_enter(void* context) {
         app->variable_list, "Sort by", FileBrowserSortCount, sort_changed, app);
     variable_item_set_current_value_index(item, prefs.sort_by);
     variable_item_set_current_value_text(item, sort_texts[prefs.sort_by]);
+    variable_item_set_values_text(item, sort_texts);
 
     item = variable_item_list_add(app->variable_list, "Folders", 2, folders_changed, app);
     variable_item_set_current_value_index(item, prefs.folders_mixed ? 1 : 0);
     variable_item_set_current_value_text(item, folder_texts[prefs.folders_mixed ? 1 : 0]);
+    variable_item_set_values_text(item, folder_texts);
 
     item = variable_item_list_add(app->variable_list, "Hidden files", 2, hidden_changed, app);
     variable_item_set_current_value_index(item, prefs.hide_hidden ? 1 : 0);
     variable_item_set_current_value_text(item, hidden_texts[prefs.hide_hidden ? 1 : 0]);
+    variable_item_set_values_text(item, hidden_texts);
 
     view_dispatcher_switch_to_view(app->view_dispatcher, HadalViewVariableList);
 }

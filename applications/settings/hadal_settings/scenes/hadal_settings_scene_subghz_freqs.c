@@ -60,11 +60,13 @@ static void freqs_show(HadalSettings* app) {
     char* text = freqs_read(app->storage);
     submenu_reset(app->submenu);
     if(!text) {
-        submenu_set_header(app->submenu, "setting_user is too big");
+        submenu_set_header(app->submenu, "Frequencies");
+        submenu_set_hints(app->submenu, "=The frequency file is too big");
         view_dispatcher_switch_to_view(app->view_dispatcher, HadalViewSubmenu);
         return;
     }
-    submenu_set_header(app->submenu, "Read in Sub-GHz at start");
+    submenu_set_header(app->submenu, "Frequencies");
+    submenu_set_hints(app->submenu, "=Sub-GHz reads these at start");
     submenu_add_item(
         app->submenu,
         subghz_freqs_standard(text) ? "Built-in list: kept" : "Built-in list: left out",
@@ -78,7 +80,7 @@ static void freqs_show(HadalSettings* app) {
     for(size_t i = 0; i < count; i++) {
         furi_string_printf(
             label,
-            "%lu.%03lu MHz (OK removes)",
+            "Remove %lu.%03lu MHz",
             (unsigned long)(freqs[i] / 1000000),
             (unsigned long)(freqs[i] / 1000 % 1000));
         submenu_add_item(

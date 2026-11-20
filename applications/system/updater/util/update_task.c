@@ -335,6 +335,13 @@ void update_task_set_progress(UpdateTask* update_task, UpdateTaskStage stage, ui
         }
     }
 
+    /* Within a stage the bar only moves forward: a step that reports less than the last one
+     * (a new archive starting at 0) does not pull it back */
+    if(stage == UpdateTaskStageProgress && progress < update_task->state.stage_progress &&
+       !update_stage_is_error(update_task->state.stage)) {
+        progress = update_task->state.stage_progress;
+    }
+
     /* Store stage progress for all non-error updates - to provide details on error state */
     if(!update_stage_is_error(stage)) {
         update_task->state.stage_progress = progress;

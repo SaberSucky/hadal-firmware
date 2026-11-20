@@ -74,6 +74,7 @@ ARRAY_DEF(
 typedef struct {
     SubmenuItemArray_t items;
     FuriString* header;
+    FuriString* hints; /**< the hint bar's hints; empty: no hint bar */
     size_t position;
     size_t window_position;
 
@@ -89,7 +90,17 @@ static void submenu_process_down(Submenu* submenu);
 static void submenu_process_page(Submenu* submenu, bool down);
 static void submenu_process_ok(Submenu* submenu, InputType input_type);
 
+// With a hint bar the rows are shorter, so that as many still fit above it
+#define SUBMENU_ITEM_HEIGHT         16
+#define SUBMENU_COMPACT_ITEM_HEIGHT 12
+#define SUBMENU_COMPACT_HEADER      15
+
+static bool submenu_has_hints(const SubmenuModel* model) {
+    return !model->is_vertical && !furi_string_empty(model->hints);
+}
+
 static size_t submenu_items_on_screen(SubmenuModel* model) {
+    if(submenu_has_hints(model)) return furi_string_empty(model->header) ? 4 : 3;
     size_t res = (model->is_vertical) ? 8 : 4;
     return (furi_string_empty(model->header)) ? res : res - 1;
 }
@@ -97,7 +108,9 @@ static size_t submenu_items_on_screen(SubmenuModel* model) {
 static void submenu_view_draw_callback(Canvas* canvas, void* _model) {
     SubmenuModel* model = _model;
 
-    const uint8_t item_height = 16;
+    const bool hints = submenu_has_hints(model);
+    const uint8_t item_height = hints ? SUBMENU_COMPACT_ITEM_HEIGHT : SUBMENU_ITEM_HEIGHT;
+    const uint8_t header_height = hints ? SUBMENU_COMPACT_HEADER : SUBMENU_ITEM_HEIGHT;
     uint8_t item_width = canvas_width(canvas) - 5;
 
     canvas_clear(canvas);
@@ -110,7 +123,7 @@ static void submenu_view_draw_callback(Canvas* canvas, void* _model) {
         canvas_draw_str(canvas, 3, 2 + HADAL_TITLE_FONT_HEIGHT, furi_string_get_cstr(header));
         furi_string_free(header);
         for(uint8_t x = 3; x < item_width - 1; x += 2) {
-            canvas_draw_dot(canvas, x, 14);
+            canvas_draw_dot(canvas, x, header_height - 2);
         }
     }
 
@@ -122,7 +135,7 @@ static void submenu_view_draw_callback(Canvas* canvas, void* _model) {
         SubmenuItemArray_next(it)) {
         const size_t item_position = position - model->window_position;
         const size_t items_on_screen = submenu_items_on_screen(model);
-        uint8_t y_offset = furi_string_empty(model->header) ? 0 : item_height;
+        uint8_t y_offset = furi_string_empty(model->header) ? 0 : header_height;
         bool is_locked = SubmenuItemArray_cref(it)->locked;
 
         if(item_position < items_on_screen) {
@@ -144,13 +157,14 @@ static void submenu_view_draw_callback(Canvas* canvas, void* _model) {
                 canvas_draw_icon(
                     canvas,
                     item_width - 10,
-                    y_offset + (item_position * item_height) + item_height - 12,
+                    y_offset + (item_position * item_height) + item_height - (hints ? 10 : 12),
                     &I_Lock_7x8);
             }
 
             const size_t text_width = item_width - (is_locked ? 21 : 11);
             const char* label = furi_string_get_cstr(SubmenuItemArray_cref(it)->label);
-            const uint8_t text_y = y_offset + (item_position * item_height) + item_height - 4;
+            const uint8_t text_y =
+                y_offset + (item_position * item_height) + item_height - (hints ? 3 : 4);
             if(position == model->position && canvas_string_width(canvas, label) > text_width) {
                 // the selected one scrolls, so the whole of it can be read
                 model->selected_scrolls = true;
@@ -171,7 +185,19 @@ static void submenu_view_draw_callback(Canvas* canvas, void* _model) {
         position++;
     }
 
-    elements_scrollbar(canvas, model->position, SubmenuItemArray_size(model->items));
+    if(hints) {
+        const uint8_t top = furi_string_empty(model->header) ? 0 : header_height;
+        elements_scrollbar_pos(
+            canvas,
+            canvas_width(canvas),
+            top,
+            canvas_height(canvas) - ELEMENTS_HINT_BAR_HEIGHT - 1 - top,
+            model->position,
+            SubmenuItemArray_size(model->items));
+        elements_hint_bar(canvas, furi_string_get_cstr(model->hints));
+    } else {
+        elements_scrollbar(canvas, model->position, SubmenuItemArray_size(model->items));
+    }
 
     if(model->locked_message_visible) {
         const uint8_t frame_x = 7;
@@ -297,6 +323,7 @@ Submenu* submenu_alloc(void) {
             model->window_position = 0;
             model->scroll_counter = 0;
             model->header = furi_string_alloc();
+            model->hints = furi_string_alloc();
         },
         true);
 
@@ -311,6 +338,7 @@ void submenu_free(Submenu* submenu) {
         SubmenuModel * model,
         {
             furi_string_free(model->header);
+            furi_string_free(model->hints);
             SubmenuItemArray_clear(model->items);
         },
         true);
@@ -445,6 +473,7 @@ void submenu_reset(Submenu* submenu) {
             model->window_position = 0;
             model->is_vertical = false;
             furi_string_reset(model->header);
+            furi_string_reset(model->hints);
         },
         true);
 }
@@ -631,6 +660,26 @@ void submenu_set_header(Submenu* submenu, const char* header) {
                 furi_string_reset(model->header);
             } else {
                 furi_string_set_str(model->header, header);
+            }
+        },
+        true);
+}
+
+void submenu_set_hints(Submenu* submenu, const char* hints) {
+    furi_check(submenu);
+    with_view_model(
+        submenu->view,
+        SubmenuModel * model,
+        {
+            if(hints == NULL) {
+                furi_string_reset(model->hints);
+            } else {
+                furi_string_set_str(model->hints, hints);
+            }
+            // fewer rows fit: keep the selection on screen
+            const size_t items_on_screen = submenu_items_on_screen(model);
+            if(model->position >= model->window_position + items_on_screen) {
+                model->window_position = model->position - items_on_screen + 1;
             }
         },
         true);

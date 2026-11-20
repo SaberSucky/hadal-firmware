@@ -72,7 +72,8 @@ static void spoof_show(HadalSettings* app) {
     spoof_load(app->storage, &spoof);
     FuriString* label = furi_string_alloc();
     submenu_reset(app->submenu);
-    submenu_set_header(app->submenu, "Spoofing (restart to apply)");
+    submenu_set_header(app->submenu, "Spoofing");
+    submenu_set_hints(app->submenu, "=Changes apply after a restart");
 
     if(spoof.has_mac) {
         furi_string_printf(

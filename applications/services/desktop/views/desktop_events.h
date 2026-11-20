@@ -42,6 +42,9 @@ typedef enum {
     DesktopControlCentreEventBrightness,
     DesktopControlCentreEventVolume,
     DesktopControlCentreEventVibro,
+    DesktopControlCentreEventChangeApp, /**< OK held on an app tile: desktop_control_centre_get_tile() */
+    DesktopControlCentreEventPick, /**< OK in the app picker: desktop_control_centre_get_pick() */
+    DesktopControlCentreEventPickCancel, /**< Back in the app picker */
 
     DesktopAnimationEventCheckAnimation,
     DesktopAnimationEventNewIdleAnimation,

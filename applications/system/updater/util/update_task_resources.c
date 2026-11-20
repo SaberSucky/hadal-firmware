@@ -24,6 +24,10 @@ typedef struct {
     FuriString* path;
     uint32_t written;
     uint32_t unchanged;
+    // One progress bar over every archive: sizes of the archives done, of all, of this one
+    uint64_t bytes_done;
+    uint64_t bytes_all;
+    uint64_t bytes_current;
 } ResourceUnpack;
 
 static bool
@@ -103,8 +107,11 @@ static bool resources_unpack_cb(const char* name, bool is_directory, void* conte
 
     int32_t progress = 0, total = 0;
     tar_archive_get_read_progress(unpack->archive, &progress, &total);
+    const uint64_t here = unpack->bytes_current * (uint64_t)progress / (uint64_t)(total + 1);
     update_task_set_progress(
-        unpack->update_task, UpdateTaskStageProgress, (progress * 100) / (total + 1));
+        unpack->update_task,
+        UpdateTaskStageProgress,
+        (unpack->bytes_done + here) * 100 / (unpack->bytes_all + 1));
 
     if(is_directory) return true;
     // installed after everything else
@@ -150,7 +157,23 @@ bool update_task_resources_next_extra(UpdateTask* update_task, size_t* offset, F
     return true;
 }
 
+uint64_t update_task_resources_file_size(UpdateTask* update_task, const char* path) {
+    FileInfo info;
+    return storage_common_stat(update_task->storage, path, &info) == FSE_OK ? info.size : 0;
+}
+
+uint64_t update_task_resources_total_size(UpdateTask* update_task, const char* archive_path) {
+    uint64_t total = update_task_resources_file_size(update_task, archive_path);
+    FuriString* extra = furi_string_alloc();
+    for(size_t offset = 0; update_task_resources_next_extra(update_task, &offset, extra);) {
+        total += update_task_resources_file_size(update_task, furi_string_get_cstr(extra));
+    }
+    furi_string_free(extra);
+    return total;
+}
+
 static bool resources_unpack(ResourceUnpack* unpack, const char* archive_path) {
+    unpack->bytes_current = update_task_resources_file_size(unpack->update_task, archive_path);
     unpack->archive = tar_archive_alloc(unpack->update_task->storage);
     bool unpacked = tar_archive_open(unpack->archive, archive_path, TarOpenModeReadHeatshrink);
     if(unpacked) {
@@ -159,6 +182,7 @@ static bool resources_unpack(ResourceUnpack* unpack, const char* archive_path) {
     }
     tar_archive_free(unpack->archive);
     unpack->archive = NULL;
+    unpack->bytes_done += unpack->bytes_current;
     return unpacked;
 }
 
@@ -191,10 +215,12 @@ bool update_task_resources_install(UpdateTask* update_task, const char* archive_
             .file = storage_file_alloc(storage),
             .path = furi_string_alloc(),
         };
+        // the bar runs once over all the archives, by their sizes
+        unpack.bytes_all = update_task_resources_total_size(update_task, archive_path);
+        FuriString* extra = furi_string_alloc();
         update_task_set_progress(update_task, UpdateTaskStageResourcesFileUnpack, 0);
         bool unpacked = resources_unpack(&unpack, archive_path);
-        // then the big files, each in an archive of its own
-        FuriString* extra = furi_string_alloc();
+        // then the big files and the app folders, each in an archive of its own
         for(size_t offset = 0;
             unpacked && update_task_resources_next_extra(update_task, &offset, extra);) {
             unpacked = resources_unpack(&unpack, furi_string_get_cstr(extra));

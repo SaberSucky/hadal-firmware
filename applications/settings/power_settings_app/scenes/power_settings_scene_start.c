@@ -70,6 +70,7 @@ void power_settings_scene_start_on_enter(void* context) {
         AUTO_POWEROFF_DELAY_COUNT);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, auto_poweroff_delay_text[value_index]);
+    variable_item_set_values_text(item, auto_poweroff_delay_text);
 
     item = variable_item_list_add(
         variable_item_list,
@@ -84,6 +85,7 @@ void power_settings_scene_start_on_enter(void* context) {
         CHARGE_SUPRESS_PERCENT_COUNT);
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, charge_supress_percent_text[value_index]);
+    variable_item_set_values_text(item, charge_supress_percent_text);
 
     variable_item_list_set_selected_item(
         variable_item_list,

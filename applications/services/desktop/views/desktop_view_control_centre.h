@@ -11,10 +11,15 @@
  *
  * The arrows move between tiles and sliders, OK switches a tile or opens it, Up and Down move
  * a slider that has the focus, and OK on the volume slider turns vibration on or off.
+ *
+ * The two app tiles show their app's icon. OK on one with no app, or OK held on one with an app,
+ * opens the app picker over the panel: the main menu's apps in a row, Left and Right to go
+ * through them, OK to choose one, Back to leave the tile as it was.
  */
 
 #include <gui/view.h>
 #include "desktop_events.h"
+#include "../helpers/desktop_apps.h"
 
 typedef enum {
     ControlCentreTileLock,
@@ -40,6 +45,7 @@ typedef struct {
     float volume;
     bool vibro;
     char app_label[2][CONTROL_CENTRE_APP_LABEL_SIZE]; // empty: no app chosen
+    const Icon* app_icon[2]; // NULL: the label's initial
     uint8_t hour;
     uint8_t minute;
     bool format_12;
@@ -72,6 +78,21 @@ void desktop_control_centre_get_state(
 
 /** The tile OK was pressed on, for DesktopControlCentreEventTile */
 ControlCentreTile desktop_control_centre_get_tile(DesktopControlCentreView* control_centre);
+
+/** Show the app picker for an app tile (0 or 1), on apps[index]; apps stay the caller's until
+ * the picker is closed */
+void desktop_control_centre_open_picker(
+    DesktopControlCentreView* control_centre,
+    uint8_t slot,
+    const DesktopApp* apps,
+    size_t count,
+    size_t index);
+
+/** Hide the app picker; it no longer refers to the apps it was given */
+void desktop_control_centre_close_picker(DesktopControlCentreView* control_centre);
+
+/** The app chosen in the picker, for DesktopControlCentreEventPick, and the tile it is for */
+size_t desktop_control_centre_get_pick(DesktopControlCentreView* control_centre, uint8_t* slot);
 
 /** Focus the first tile */
 void desktop_control_centre_reset_focus(DesktopControlCentreView* control_centre);
