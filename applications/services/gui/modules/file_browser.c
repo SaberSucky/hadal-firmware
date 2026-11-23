@@ -35,60 +35,71 @@ typedef enum {
     BrowserItemTypeFile,
 } BrowserItemType;
 
+/* An entry: its name in one allocation of its own, what to show instead only when an app gave
+ * something else (most show the name), its icon only when an app drew one. About 56 bytes for a
+ * name of 20 letters, where two strings took about 180: a folder fits in a third of the RAM */
 typedef struct {
     uint32_t unsorted_idx;
-    FuriString* name;
-    BrowserItemType type;
-    uint8_t* custom_icon_data;
-    FuriString* display_name;
     uint32_t sort_key; /**< size or time, when the order needs it (file_browser_sort.h) */
+    char* name;
+    char* display_name; /**< NULL: the name is shown */
+    uint8_t* custom_icon_data;
+    BrowserItemType type;
 } BrowserItem_t;
+
+/* Below this much free RAM no entry is added: the rows not loaded show as loading, and the app
+ * keeps room to open what is chosen. A whole folder stops loading (for a window of it) below
+ * twice that */
+#define BROWSER_HEAP_FLOOR (4U * 1024U)
+
+static char* browser_strdup(const char* text) {
+    if(!text) return NULL;
+    const size_t size = strlen(text) + 1;
+    char* copy = malloc(size);
+    memcpy(copy, text, size);
+    return copy;
+}
 
 static void BrowserItem_t_init(BrowserItem_t* obj) {
     obj->unsorted_idx = 0;
     obj->sort_key = 0;
     obj->type = BrowserItemTypeLoading;
-    obj->name = furi_string_alloc();
-    obj->display_name = furi_string_alloc();
+    obj->name = NULL;
+    obj->display_name = NULL;
     obj->custom_icon_data = NULL;
+}
+
+static uint8_t* browser_icon_copy(const uint8_t* icon) {
+    if(!icon) return NULL;
+    uint8_t* copy = malloc(CUSTOM_ICON_MAX_SIZE);
+    memcpy(copy, icon, CUSTOM_ICON_MAX_SIZE);
+    return copy;
 }
 
 static void BrowserItem_t_init_set(BrowserItem_t* obj, const BrowserItem_t* src) {
     obj->unsorted_idx = src->unsorted_idx;
     obj->sort_key = src->sort_key;
     obj->type = src->type;
-    obj->name = furi_string_alloc_set(src->name);
-    obj->display_name = furi_string_alloc_set(src->display_name);
-    if(src->custom_icon_data) {
-        obj->custom_icon_data = malloc(CUSTOM_ICON_MAX_SIZE);
-        memcpy(obj->custom_icon_data, src->custom_icon_data, CUSTOM_ICON_MAX_SIZE);
-    } else {
-        obj->custom_icon_data = NULL;
-    }
-}
-
-static void BrowserItem_t_set(BrowserItem_t* obj, const BrowserItem_t* src) {
-    obj->unsorted_idx = src->unsorted_idx;
-    obj->sort_key = src->sort_key;
-    obj->type = src->type;
-    furi_string_set(obj->name, src->name);
-    furi_string_set(obj->display_name, src->display_name);
-    if(obj->custom_icon_data) {
-        free(obj->custom_icon_data);
-        obj->custom_icon_data = NULL;
-    }
-    if(src->custom_icon_data) {
-        obj->custom_icon_data = malloc(CUSTOM_ICON_MAX_SIZE);
-        memcpy(obj->custom_icon_data, src->custom_icon_data, CUSTOM_ICON_MAX_SIZE);
-    }
+    obj->name = browser_strdup(src->name);
+    obj->display_name = browser_strdup(src->display_name);
+    obj->custom_icon_data = browser_icon_copy(src->custom_icon_data);
 }
 
 static void BrowserItem_t_clear(BrowserItem_t* obj) {
-    furi_string_free(obj->name);
-    furi_string_free(obj->display_name);
-    if(obj->custom_icon_data) {
-        free(obj->custom_icon_data);
-    }
+    free(obj->name);
+    free(obj->display_name);
+    free(obj->custom_icon_data);
+}
+
+static void BrowserItem_t_set(BrowserItem_t* obj, const BrowserItem_t* src) {
+    if(obj == src) return;
+    BrowserItem_t_clear(obj);
+    BrowserItem_t_init_set(obj, src);
+}
+
+/** An entry's name, "" for the back row (which has none) */
+static const char* browser_item_name(const BrowserItem_t* item) {
+    return item->name ? item->name : "";
 }
 
 static int BrowserItem_t_cmp(const BrowserItem_t* a, const BrowserItem_t* b) {
@@ -100,10 +111,10 @@ static int BrowserItem_t_cmp(const BrowserItem_t* a, const BrowserItem_t* b) {
         return 1;
     }
     return file_browser_sort_compare(
-        furi_string_get_cstr(a->name),
+        browser_item_name(a),
         a->type == BrowserItemTypeFolder,
         a->sort_key,
-        furi_string_get_cstr(b->name),
+        browser_item_name(b),
         b->type == BrowserItemTypeFolder,
         b->sort_key);
 }
@@ -441,10 +452,6 @@ static void browser_list_load_cb(void* context, uint32_t list_load_offset) {
     furi_check(context);
     FileBrowser* browser = (FileBrowser*)context;
 
-    BrowserItem_t back_item;
-    BrowserItem_t_init(&back_item);
-    back_item.type = BrowserItemTypeBack;
-
     with_view_model(
         browser->view,
         FileBrowserModel * model,
@@ -453,15 +460,13 @@ static void browser_list_load_cb(void* context, uint32_t list_load_offset) {
             model->array_offset = list_load_offset;
             if(!model->is_root) {
                 if(list_load_offset == 0) {
-                    items_array_push_back(model->items, back_item);
+                    items_array_push_new(model->items)->type = BrowserItemTypeBack;
                 } else {
                     model->array_offset += 1;
                 }
             }
         },
         true);
-
-    BrowserItem_t_clear(&back_item);
 }
 
 static void browser_list_item_cb(
@@ -473,15 +478,16 @@ static void browser_list_item_cb(
     furi_check(context);
     FileBrowser* browser = (FileBrowser*)context;
 
-    BrowserItem_t item;
-    item.custom_icon_data = NULL;
-    item.unsorted_idx = idx;
-    item.sort_key = 0;
-
     if(!is_last) {
-        item.name = furi_string_alloc();
-        path_extract_filename(item_path, item.name, false);
-        item.display_name = furi_string_alloc();
+        // short of RAM: the row stays "loading", and the app keeps room for what is chosen
+        if(memmgr_get_free_heap() < BROWSER_HEAP_FLOOR) return;
+
+        BrowserItem_t item;
+        BrowserItem_t_init(&item);
+        item.unsorted_idx = idx;
+        const char* path = furi_string_get_cstr(item_path);
+        const char* slash = strrchr(path, '/');
+        item.name = browser_strdup(slash ? slash + 1 : path);
         if(is_folder) {
             item.type = BrowserItemTypeFolder;
         } else {
@@ -491,38 +497,36 @@ static void browser_list_item_cb(
                 item.sort_key = file_browser_sort_key_of(info->size, info->modified);
             }
             if(browser->item_callback) {
+                // what the app shows instead, and its icon, kept only when it gave them
+                FuriString* shown = furi_string_alloc();
                 item.custom_icon_data = malloc(CUSTOM_ICON_MAX_SIZE);
-                if(!browser->item_callback(
-                       item_path,
-                       browser->item_context,
-                       &item.custom_icon_data,
-                       item.display_name)) {
+                memset(item.custom_icon_data, 0, CUSTOM_ICON_MAX_SIZE);
+                bool drawn = browser->item_callback(
+                    item_path, browser->item_context, &item.custom_icon_data, shown);
+                // an app without an icon leaves it all zeros: the default icon, not a blank
+                for(size_t i = 0; drawn && i < CUSTOM_ICON_MAX_SIZE; i++) {
+                    if(item.custom_icon_data[i]) break;
+                    if(i + 1 == CUSTOM_ICON_MAX_SIZE) drawn = false;
+                }
+                if(!drawn) {
                     free(item.custom_icon_data);
                     item.custom_icon_data = NULL;
                 }
+                if(!furi_string_empty(shown)) {
+                    item.display_name = browser_strdup(furi_string_get_cstr(shown));
+                }
+                furi_string_free(shown);
             }
-        }
-
-        if(furi_string_empty(item.display_name)) {
-            path_extract_filename(
-                item_path,
-                item.display_name,
-                (browser->hide_ext) && (item.type == BrowserItemTypeFile));
         }
 
         with_view_model(
             browser->view,
             FileBrowserModel * model,
             {
-                items_array_push_back(model->items, item);
-                // TODO: calculate if element is visible
+                // moved in, not copied: the entry's memory is allocated once
+                *items_array_push_raw(model->items) = item;
             },
             false);
-        furi_string_free(item.display_name);
-        furi_string_free(item.name);
-        if(item.custom_icon_data) {
-            free(item.custom_icon_data);
-        }
     } else {
         with_view_model(
             browser->view,
@@ -531,18 +535,19 @@ static void browser_list_item_cb(
                 // sorted only when it holds the whole folder (a folder short of RAM comes a
                 // window at a time)
                 if(items_array_size(model->items) >= model->item_cnt) {
-                    FuriString* selected = NULL;
+                    // the selected entry, followed through the sort by its name (moved, not
+                    // copied: the sort swaps entries, it does not free them)
+                    const char* selected = NULL;
                     if((model->item_idx > 0) &&
                        ((size_t)model->item_idx < items_array_size(model->items))) {
-                        selected = furi_string_alloc_set(
-                            items_array_get(model->items, model->item_idx)->name);
+                        selected = items_array_get(model->items, model->item_idx)->name;
                     }
 
                     items_array_sort(model->items);
 
                     if(selected != NULL) {
-                        for(uint32_t i = 0; i < model->item_cnt; i++) {
-                            if(!furi_string_cmp(items_array_get(model->items, i)->name, selected)) {
+                        for(uint32_t i = 0; i < items_array_size(model->items); i++) {
+                            if(items_array_get(model->items, i)->name == selected) {
                                 model->item_idx = i;
                                 break;
                             }
@@ -609,8 +614,16 @@ static void browser_draw_list(Canvas* canvas, FileBrowserModel* model) {
             if(model->list_loading && item_type != BrowserItemTypeBack) {
                 furi_string_set(filename, "---");
                 item_type = BrowserItemTypeLoading;
-            } else {
+            } else if(item->display_name) {
                 furi_string_set(filename, item->display_name);
+            } else {
+                furi_string_set(filename, browser_item_name(item));
+                if(model->hide_ext && item_type == BrowserItemTypeFile) {
+                    const size_t dot = furi_string_search_rchar(filename, '.');
+                    if(dot != FURI_STRING_FAILURE && dot > 0) furi_string_left(filename, dot);
+                }
+            }
+            if(!model->list_loading || item_type == BrowserItemTypeBack) {
                 if(item_type == BrowserItemTypeFile) {
                     custom_icon_data = item->custom_icon_data;
                 }
@@ -776,41 +789,42 @@ static bool file_browser_view_input_callback(InputEvent* event, void* context) {
         }
     } else if(event->key == InputKeyOk) {
         if(event->type == InputTypeShort) {
-            BrowserItem_t* selected_item = NULL;
+            // what is needed of the entry, taken while it is held: the worker may replace the
+            // list as soon as it is let go
+            BrowserItemType selected_type = BrowserItemTypeLoading;
             int32_t select_index = 0;
+            FuriString* item_path = furi_string_alloc();
             with_view_model(
                 browser->view,
                 FileBrowserModel * model,
                 {
                     if(browser_is_item_in_array(model, model->item_idx)) {
-                        selected_item =
+                        const BrowserItem_t* item =
                             items_array_get(model->items, model->item_idx - model->array_offset);
-                        select_index = selected_item->unsorted_idx;
+                        selected_type = item->type;
+                        select_index = item->unsorted_idx;
+                        if(item->type == BrowserItemTypeFolder ||
+                           item->type == BrowserItemTypeFile) {
+                            path_concat(
+                                file_browser_worker_get_path_current(browser->worker),
+                                browser_item_name(item),
+                                item_path);
+                        }
                     }
                 },
                 false);
 
-            if(selected_item) {
-                if(selected_item->type == BrowserItemTypeBack) {
-                    file_browser_worker_folder_exit(browser->worker);
-                } else if(selected_item->type == BrowserItemTypeFolder) {
-                    FuriString* item_path = furi_string_alloc();
-                    path_concat(
-                        file_browser_worker_get_path_current(browser->worker),
-                        furi_string_get_cstr(selected_item->name),
-                        item_path);
-                    file_browser_worker_folder_enter(browser->worker, item_path, select_index);
-                    furi_string_free(item_path);
-                } else if(selected_item->type == BrowserItemTypeFile) {
-                    path_concat(
-                        file_browser_worker_get_path_current(browser->worker),
-                        furi_string_get_cstr(selected_item->name),
-                        browser->result_path);
-                    if(browser->callback) {
-                        browser->callback(browser->context);
-                    }
+            if(selected_type == BrowserItemTypeBack) {
+                file_browser_worker_folder_exit(browser->worker);
+            } else if(selected_type == BrowserItemTypeFolder) {
+                file_browser_worker_folder_enter(browser->worker, item_path, select_index);
+            } else if(selected_type == BrowserItemTypeFile) {
+                furi_string_set(browser->result_path, item_path);
+                if(browser->callback) {
+                    browser->callback(browser->context);
                 }
             }
+            furi_string_free(item_path);
             consumed = true;
         }
     } else if(event->key == InputKeyRight) {
@@ -830,7 +844,7 @@ static bool file_browser_view_input_callback(InputEvent* event, void* context) {
                             item_path = furi_string_alloc();
                             path_concat(
                                 file_browser_worker_get_path_current(browser->worker),
-                                furi_string_get_cstr(item->name),
+                                browser_item_name(item),
                                 item_path);
                         }
                     }

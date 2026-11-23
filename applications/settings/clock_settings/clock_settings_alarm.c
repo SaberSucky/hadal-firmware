@@ -8,6 +8,7 @@
 #include <notification/notification_messages.h>
 
 #include <assets_icons.h>
+#include <locale/locale.h>
 
 #define TAG "ClockSettingsAlarm"
 
@@ -57,21 +58,25 @@ static void clock_settings_alarm_draw_callback(Canvas* canvas, void* ctx) {
     // Clock icon
     canvas_draw_icon_animation(canvas, 5, 6, model->icon);
 
-    // Time
+    // Time and date in the system's formats, as the Clock app and the desktop show them
+    const LocaleTimeFormat time_format = locale_get_time_format();
+    uint8_t hour = model->now.hour;
+    if(time_format == LocaleTimeFormat12h) {
+        hour %= 12;
+        if(!hour) hour = 12;
+        canvas_set_font(canvas, FontSecondary);
+        canvas_draw_str_aligned(
+            canvas, 126, 2, AlignRight, AlignTop, model->now.hour >= 12 ? "PM" : "AM");
+    }
     canvas_set_font(canvas, FontBigNumbers);
-    snprintf(buffer, sizeof(buffer), "%02u:%02u", model->now.hour, model->now.minute);
+    snprintf(buffer, sizeof(buffer), "%02u:%02u", hour, model->now.minute);
     canvas_draw_str(canvas, 58, 32, buffer);
 
-    // Date
     canvas_set_font(canvas, FontPrimary);
-    snprintf(
-        buffer,
-        sizeof(buffer),
-        "%02u.%02u.%04u",
-        model->now.day,
-        model->now.month,
-        model->now.year);
-    canvas_draw_str(canvas, 60, 44, buffer);
+    FuriString* date = furi_string_alloc();
+    locale_format_date(date, &model->now, locale_get_date_format(), ".");
+    canvas_draw_str(canvas, 60, 44, furi_string_get_cstr(date));
+    furi_string_free(date);
 
     // Press Back to snooze
     canvas_set_font(canvas, FontPrimary);

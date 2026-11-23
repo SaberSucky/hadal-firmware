@@ -47,6 +47,12 @@ static bool crash_report_is_code(uint32_t address) {
     return address >= FLASH_BASE && address < (uint32_t)&_etext;
 }
 
+/** Constants in flash: a name written in the code ("Sub-GHz") is past the code, with the rest */
+static bool crash_report_is_flash_text(uint32_t address) {
+    // _sidata (stm32wb55_linker.h): the end of the constants, where .data's copy begins
+    return address >= FLASH_BASE && address < (uint32_t)&_sidata;
+}
+
 static bool crash_report_is_ram(uint32_t address, uint32_t size) {
     return address >= SRAM1_BASE && address + size <= SRAM1_BASE + 0x30000U;
 }
@@ -54,7 +60,7 @@ static bool crash_report_is_ram(uint32_t address, uint32_t size) {
 static void crash_report_copy_text(char* to, size_t size, const char* from) {
     size_t i = 0;
     const uint32_t address = (uint32_t)from;
-    if(from && (crash_report_is_code(address) || crash_report_is_ram(address, 1))) {
+    if(from && (crash_report_is_flash_text(address) || crash_report_is_ram(address, 1))) {
         for(; i + 1 < size && from[i]; i++) {
             to[i] = (from[i] >= ' ' && from[i] < 127) ? from[i] : '?';
         }

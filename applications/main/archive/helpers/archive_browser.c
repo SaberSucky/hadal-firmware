@@ -55,6 +55,8 @@ static void archive_list_load_cb(void* context, uint32_t list_load_offset) {
         false);
 }
 
+#define ARCHIVE_HEAP_FLOOR (4U * 1024U)
+
 static void archive_list_item_cb(
     void* context,
     FuriString* item_path,
@@ -66,6 +68,8 @@ static void archive_list_item_cb(
     ArchiveBrowserView* browser = (ArchiveBrowserView*)context;
 
     if(!is_last) {
+        // short of RAM the row stays "loading", as in the file browser, instead of a crash
+        if(memmgr_get_free_heap() < ARCHIVE_HEAP_FLOOR) return;
         const FileInfo* info = file_browser_worker_get_item_info(browser->worker);
         archive_add_file_item(
             browser,

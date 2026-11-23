@@ -133,15 +133,27 @@ static void
     canvas_set_font(canvas, FontPrimary);
     canvas_draw_str(canvas, 0, ROW_2_Y + 9, "Alarm");
 
-    snprintf(buffer, sizeof(buffer), "%02u", model->alarm.hour);
+    // in the system's time format, as the Clock app shows the same alarm: 12h with AM/PM
+    const bool h12 = locale_get_time_format() == LocaleTimeFormat12h;
+    const int32_t hour_x = h12 ? 40 : 58;
+    uint8_t hour = model->alarm.hour;
+    if(h12) {
+        hour %= 12;
+        if(!hour) hour = 12;
+    }
+    snprintf(buffer, sizeof(buffer), "%02u", hour);
     clock_settings_module_draw_block(
-        canvas, 58, ROW_2_Y, 17, ROW_2_H, FontPrimary, get_state(model, 2, 0), buffer);
-    canvas_draw_box(canvas, 81 - 4, ROW_2_Y + ROW_2_H - 4, 2, 2);
-    canvas_draw_box(canvas, 81 - 4, ROW_2_Y + ROW_2_H - 4 - 4, 2, 2);
+        canvas, hour_x, ROW_2_Y, 17, ROW_2_H, FontPrimary, get_state(model, 2, 0), buffer);
+    canvas_draw_box(canvas, hour_x + 19, ROW_2_Y + ROW_2_H - 4, 2, 2);
+    canvas_draw_box(canvas, hour_x + 19, ROW_2_Y + ROW_2_H - 4 - 4, 2, 2);
 
     snprintf(buffer, sizeof(buffer), "%02u", model->alarm.minute);
     clock_settings_module_draw_block(
-        canvas, 81, ROW_2_Y, 17, ROW_2_H, FontPrimary, get_state(model, 2, 1), buffer);
+        canvas, hour_x + 23, ROW_2_Y, 17, ROW_2_H, FontPrimary, get_state(model, 2, 1), buffer);
+    if(h12) {
+        canvas_set_font(canvas, FontSecondary);
+        canvas_draw_str(canvas, hour_x + 43, ROW_2_Y + 9, model->alarm.hour >= 12 ? "PM" : "AM");
+    }
 
     clock_settings_module_draw_block(
         canvas,

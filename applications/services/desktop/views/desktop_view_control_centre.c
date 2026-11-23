@@ -4,6 +4,7 @@
 #include <gui/elements.h>
 #include <gui/hadal_title_font.h>
 #include <assets_icons.h>
+#include "../helpers/desktop_lock_clock.h"
 
 #define TILE_COLUMNS   5
 #define TILE_ROWS      2
@@ -122,12 +123,7 @@ static void control_centre_draw_header(Canvas* canvas, const ControlCentreState*
     canvas_set_font(canvas, FontSecondary);
     char text[12];
 
-    uint8_t hour = state->hour;
-    if(state->format_12) {
-        hour = hour % 12;
-        if(hour == 0) hour = 12;
-    }
-    snprintf(text, sizeof(text), "%u:%02u", hour, state->minute);
+    desktop_clock_format(text, sizeof(text), state->hour, state->minute, state->format_12);
     canvas_draw_str(canvas, 2, 8, text);
 
     // battery: outline with a nub, filled to the charge

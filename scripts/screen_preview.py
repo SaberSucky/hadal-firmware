@@ -31,7 +31,7 @@ PREVIEWS = {
     "lock_clock": ["applications/services/desktop/helpers/desktop_lock_clock.c"],
     "keyboard": [],
     "submenu": [],
-    "control_centre": [],
+    "control_centre": ["applications/services/desktop/helpers/desktop_lock_clock.c"],
     "variable_item_list": [],
     "font_metrics": [],
 }

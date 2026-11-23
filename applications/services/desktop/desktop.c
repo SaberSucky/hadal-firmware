@@ -1,6 +1,7 @@
 #include <core/crash_report.h>
 #include "helpers/crash_report_save.h"
 #include "helpers/boot_timeline_save.h"
+#include "helpers/desktop_lock_clock.h"
 #include <update_util/boot_guard.h>
 #include <update_util/update_rollback.h>
 #include "desktop_i.h"
@@ -138,22 +139,16 @@ static void desktop_clock_draw_callback(Canvas* canvas, void* context) {
 
     canvas_set_font(canvas, FontPrimary);
 
-    uint8_t hour = desktop->clock.hour;
-    if(desktop->clock.format_12) {
-        if(hour > 12) {
-            hour -= 12;
-        }
-        if(hour == 0) {
-            hour = 12;
-        }
-    }
-
+    char time[8];
+    desktop_clock_format(
+        time, sizeof(time), desktop->clock.hour, desktop->clock.minute, desktop->clock.format_12);
     char buffer[20];
-    if(furi_hal_rtc_is_flag_set(FuriHalRtcFlagDebug)) {
-        snprintf(buffer, sizeof(buffer), "D %02u:%02u", hour, desktop->clock.minute);
-    } else {
-        snprintf(buffer, sizeof(buffer), "%02u:%02u", hour, desktop->clock.minute);
-    }
+    snprintf(
+        buffer,
+        sizeof(buffer),
+        "%s%s",
+        furi_hal_rtc_is_flag_set(FuriHalRtcFlagDebug) ? "D " : "",
+        time);
 
     view_port_set_width(
         desktop->clock_viewport,

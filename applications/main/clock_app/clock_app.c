@@ -16,9 +16,11 @@
 /*
     A modified clock app for use overnight.
     Up / Down controls the display brightness. Down at brightness 0 toggles the
-    notification LED. Right opens the alarm setup. When the alarm fires the screen
-    flashes ALARM and a melody plays; any key stops it (the alarm stays armed for
-    the next day).
+    notification LED. Right opens the alarm setup.
+
+    The alarm is the Flipper's one alarm, the same as Settings > Clock & Alarm:
+    kept by the clock chip, it rings from anywhere (this app open or not) on the
+    one alarm screen, with snooze. Set here or there, it is the same alarm.
 */
 
 int brightness = 5;
@@ -52,29 +54,6 @@ static const NotificationSequence led_off = {
 
 static const NotificationSequence led_reset = {
     &message_red_0,
-    NULL,
-};
-
-// Custom alarm melody: a rising three-note chirp with vibro and the red LED,
-// short enough to replay roughly once a second while the alarm rings.
-static const NotificationSequence alarm_melody = {
-    &message_vibro_on,
-    &message_red_255,
-    &message_note_c6,
-    &message_delay_100,
-    &message_note_e6,
-    &message_delay_100,
-    &message_note_g6,
-    &message_delay_100,
-    &message_sound_off,
-    &message_vibro_off,
-    &message_red_0,
-    &message_delay_50,
-    &message_note_g6,
-    &message_delay_100,
-    &message_note_c6,
-    &message_delay_100,
-    &message_sound_off,
     NULL,
 };
 
@@ -186,24 +165,6 @@ static void
 static void clock_render_callback(Canvas* const canvas, void* ctx) {
     ClockModel* model = ctx;
     AppState* state = model->app;
-
-    // While the alarm rings, take over the whole screen: flash it (invert every
-    // other tick) and show ALARM. Any key press clears state->alarm_firing.
-    if(state->alarm_firing) {
-        if(state->alarm_flash_on) {
-            canvas_set_color(canvas, ColorBlack);
-            canvas_draw_box(canvas, 0, 0, 128, 64);
-            canvas_set_color(canvas, ColorWhite);
-        } else {
-            canvas_set_color(canvas, ColorBlack);
-        }
-        // FontBigNumbers has no letters, so ALARM has to use a text font.
-        canvas_set_font(canvas, FontPrimary);
-        canvas_draw_str_aligned(canvas, 64, 26, AlignCenter, AlignCenter, "! ALARM !");
-        canvas_set_font(canvas, FontSecondary);
-        canvas_draw_str_aligned(canvas, 64, 44, AlignCenter, AlignCenter, "Press any key to stop");
-        return;
-    }
 
     if(furi_get_tick() < state->brightness_shown_until) {
         elements_progress_bar_vertical(canvas, 119, 1, 62, (float)(brightness / 100.f));
@@ -342,9 +303,12 @@ static void timer_reset_seconds(AppState* plugin_state) {
 
 static void ns_settings_save(AppState* app) {
     app->settings.brightness = (uint8_t)brightness; // keep the saved level current
+    // the alarm lives on the clock chip: the file says "off" so it is never moved there again
+    NsSettings saved = app->settings;
+    saved.alarm_enabled = false;
     saved_struct_save(
         NS_SETTINGS_PATH,
-        &app->settings,
+        &saved,
         sizeof(NsSettings),
         NS_SETTINGS_MAGIC,
         NS_SETTINGS_VERSION);
@@ -359,24 +323,6 @@ static void ns_switch(AppState* app, NsViewId view) {
 
 static bool clock_input_callback(InputEvent* event, void* context) {
     AppState* app = context;
-
-    // Any key stops a ringing alarm. It stays enabled, so it fires again the
-    // next time the clock reaches that minute.
-    //
-    // Consume every event of the dismissing press, and dismiss on the release
-    // click (Short) or a long press - never on Press. A tap arrives as
-    // Press -> Release -> Short; dismissing on Press would clear the flag before
-    // the Short, and that Short would then fall through to the normal handler and
-    // e.g. change the brightness. Dismissing on Short swallows the whole press,
-    // so the next press works normally.
-    if(app->alarm_firing) {
-        if(event->type == InputTypeShort || event->type == InputTypeLong) {
-            app->alarm_firing = false;
-            notification_message(notif, &led_off);
-            with_view_model(app->clock_view, ClockModel * m, { UNUSED(m); }, true);
-        }
-        return true;
-    }
 
     if(event->type != InputTypeShort) return false;
 
@@ -404,15 +350,34 @@ static bool clock_input_callback(InputEvent* event, void* context) {
     }
 }
 
+// ---------------- the alarm: the clock chip's, shared with Settings ----------------
+
+/** The alarm as the clock chip has it now: Settings may have changed it */
+static void ns_alarm_read(AppState* app) {
+    DateTime alarm;
+    app->settings.alarm_enabled = furi_hal_rtc_get_alarm(&alarm);
+    app->settings.alarm_hour = alarm.hour % 24;
+    app->settings.alarm_minute = alarm.minute % 60;
+}
+
+static void ns_alarm_write(AppState* app) {
+    DateTime alarm = {
+        .hour = app->settings.alarm_hour,
+        .minute = app->settings.alarm_minute,
+        .second = 0,
+    };
+    furi_hal_rtc_set_alarm(&alarm, app->settings.alarm_enabled);
+}
+
 // ---------------- alarm menu (VariableItemList) ----------------
 
-static const char* const alarm_toggle_text[] = {"OFF", "ON"};
+static const char* const alarm_toggle_text[] = {"Off", "On"}; // as Settings > Clock & Alarm
 
 static void alarm_toggle_changed(VariableItem* item) {
     AppState* app = variable_item_get_context(item);
     app->settings.alarm_enabled = variable_item_get_current_value_index(item) == 1;
-    variable_item_set_current_value_text(item, app->settings.alarm_enabled ? "ON" : "OFF");
-    ns_settings_save(app);
+    variable_item_set_current_value_text(item, alarm_toggle_text[app->settings.alarm_enabled]);
+    ns_alarm_write(app);
 }
 
 static void refresh_time_menu_item(AppState* app) {
@@ -536,7 +501,7 @@ static bool alarm_time_input(InputEvent* event, void* context) {
         // Both confirm - there's no separate cancel, so leaving keeps the value.
         app->settings.alarm_hour = app->edit_hour;
         app->settings.alarm_minute = app->edit_minute;
-        ns_settings_save(app);
+        ns_alarm_write(app);
         refresh_time_menu_item(app);
         ns_switch(app, NsViewAlarmMenu);
         return true;
@@ -549,39 +514,8 @@ static bool alarm_time_input(InputEvent* event, void* context) {
 
 // ---------------- periodic tick ----------------
 
-static void ns_check_alarm(AppState* app) {
-    if(!app->settings.alarm_enabled) {
-        app->alarm_consumed = false;
-        return;
-    }
-    DateTime now;
-    furi_hal_rtc_get_datetime(&now);
-    bool match = (now.hour == app->settings.alarm_hour) &&
-                 (now.minute == app->settings.alarm_minute);
-    if(match) {
-        if(!app->alarm_consumed && !app->alarm_firing) {
-            app->alarm_firing = true;
-            app->alarm_consumed = true; // don't re-arm until the minute passes
-            app->alarm_flash_on = true;
-            app->melody_phase = 0;
-        }
-    } else {
-        // Left the alarm minute: re-arm for next time.
-        app->alarm_consumed = false;
-    }
-}
-
 static void ns_tick(AppState* app) {
     app->battery_pct = furi_hal_power_get_pct();
-    ns_check_alarm(app);
-
-    if(app->alarm_firing) {
-        app->alarm_flash_on = !app->alarm_flash_on;
-        // Timer is 500ms; replay the ~1s melody every other tick so it doesn't
-        // stutter on top of itself.
-        if(app->melody_phase == 0) notification_message(notif, &alarm_melody);
-        app->melody_phase ^= 1;
-    }
 
     // Only the clock view is model-driven; the menu/time views repaint
     // themselves. Committing the (unchanged) model forces a redraw.
@@ -653,11 +587,18 @@ int32_t clock_app(void* p) {
         if(brightness > 100) brightness = 100;
     } else {
         app->settings.alarm_enabled = false;
-        app->settings.alarm_hour = 7;
-        app->settings.alarm_minute = 0;
         brightness = (int)roundf(SavedBrightness * 100.f);
         app->settings.brightness = (uint8_t)brightness;
     }
+    // This app kept an alarm of its own once, that rang only while it was open: one still on
+    // moves to the clock chip's (unless that one is already set), and the file keeps it no more
+    if(app->settings.alarm_enabled) {
+        DateTime chip;
+        if(!furi_hal_rtc_get_alarm(&chip)) ns_alarm_write(app);
+        app->settings.alarm_enabled = false;
+        ns_settings_save(app);
+    }
+    ns_alarm_read(app);
 
     notif->settings.display_off_delay_ms = 0;
     notification_message(notif, &sequence_display_backlight_enforce_on);
@@ -689,7 +630,7 @@ int32_t clock_app(void* p) {
     variable_item_set_values_text(app->alarm_toggle_item, alarm_toggle_text);
     variable_item_set_current_value_index(app->alarm_toggle_item, app->settings.alarm_enabled);
     variable_item_set_current_value_text(
-        app->alarm_toggle_item, app->settings.alarm_enabled ? "ON" : "OFF");
+        app->alarm_toggle_item, alarm_toggle_text[app->settings.alarm_enabled]);
     app->alarm_time_item = variable_item_list_add(app->alarm_menu, "Set time", 1, NULL, app);
     refresh_time_menu_item(app);
     variable_item_list_set_enter_callback(app->alarm_menu, alarm_menu_enter, app);
@@ -705,7 +646,7 @@ int32_t clock_app(void* p) {
     view_set_input_callback(app->alarm_time_view, alarm_time_input);
     view_dispatcher_add_view(app->view_dispatcher, NsViewAlarmTime, app->alarm_time_view);
 
-    // Periodic timer, 500ms: smooth flash + responsive alarm check.
+    // Twice a second, so the seconds shown never skip one (the alarm rings by itself)
     app->timer = furi_timer_alloc(ns_timer_callback, FuriTimerTypePeriodic, app);
     furi_timer_start(app->timer, furi_kernel_get_tick_frequency() / 2);
 

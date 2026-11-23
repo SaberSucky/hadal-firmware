@@ -76,12 +76,9 @@ typedef struct {
     // Brightness on-screen display: shown until this tick, then hidden (3s).
     uint32_t brightness_shown_until;
 
-    // Alarm
+    // Alarm: settings' alarm fields hold the clock chip's alarm while the app runs (the file
+    // keeps only the brightness; see ns_alarm_read)
     NsSettings settings;
-    bool alarm_firing; // currently ringing
-    bool alarm_flash_on; // flash toggle, advanced each tick while firing
-    bool alarm_consumed; // fired for the current matching minute already
-    uint8_t melody_phase; // replay the melody every other tick, not every tick
     uint8_t edit_hour; // scratch values the time picker edits
     uint8_t edit_minute;
     uint8_t edit_field; // 0 = hour, 1 = minute

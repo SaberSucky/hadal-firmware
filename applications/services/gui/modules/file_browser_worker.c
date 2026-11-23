@@ -60,11 +60,15 @@ struct BrowserWorker {
 };
 
 /* A folder of up to BROWSER_SORT_THRESHOLD entries is loaded whole, to be sorted: an entry
- * takes about this much (its record, its name, the name shown, an icon), and the list one block
- * that grows. Short of RAM (in an app that uses much of it, Sub-GHz say), it is loaded a window at
- * a time like a larger folder, in the order of the card: a little out of order, not a crash. */
-#define BROWSER_ITEM_RAM    (200U)
-#define BROWSER_RAM_RESERVE (16U * 1024U)
+ * takes about this much (its record in the list, which grows by doubling, and its name; an app's
+ * icon or shown name more), with room to spare. Short of RAM (in an app that uses much of it,
+ * Sub-GHz say), it is loaded a window at a time like a larger folder, in the order of the card:
+ * a little out of order, not a crash. A whole load that runs short part way, or finds more
+ * entries than were counted, gives way to a window too */
+#define BROWSER_ITEM_RAM      (96U)
+#define BROWSER_RAM_RESERVE   (16U * 1024U)
+#define BROWSER_LOAD_FLOOR    (8U * 1024U)
+#define BROWSER_COUNT_SLACK   (16U)
 
 static bool browser_can_load_whole(uint32_t count) {
     return count <= BROWSER_SORT_THRESHOLD &&
@@ -416,8 +420,9 @@ static bool browser_folder_load_chunked(
     return items_cnt == count;
 }
 
-// Load all files at once, may cause memory overflow so need to limit that to about 400 files
-static bool browser_folder_load_full(BrowserWorker* browser, FuriString* path) {
+// Load all files at once, to be sorted: false when it gave way part way (short of RAM, or a
+// folder with more entries than counted), for a window to be loaded instead
+static bool browser_folder_load_full(BrowserWorker* browser, FuriString* path, uint32_t counted) {
     FileInfo file_info;
 
     Storage* storage = furi_record_open(RECORD_STORAGE);
@@ -429,7 +434,7 @@ static bool browser_folder_load_full(BrowserWorker* browser, FuriString* path) {
 
     uint32_t items_cnt = 0;
 
-    bool ret = false;
+    bool ret = true; // false only when it gave way: a failure is reported here, once
     do {
         if(!storage_dir_open(directory, furi_string_get_cstr(path))) {
             browser_load_failed(browser, directory, path, "open for loading");
@@ -438,8 +443,20 @@ static bool browser_folder_load_full(BrowserWorker* browser, FuriString* path) {
         if(browser->list_load_cb) {
             browser->list_load_cb(browser->cb_ctx, 0);
         }
+        bool gave_way = false;
         while(storage_dir_read(directory, &file_info, name_temp, FILE_NAME_LEN_MAX) &&
               storage_file_get_error(directory) == FSE_OK) {
+            if(memmgr_get_free_heap() < BROWSER_LOAD_FLOOR ||
+               items_cnt > counted + BROWSER_COUNT_SLACK) {
+                FURI_LOG_W(
+                    TAG,
+                    "Whole load of %s gave way at %lu entries, %zu free",
+                    furi_string_get_cstr(path),
+                    items_cnt,
+                    memmgr_get_free_heap());
+                gave_way = true;
+                break;
+            }
             furi_string_set(name_str, name_temp);
             if(browser_filter_by_name(browser, name_str, file_info_is_dir(&file_info))) {
                 furi_string_printf(name_str, "%s/%s", furi_string_get_cstr(path), name_temp);
@@ -451,14 +468,16 @@ static bool browser_folder_load_full(BrowserWorker* browser, FuriString* path) {
                 items_cnt++;
             }
         }
+        if(gave_way) {
+            ret = false; // the window that follows ends the load: no last item here
+            break;
+        }
         if(browser->list_item_cb) {
             browser->list_item_cb(browser->cb_ctx, NULL, 0, false, true);
         }
         if(!browser_dir_read_complete(directory)) {
             browser_load_failed(browser, directory, path, "load");
-            break;
         }
-        ret = true;
     } while(0);
 
     furi_string_free(name_str);
@@ -567,11 +586,11 @@ static int32_t browser_worker(void* context) {
             if(!folder_ok) {
                 // Already reported, and opening it again would only fail again
                 browser_load_aborted(browser, 0);
-            } else if(!browser_can_load_whole(items_cnt)) {
+            } else if(
+                !browser_can_load_whole(items_cnt) ||
+                !browser_folder_load_full(browser, path, items_cnt)) {
                 browser_folder_load_chunked(
                     browser, path, browser->load_offset, browser->load_count);
-            } else {
-                browser_folder_load_full(browser, path);
             }
         }
 

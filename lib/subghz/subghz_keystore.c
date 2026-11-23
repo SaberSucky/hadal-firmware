@@ -246,6 +246,10 @@ bool subghz_keystore_load(SubGhzKeystore* instance, const char* file_name) {
 
     furi_string_free(filetype);
 
+    // the list grew by doubling while it was read: it keeps only what it holds (with ~130 makers'
+    // keys that is a few KB the Sub-GHz app has back for its files and signals)
+    SubGhzKeyArray_reserve(instance->data, 0);
+
     return result;
 }
 

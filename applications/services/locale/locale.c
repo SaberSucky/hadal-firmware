@@ -45,12 +45,9 @@ void locale_format_time(
     uint8_t hours = datetime->hour;
     uint8_t am_pm = 0;
     if(format == LocaleTimeFormat12h) {
-        if(hours > 12) {
-            hours -= 12;
-            am_pm = 2;
-        } else {
-            am_pm = 1;
-        }
+        // 12:xx is past noon: PM (it said AM, an hour a day)
+        am_pm = hours >= 12 ? 2 : 1;
+        hours %= 12;
         if(hours == 0) {
             hours = 12;
         }

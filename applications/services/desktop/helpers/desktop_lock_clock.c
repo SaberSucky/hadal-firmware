@@ -6,16 +6,21 @@ static const char* const weekdays[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat",
 static const char* const months[] =
     {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
+void desktop_clock_format(char* out, size_t size, uint8_t hour, uint8_t minute, bool hour_12) {
+    if(hour_12) {
+        hour %= 12;
+        snprintf(out, size, "%u:%02u", hour ? hour : 12u, minute % 60u);
+    } else {
+        snprintf(out, size, "%02u:%02u", hour % 24u, minute % 60u);
+    }
+}
+
 void desktop_lock_clock_draw(Canvas* canvas, const DateTime* datetime, bool hour_12) {
     char time[8];
     char date[20];
-    uint8_t hour = datetime->hour;
     const char* half = NULL;
-    if(hour_12) {
-        half = hour < 12 ? "AM" : "PM";
-        hour = hour % 12 ? hour % 12 : 12;
-    }
-    snprintf(time, sizeof(time), "%u:%02u", hour % 100, datetime->minute % 100);
+    if(hour_12) half = datetime->hour < 12 ? "AM" : "PM";
+    desktop_clock_format(time, sizeof(time), datetime->hour, datetime->minute, hour_12);
     snprintf(
         date,
         sizeof(date),

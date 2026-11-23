@@ -34,8 +34,9 @@ typedef struct {
     const Icon* icon;
     char* owned_label;
     char* owned_path;
-    Icon* owned_icon;
-    uint8_t* owned_icon_data;
+    // an SD app's icon: one allocation holding the Icon and its frame list, so nothing in it
+    // points into the entries, which move as entries are added
+    struct LoaderMenuSdIcon* owned_icon;
 } LoaderMenuEntry;
 
 struct LoaderMenu {
@@ -137,6 +138,12 @@ static bool loader_menu_add_named_app(LoaderMenu* loader_menu, const char* name)
     return false;
 }
 
+struct LoaderMenuSdIcon {
+    Icon icon;
+    const uint8_t* frames[1];
+    uint8_t data[FAP_MANIFEST_MAX_ICON_SIZE];
+};
+
 // An app on the SD card: its name and its 10x10 icon come from its manifest
 static bool loader_menu_add_sd_app(LoaderMenu* loader_menu, Storage* storage, const char* path) {
     const size_t length = strlen(path);
@@ -144,29 +151,34 @@ static bool loader_menu_add_sd_app(LoaderMenu* loader_menu, Storage* storage, co
 
     FuriString* fap_path = furi_string_alloc_set_str(path);
     FuriString* name = furi_string_alloc();
-    uint8_t* icon_data = malloc(FAP_MANIFEST_MAX_ICON_SIZE);
+    struct LoaderMenuSdIcon* sd_icon = malloc(sizeof(struct LoaderMenuSdIcon));
+    // an app without an icon in its manifest is drawn blank, not from whatever the RAM held
+    memset(sd_icon->data, 0, sizeof(sd_icon->data));
+    uint8_t* icon_data = sd_icon->data;
     bool loaded = flipper_application_load_name_and_icon(fap_path, storage, &icon_data, name);
     if(loaded) {
         LoaderMenuEntry* entry = loader_menu_add_entry(loader_menu, LoaderMenuEntryApp);
         entry->owned_label = strdup(furi_string_get_cstr(name));
         entry->owned_path = strdup(path);
-        entry->owned_icon_data = icon_data;
-        // An app icon is one 10x10 frame in the firmware's own icon format
-        entry->owned_icon = malloc(sizeof(Icon));
+        // An app icon is one 10x10 frame in the firmware's own icon format. The frame list is
+        // in the same allocation as the icon: it used to point into the entries, which move
+        // when an entry is added after (Settings always is), and the menu drew freed memory
+        sd_icon->frames[0] = sd_icon->data;
         const Icon icon = {
             .width = 10,
             .height = 10,
             .frame_count = 1,
             .frame_rate = 0,
-            .frames = (const uint8_t* const*)&entry->owned_icon_data,
+            .frames = sd_icon->frames,
         };
-        memcpy(entry->owned_icon, &icon, sizeof(Icon));
+        memcpy(&sd_icon->icon, &icon, sizeof(Icon));
+        entry->owned_icon = sd_icon;
         entry->label = entry->owned_label;
         entry->start_name = entry->owned_path;
-        entry->icon = entry->owned_icon;
+        entry->icon = &sd_icon->icon;
     } else {
         FURI_LOG_W(TAG, "Main menu: cannot read %s", path);
-        free(icon_data);
+        free(sd_icon);
     }
     furi_string_free(name);
     furi_string_free(fap_path);
@@ -323,7 +335,6 @@ void loader_menu_free(LoaderMenu* loader_menu) {
         free(entry->owned_label);
         free(entry->owned_path);
         free(entry->owned_icon);
-        free(entry->owned_icon_data);
     }
     free(loader_menu->entries);
     free(loader_menu);
