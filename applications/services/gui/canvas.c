@@ -183,6 +183,11 @@ void canvas_set_font(Canvas* canvas, Font font) {
     u8g2_SetFont(&canvas->fb, asset_packs_font(font, canvas_stock_fonts[font]));
 }
 
+bool canvas_font_from_pack(Font font) {
+    furi_check(font < FontTotalNumber);
+    return asset_packs_font(font, canvas_stock_fonts[font]) != canvas_stock_fonts[font];
+}
+
 void canvas_set_custom_u8g2_font(Canvas* canvas, const uint8_t* font) {
     furi_check(canvas);
     u8g2_SetFontMode(&canvas->fb, 1);
@@ -283,13 +288,7 @@ void canvas_draw_icon_animation(
     compress_icon_decode(
         canvas->compress_icon, icon_get_frame_data(icon, icon_animation->frame), &icon_data);
     canvas_draw_u8g2_bitmap(
-        &canvas->fb,
-        x,
-        y,
-        icon_get_width(icon),
-        icon_get_height(icon),
-        icon_data,
-        IconRotation0);
+        &canvas->fb, x, y, icon_get_width(icon), icon_get_height(icon), icon_data, IconRotation0);
     if(icon != icon_animation->icon) asset_packs_icon_release();
 }
 
@@ -425,13 +424,7 @@ void canvas_draw_icon(Canvas* canvas, int32_t x, int32_t y, const Icon* icon) {
     uint8_t* icon_data = NULL;
     compress_icon_decode(canvas->compress_icon, icon_get_frame_data(drawn, 0), &icon_data);
     canvas_draw_u8g2_bitmap(
-        &canvas->fb,
-        x,
-        y,
-        icon_get_width(drawn),
-        icon_get_height(drawn),
-        icon_data,
-        IconRotation0);
+        &canvas->fb, x, y, icon_get_width(drawn), icon_get_height(drawn), icon_data, IconRotation0);
     if(drawn != icon) asset_packs_icon_release();
 }
 

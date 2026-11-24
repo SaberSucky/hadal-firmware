@@ -53,6 +53,14 @@ struct Canvas {
  *
  * @return     Canvas instance
  */
+/** Whether an asset pack gives this font slot a font of its own (the stock one otherwise)
+ *
+ * @param      font  Font slot
+ *
+ * @return     true if the pack's font is drawn in it
+ */
+bool canvas_font_from_pack(Font font);
+
 Canvas* canvas_init(void);
 
 /** Free canvas memory

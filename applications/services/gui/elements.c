@@ -6,6 +6,7 @@
 
 #include <gui/canvas.h>
 #include <gui/icon_i.h>
+#include <gui/canvas_i.h>
 #include <gui/icon_animation_i.h>
 
 #include <furi.h>
@@ -1170,10 +1171,13 @@ void elements_header(Canvas* canvas, const char* title) {
     canvas_set_font(canvas, FontPrimary);
     FuriString* text = furi_string_alloc_set_str(title);
     elements_string_fit_width(canvas, text, light_x - 3 - 8);
-    // bold whatever the font: an asset pack may give the bold slot a light font of its own
+    // bold whatever the font: an asset pack may give the bold slot a light font of its own, which
+    // is drawn twice a pixel apart; the stock one is bold already
+    const bool thicken = canvas_font_from_pack(FontPrimary);
     canvas_draw_str(canvas, 3, baseline, furi_string_get_cstr(text));
-    canvas_draw_str(canvas, 4, baseline, furi_string_get_cstr(text));
-    const int32_t line_x = 4 + canvas_string_width(canvas, furi_string_get_cstr(text)) + 4;
+    if(thicken) canvas_draw_str(canvas, 4, baseline, furi_string_get_cstr(text));
+    const int32_t line_x =
+        3 + thicken + canvas_string_width(canvas, furi_string_get_cstr(text)) + 4;
     furi_string_free(text);
 
     // the line the light hangs from: dotted, dipping into the light at its end

@@ -54,7 +54,14 @@ static void desktop_loader_callback(const void* message, void* context) {
 
     if(event->type == LoaderEventTypeApplicationBeforeLoad) {
         view_dispatcher_send_custom_event(desktop->view_dispatcher, DesktopGlobalBeforeAppStarted);
-        furi_check(furi_semaphore_acquire(desktop->animation_semaphore, 3000) == FuriStatusOk);
+        if(furi_semaphore_acquire(desktop->animation_semaphore, 3000) != FuriStatusOk) {
+            // The desktop's thread can be at the card for longer: 30 s after an update's start it
+            // puts the rollback package in place. An app opened then restarted the Flipper (furi_check
+            // after 3 s): it waits for it, and only a desktop that never answers stops it
+            FURI_LOG_W(TAG, "The desktop is busy: the app waits for it");
+            furi_check(
+                furi_semaphore_acquire(desktop->animation_semaphore, 30000) == FuriStatusOk);
+        }
     } else if(event->type == LoaderEventTypeNoMoreAppsInQueue) {
         view_dispatcher_send_custom_event(desktop->view_dispatcher, DesktopGlobalAfterAppFinished);
     }
