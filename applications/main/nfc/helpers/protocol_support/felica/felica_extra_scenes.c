@@ -32,6 +32,7 @@ static void felica_scene_more_info_on_enter(NfcApp* nfc) {
         return;
         break;
     case FelicaStandard:
+        submenu_set_header(submenu, "More info");
         FuriString* label = furi_string_alloc();
 
         for(uint32_t i = 0; i < simple_array_get_count(data->systems); ++i) {
@@ -122,6 +123,7 @@ static void felica_scene_system_on_enter(NfcApp* nfc) {
         scene_manager_get_scene_state(nfc->scene_manager, NfcSceneFelicaSystem) >> 4;
     const FelicaData* data = nfc_device_get_data(nfc->nfc_device, NfcProtocolFelica);
 
+    submenu_set_header(submenu, "System");
     submenu_add_item(
         submenu,
         "Directory",

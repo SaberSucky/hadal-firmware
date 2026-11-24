@@ -110,6 +110,7 @@ static const char* submenu_names[SetTypeMAX] = {
 void subghz_scene_set_type_on_enter(void* context) {
     SubGhz* subghz = context;
 
+    submenu_set_header(subghz->submenu, "Add manually");
     for(SetType i = 0; i < SetTypeMAX; i++) {
         if(!submenu_names[i]) {
             continue;

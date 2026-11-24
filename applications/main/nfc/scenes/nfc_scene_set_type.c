@@ -19,6 +19,7 @@ void nfc_scene_set_type_on_enter(void* context) {
     NfcApp* instance = context;
 
     Submenu* submenu = instance->submenu;
+    submenu_set_header(submenu, "Add manually");
     submenu_add_item(
         submenu,
         "NFC-A 7-bytes UID",

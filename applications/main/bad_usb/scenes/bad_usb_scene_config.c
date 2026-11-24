@@ -100,7 +100,8 @@ static void draw_menu(BadUsbApp* bad_usb) {
 
     variable_item_list_reset(var_item_list);
 
-    variable_item_list_add(var_item_list, "Keyboard Layout (global)", 0, NULL, NULL);
+    variable_item_list_set_header(var_item_list, "Settings");
+    variable_item_list_add(var_item_list, "Keyboard layout (global)", 0, NULL, NULL);
 
     item = variable_item_list_add(
         var_item_list, "Connection", 2, bad_usb_scene_config_connection_callback, bad_usb);
@@ -120,18 +121,18 @@ static void draw_menu(BadUsbApp* bad_usb) {
         bad_usb_scene_config_ble_pairing_mode_callback,
         bad_usb);
     variable_item_set_values_text(item, ble_pairing_mode_names);
-    variable_item_list_add(var_item_list, "Set Device Name", 0, NULL, NULL);
-    variable_item_list_add(var_item_list, "Set MAC Address", 0, NULL, NULL);
-    variable_item_list_add(var_item_list, "Randomize MAC Address", 0, NULL, NULL);
-    variable_item_list_add(var_item_list, "Restore BLE Defaults", 0, NULL, NULL);
-    variable_item_list_add(var_item_list, "Remove BLE Pairing", 0, NULL, NULL);
+    variable_item_list_add(var_item_list, "Set device name", 0, NULL, NULL);
+    variable_item_list_add(var_item_list, "Set MAC address", 0, NULL, NULL);
+    variable_item_list_add(var_item_list, "Randomize MAC address", 0, NULL, NULL);
+    variable_item_list_add(var_item_list, "Restore BLE defaults", 0, NULL, NULL);
+    variable_item_list_add(var_item_list, "Remove BLE pairing", 0, NULL, NULL);
 
     // USB
-    variable_item_list_add(var_item_list, "Set Manufacturer Name", 0, NULL, NULL);
-    variable_item_list_add(var_item_list, "Set Product Name", 0, NULL, NULL);
+    variable_item_list_add(var_item_list, "Set manufacturer name", 0, NULL, NULL);
+    variable_item_list_add(var_item_list, "Set product name", 0, NULL, NULL);
     variable_item_list_add(var_item_list, "Set VID and PID", 0, NULL, NULL);
     variable_item_list_add(var_item_list, "Randomize VID and PID", 0, NULL, NULL);
-    variable_item_list_add(var_item_list, "Restore USB Defaults", 0, NULL, NULL);
+    variable_item_list_add(var_item_list, "Restore USB defaults", 0, NULL, NULL);
 
     for(uint8_t i = ConfigIndexBlePersistPairing; i <= ConfigIndexUsbRestoreDefaults; i++) {
         variable_item_set_indent(variable_item_list_get(var_item_list, i), 1);

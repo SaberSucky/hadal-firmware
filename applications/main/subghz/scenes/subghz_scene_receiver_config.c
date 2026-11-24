@@ -488,6 +488,7 @@ void subghz_scene_receiver_config_on_enter(void* context) {
     SubGhzRadioPreset preset = subghz_txrx_get_preset(subghz->txrx);
     subghz_scene_receiver_config_make_texts(setting);
 
+    variable_item_list_set_header(subghz->variable_item_list, "Read settings");
     item = variable_item_list_add(
         subghz->variable_item_list,
         "Frequency",

@@ -24,6 +24,7 @@ static void mf_desfire_scene_more_info_on_enter(NfcApp* nfc) {
 
     text_box_set_font(nfc->text_box, TextBoxFontHex);
 
+    submenu_set_header(submenu, "More info");
     submenu_add_item(
         submenu,
         "Card info",
@@ -123,6 +124,7 @@ static void mf_desfire_scene_app_submenu_callback(void* context, uint32_t index)
 
 static void mf_desfire_scene_app_on_enter(NfcApp* nfc) {
     text_box_set_font(nfc->text_box, TextBoxFontHex);
+    submenu_set_header(nfc->submenu, "Application");
     submenu_add_item(
         nfc->submenu,
         "App info",

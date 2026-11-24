@@ -129,9 +129,9 @@ static NfcCommand slix_scene_unlock_worker_callback(NfcGenericEvent event, void*
 
 static void slix_scene_unlock_on_enter(NfcApp* instance) {
     popup_set_icon(instance->popup, 0, 8, &I_NFC_manual_60x50);
-    popup_set_header(instance->popup, "Unlocking", 97, 15, AlignCenter, AlignTop);
+    popup_set_header(instance->popup, "Unlocking", 96, 15, AlignCenter, AlignTop);
     popup_set_text(
-        instance->popup, "Hold card next\nto Flipper's back", 94, 27, AlignCenter, AlignTop);
+        instance->popup, "Hold card to\nFlipper's back", 96, 27, AlignCenter, AlignTop);
     view_dispatcher_switch_to_view(instance->view_dispatcher, NfcViewPopup);
 
     notification_message(instance->notifications, &sequence_blink_start_yellow);

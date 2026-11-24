@@ -159,6 +159,7 @@ void subghz_scene_radio_settings_on_enter(void* context) {
     if(subghz_txrx_radio_device_get(subghz->txrx) == SubGhzRadioDeviceTypeInternal &&
        !subghz_txrx_radio_device_is_external_connected(subghz->txrx, SUBGHZ_DEVICE_CC1101_EXT_NAME))
         value_count_device = 1; // Only 1 item if external disconnected
+    variable_item_list_set_header(subghz->variable_item_list, "Radio");
     item = variable_item_list_add(
         subghz->variable_item_list,
         "Module",

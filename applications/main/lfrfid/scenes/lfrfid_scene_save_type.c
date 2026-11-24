@@ -14,6 +14,7 @@ void lfrfid_scene_save_type_on_enter(void* context) {
     LfRfid* app = context;
     Submenu* submenu = app->submenu;
 
+    submenu_set_header(submenu, "Add manually");
     SaveTypeCtx* state = malloc(sizeof(SaveTypeCtx));
     FuriString* protocol_string = furi_string_alloc();
     for(uint8_t i = 0; i < LFRFIDProtocolMax; i++) {

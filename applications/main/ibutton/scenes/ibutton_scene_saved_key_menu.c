@@ -18,6 +18,7 @@ void ibutton_scene_saved_key_menu_on_enter(void* context) {
     const uint32_t features = ibutton_protocols_get_features(
         ibutton->protocols, ibutton_key_get_protocol_id(ibutton->key));
 
+    submenu_set_header(submenu, ibutton->key_name);
     submenu_add_item(submenu, "Emulate", SubmenuIndexEmulate, ibutton_submenu_callback, ibutton);
 
     if(features & iButtonProtocolFeatureWriteId) {

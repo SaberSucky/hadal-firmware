@@ -13,6 +13,7 @@ void ibutton_scene_settings_on_enter(void* context) {
     iButton* ibutton = context;
     Submenu* submenu = ibutton->submenu;
 
+    submenu_set_header(submenu, "Settings");
     submenu_add_item(
         submenu,
         "Write Blanks",

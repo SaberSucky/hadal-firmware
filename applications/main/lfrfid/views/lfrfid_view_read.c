@@ -31,38 +31,34 @@ static void lfrfid_view_read_draw_callback(Canvas* canvas, void* _model) {
         active = 2;
     }
 
+    // the column right of the picture, 64 px: "Reading", the ways it tries (the one it is on
+    // bold, an arrow before it and the spinner after), and a word under them all
+    canvas_draw_str_aligned(canvas, 96, 2, AlignCenter, AlignTop, "Reading");
     if(active >= 0) {
-        char header[16];
-        snprintf(header, sizeof(header), "Reading %d/%zu", active + 1, COUNT_OF(steps));
-        canvas_draw_str(canvas, 70, 14, header);
-
         for(size_t i = 0; i < COUNT_OF(steps); i++) {
-            const uint8_t y = 26 + i * 11;
+            const uint8_t y = 24 + i * 11;
             if(i == (size_t)active) {
                 canvas_set_font(canvas, FontPrimary);
-                canvas_draw_icon(canvas, 70, y - 7, &I_ButtonRight_4x7);
+                canvas_draw_icon(canvas, 68, y - 7, &I_ButtonRight_4x7);
                 canvas_draw_icon_animation(
-                    canvas, 77 + canvas_string_width(canvas, steps[i]) + 3, y - 8, model->icon);
+                    canvas, 75 + canvas_string_width(canvas, steps[i]) + 3, y - 8, model->icon);
             } else {
                 canvas_set_font(canvas, FontSecondary);
             }
-            canvas_draw_str(canvas, 77, y, steps[i]);
+            canvas_draw_str(canvas, 75, y, steps[i]);
         }
     } else {
-        canvas_draw_str(canvas, 72, 16, "Reading");
-
-        if(model->read_mode == LfRfidReadAskOnly) {
-            canvas_draw_str(canvas, 77, 35, "ASK");
-        } else if(model->read_mode == LfRfidReadAsk134Only) {
-            canvas_draw_str(canvas, 77, 35, "FDX-B");
-        } else {
-            canvas_draw_str(canvas, 77, 35, "PSK");
-        }
-        canvas_draw_icon_animation(canvas, 112, 27, model->icon);
+        const char* only = model->read_mode == LfRfidReadAskOnly    ? "ASK" :
+                           model->read_mode == LfRfidReadAsk134Only ? "FDX-B" :
+                                                                      "PSK";
+        canvas_draw_icon(canvas, 68, 28, &I_ButtonRight_4x7);
+        canvas_draw_str(canvas, 75, 35, only);
+        canvas_draw_icon_animation(
+            canvas, 75 + canvas_string_width(canvas, only) + 3, 27, model->icon);
     }
 
     canvas_set_font(canvas, FontSecondary);
-    canvas_draw_str(canvas, 61, 60, "Don't move card");
+    canvas_draw_str_aligned(canvas, 96, 63, AlignCenter, AlignBottom, "Hold still");
 }
 
 void lfrfid_view_read_enter(void* context) {

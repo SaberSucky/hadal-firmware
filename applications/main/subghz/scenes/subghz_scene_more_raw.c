@@ -14,6 +14,7 @@ void subghz_scene_more_raw_submenu_callback(void* context, uint32_t index) {
 void subghz_scene_more_raw_on_enter(void* context) {
     SubGhz* subghz = context;
 
+    submenu_set_header(subghz->submenu, "RAW signal");
     submenu_add_item(
         subghz->submenu,
         "Decode",

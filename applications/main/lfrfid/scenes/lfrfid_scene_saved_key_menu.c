@@ -21,6 +21,7 @@ void lfrfid_scene_saved_key_menu_on_enter(void* context) {
     LfRfid* app = context;
     Submenu* submenu = app->submenu;
 
+    submenu_set_header(submenu, furi_string_get_cstr(app->file_name));
     submenu_add_item(
         submenu, "Emulate", SubmenuIndexEmulate, lfrfid_scene_saved_key_menu_submenu_callback, app);
     submenu_add_item(

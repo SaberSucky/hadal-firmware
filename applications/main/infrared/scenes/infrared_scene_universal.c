@@ -18,6 +18,7 @@ void infrared_scene_universal_on_enter(void* context) {
     InfraredApp* infrared = context;
     Submenu* submenu = infrared->submenu;
 
+    submenu_set_header(submenu, "Universal remotes");
     submenu_add_item(
         submenu,
         "TVs",

@@ -1,3 +1,4 @@
+#include <toolbox/path.h>
 #include "../subghz_i.h" // IWYU pragma: keep
 
 enum SubmenuIndex {
@@ -14,6 +15,10 @@ void subghz_scene_saved_menu_submenu_callback(void* context, uint32_t index) {
 
 void subghz_scene_saved_menu_on_enter(void* context) {
     SubGhz* subghz = context;
+    FuriString* header = furi_string_alloc();
+    path_extract_filename(subghz->file_path, header, true);
+    submenu_set_header(subghz->submenu, furi_string_get_cstr(header));
+    furi_string_free(header);
     submenu_add_item(
         subghz->submenu,
         "Emulate",

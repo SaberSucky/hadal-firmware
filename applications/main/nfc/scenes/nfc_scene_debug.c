@@ -15,6 +15,7 @@ void nfc_scene_debug_on_enter(void* context) {
     NfcApp* nfc = context;
     Submenu* submenu = nfc->submenu;
 
+    submenu_set_header(submenu, "Debug");
     submenu_add_item(
         submenu, "Field", SubmenuDebugIndexField, nfc_scene_debug_submenu_callback, nfc);
 

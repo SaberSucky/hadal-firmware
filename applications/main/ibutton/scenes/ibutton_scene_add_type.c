@@ -4,6 +4,7 @@ void ibutton_scene_add_type_on_enter(void* context) {
     iButton* ibutton = context;
     Submenu* submenu = ibutton->submenu;
 
+    submenu_set_header(submenu, "Add manually");
     FuriString* tmp = furi_string_alloc();
 
     for(uint32_t protocol_id = 0; protocol_id < ibutton_protocols_get_protocol_count();

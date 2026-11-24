@@ -20,33 +20,34 @@ void nfc_scene_extra_actions_on_enter(void* context) {
     NfcApp* instance = context;
     Submenu* submenu = instance->submenu;
 
+    submenu_set_header(submenu, "Extra actions");
     submenu_add_item(
         submenu,
-        "Read Specific Card Type",
+        "Read specific card type",
         SubmenuIndexReadCardType,
         nfc_scene_extra_actions_submenu_callback,
         instance);
     submenu_add_item(
         submenu,
-        "MIFARE Classic Keys",
+        "MIFARE Classic keys",
         SubmenuIndexMfClassicKeys,
         nfc_scene_extra_actions_submenu_callback,
         instance);
     submenu_add_item(
         submenu,
-        "MIFARE Plus Keys",
+        "MIFARE Plus keys",
         SubmenuIndexMfPlusKeys,
         nfc_scene_extra_actions_submenu_callback,
         instance);
     submenu_add_item(
         submenu,
-        "MIFARE Ultralight C Keys",
+        "MIFARE Ultralight C keys",
         SubmenuIndexMfUltralightCKeys,
         nfc_scene_extra_actions_submenu_callback,
         instance);
     submenu_add_item(
         submenu,
-        "MIFARE UL AES Keys",
+        "MIFARE UL AES keys",
         SubmenuIndexMfUltralightAesKeys,
         nfc_scene_extra_actions_submenu_callback,
         instance);

@@ -153,6 +153,7 @@ void gpio_scene_usb_uart_cfg_on_enter(void* context) {
     VariableItem* item;
     char br_text[8];
 
+    variable_item_list_set_header(var_item_list, "USB-UART");
     item = variable_item_list_add(var_item_list, "USB Channel", 2, line_vcp_cb, app);
     variable_item_set_values_text(item, vcp_ch);
     variable_item_set_current_value_index(item, app->usb_uart_cfg->vcp_ch);

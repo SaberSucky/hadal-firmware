@@ -19,6 +19,7 @@ void lfrfid_scene_extra_actions_on_enter(void* context) {
     LfRfid* app = context;
     Submenu* submenu = app->submenu;
 
+    submenu_set_header(submenu, "Extra actions");
     submenu_add_item(
         submenu,
         "Read ASK (Regular)",

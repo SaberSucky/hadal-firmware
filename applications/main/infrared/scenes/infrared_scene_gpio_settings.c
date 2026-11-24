@@ -53,6 +53,7 @@ static void infrared_scene_gpio_settings_init(InfraredApp* infrared) {
     VariableItem* item;
     uint8_t value_index;
 
+    variable_item_list_set_header(var_item_list, "GPIO");
     item = variable_item_list_add(
         var_item_list,
         "Universal Speed",

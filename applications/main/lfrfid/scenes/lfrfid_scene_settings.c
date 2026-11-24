@@ -14,6 +14,7 @@ void lfrfid_scene_settings_on_enter(void* context) {
     LfRfid* app = context;
     Submenu* submenu = app->submenu;
 
+    submenu_set_header(submenu, "Settings");
     submenu_add_item(
         submenu,
         "Write Chips",
