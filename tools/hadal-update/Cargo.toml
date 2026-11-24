@@ -1,0 +1,20 @@
+[package]
+name = "hadal-update"
+version = "0.1.0"
+edition = "2021"
+description = "Installs a Hadal update package on a Flipper Zero, sending only the files that changed"
+publish = false
+
+[dependencies]
+anyhow = "1"
+# No "color": it pulls a windows-sys that needs dlltool, which the GNU toolchain doesn't put on PATH
+clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
+flate2 = "1"
+md-5 = "0.10"
+prost = "0.13"
+serialport = "4"
+tar = "0.4"
+
+[profile.release]
+lto = "thin"
+strip = true
