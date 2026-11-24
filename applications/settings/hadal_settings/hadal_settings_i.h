@@ -30,7 +30,11 @@ typedef enum {
     HadalViewVariableList,
     HadalViewNumberInput,
     HadalViewByteInput,
+    HadalViewPackPreview, /**< Asset Pack's, while it is open */
 } HadalView;
+
+/** Asset Pack's preview (scenes/hadal_settings_scene_asset_pack.c) */
+typedef struct HadalPackPreview HadalPackPreview;
 
 typedef struct {
     Gui* gui;
@@ -56,6 +60,7 @@ typedef struct {
     char pack_names[HADAL_MAX_PACKS][HADAL_PACK_NAME_SIZE];
     size_t pack_count;
     size_t pack_chosen; /**< entry of the pack list being looked at, 0 is None */
+    HadalPackPreview* pack_preview; /**< while Asset Pack is open */
 } HadalSettings;
 
 /** The desktop's settings (menu style, asset pack); a copy the caller frees */
@@ -65,3 +70,6 @@ void hadal_settings_desktop_set(HadalSettings* app, DesktopSettings* settings);
 
 /** Submenu callbacks: the item's index becomes the scene's custom event */
 void hadal_settings_submenu_callback(void* context, uint32_t index);
+
+/** Asset Pack's preview and its view, if the page was opened: freed as Hadal closes */
+void hadal_settings_pack_preview_free(HadalSettings* app);

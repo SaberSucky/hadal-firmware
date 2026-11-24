@@ -1147,51 +1147,33 @@ void elements_hint_bar(Canvas* canvas, const char* hints) {
     elements_hints(canvas, width / 2, canvas_height(canvas) - 3, AlignCenter, hints);
 }
 
-/* Abyss's light, 6 x 6, a glint up on its left: the end of every header's line */
-static const uint8_t elements_header_light[6] = {
-    0x1E, /* .####. */
-    0x27, /* #..### */
-    0x2F, /* #.#### */
-    0x3F, /* ###### */
-    0x3F, /* ###### */
-    0x1E, /* .####. */
-};
-
 #define ELEMENTS_HEADER_BASELINE 11 // the title's: a clear row over its capitals at the top
-#define ELEMENTS_HEADER_LIGHT_X  112 // the light's left: clear of the scrollbar's column
+#define ELEMENTS_HEADER_LINE_END 122 // the line's end: clear of the scrollbar's column
 
 void elements_header(Canvas* canvas, const char* title) {
     furi_check(canvas);
     furi_check(title);
     const int32_t baseline = ELEMENTS_HEADER_BASELINE;
-    const int32_t light_x = ELEMENTS_HEADER_LIGHT_X;
     const int32_t line_y = baseline - 4; // through the middle of the capitals
 
     canvas_set_color(canvas, ColorBlack);
     canvas_set_font(canvas, FontPrimary);
     FuriString* text = furi_string_alloc_set_str(title);
-    elements_string_fit_width(canvas, text, light_x - 3 - 8);
+    elements_string_fit_width(canvas, text, ELEMENTS_HEADER_LINE_END - 3 - 12);
     // bold whatever the font: an asset pack may give the bold slot a light font of its own, which
     // is drawn twice a pixel apart; the stock one is bold already
     const bool thicken = canvas_font_from_pack(FontPrimary);
     canvas_draw_str(canvas, 3, baseline, furi_string_get_cstr(text));
     if(thicken) canvas_draw_str(canvas, 4, baseline, furi_string_get_cstr(text));
     const int32_t line_x =
-        3 + thicken + canvas_string_width(canvas, furi_string_get_cstr(text)) + 4;
+        3 + thicken + canvas_string_width(canvas, furi_string_get_cstr(text)) + 5;
     furi_string_free(text);
 
-    // the line the light hangs from: dotted, dipping into the light at its end
-    for(int32_t x = line_x; x < light_x - 2; x += 2) {
+    // a dotted line that fades into the deep: its gaps widen from two pixels to six
+    const int32_t length = ELEMENTS_HEADER_LINE_END - line_x;
+    for(int32_t x = line_x; length > 0 && x <= ELEMENTS_HEADER_LINE_END;) {
         canvas_draw_dot(canvas, x, line_y);
-    }
-    canvas_draw_dot(canvas, light_x - 2, line_y);
-    canvas_draw_dot(canvas, light_x - 1, line_y + 1);
-    for(int32_t row = 0; row < 6; row++) {
-        for(int32_t col = 0; col < 6; col++) {
-            if(elements_header_light[row] & (1 << (5 - col))) {
-                canvas_draw_dot(canvas, light_x + col, line_y - 2 + row);
-            }
-        }
+        x += 2 + 4 * (x - line_x) / length;
     }
     canvas_set_font(canvas, FontSecondary);
 }

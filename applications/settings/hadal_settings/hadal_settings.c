@@ -30,6 +30,7 @@ static bool hadal_settings_back_event(void* context) {
 
 static HadalSettings* hadal_settings_alloc(void) {
     HadalSettings* app = malloc(sizeof(HadalSettings));
+    app->pack_preview = NULL; // made when Asset Pack first opens
     memset(app, 0, sizeof(*app));
 
     app->gui = furi_record_open(RECORD_GUI);
@@ -69,6 +70,7 @@ static HadalSettings* hadal_settings_alloc(void) {
 }
 
 static void hadal_settings_free(HadalSettings* app) {
+    hadal_settings_pack_preview_free(app);
     view_dispatcher_remove_view(app->view_dispatcher, HadalViewSubmenu);
     view_dispatcher_remove_view(app->view_dispatcher, HadalViewWidget);
     view_dispatcher_remove_view(app->view_dispatcher, HadalViewDialog);
