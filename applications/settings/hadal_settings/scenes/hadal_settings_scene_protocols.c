@@ -93,7 +93,8 @@ void hadal_settings_scene_protocols_on_enter(void* context) {
     item = variable_item_list_add(app->variable_list, "Restart to apply", 0, NULL, app);
     variable_item_set_indent(item, 1);
     restart_update(app, on);
-    item = variable_item_list_add(app->variable_list, "Sub-GHz Frequencies", 0, NULL, app);
+    item = variable_item_list_add(app->variable_list, "Sub-GHz frequencies", 0, NULL, app);
+    variable_item_set_opens(item, true);
     variable_item_list_set_enter_callback(app->variable_list, enter_callback, app);
     view_dispatcher_switch_to_view(app->view_dispatcher, HadalViewVariableList);
 }

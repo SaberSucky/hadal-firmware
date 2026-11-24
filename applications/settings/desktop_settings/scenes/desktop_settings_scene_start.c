@@ -6,6 +6,8 @@
 #include "desktop_settings_scene_i.h"
 #include <power/power_service/power.h>
 #include <loader/loader.h>
+#include <dolphin/dolphin.h>
+#include <furi_hal_version.h>
 
 typedef enum {
     DesktopSettingsPinSetup = 0,
@@ -122,6 +124,20 @@ static void desktop_settings_scene_start_auto_lock_delay_changed(VariableItem* i
 
 // Dummy mode's buttons mean nothing while it is off: they slide in under it when it is turned on
 static const char* const dummy_mode_text[] = {"Off", "On"};
+static const char* const happy_mode_text[] = {"Off", "On"};
+
+/* Happy mode: the dolphin never gets sad for being left alone. A switch here, where it was a
+ * page of its own with two buttons to say the same */
+static void desktop_settings_scene_start_happy_mode_changed(VariableItem* item) {
+    const uint8_t index = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, happy_mode_text[index]);
+    Dolphin* dolphin = furi_record_open(RECORD_DOLPHIN);
+    DolphinSettings settings;
+    dolphin_get_settings(dolphin, &settings);
+    settings.happy_mode = index;
+    dolphin_set_settings(dolphin, &settings);
+    furi_record_close(RECORD_DOLPHIN);
+}
 #define DUMMY_BUTTONS (DesktopSettingsDummyOkLong - DesktopSettingsDummyLeft + 1)
 
 static void
@@ -158,7 +174,8 @@ void desktop_settings_scene_start_on_enter(void* context) {
 
     // the header every Hadal page has
     variable_item_list_set_header(variable_item_list, "Desktop");
-    variable_item_list_add(variable_item_list, "PIN setup", 1, NULL, NULL);
+    item = variable_item_list_add(variable_item_list, "PIN setup", 1, NULL, NULL);
+    variable_item_set_opens(item, true);
 
     item = variable_item_list_add(
         variable_item_list,
@@ -233,12 +250,31 @@ void desktop_settings_scene_start_on_enter(void* context) {
 
     // the menu style and the asset pack are set in Settings > Hadal > Interface
 
-    variable_item_list_add(variable_item_list, "Change Flipper name", 0, NULL, app);
+    // the name it has, and ">" to change it
+    item = variable_item_list_add(variable_item_list, "Flipper name", 0, NULL, app);
+    variable_item_set_opens(item, true);
+    variable_item_set_current_value_text(item, furi_hal_version_get_name_ptr());
 
-    variable_item_list_add(variable_item_list, "Happy mode", 1, NULL, NULL);
+    {
+        Dolphin* dolphin = furi_record_open(RECORD_DOLPHIN);
+        DolphinSettings dolphin_settings;
+        dolphin_get_settings(dolphin, &dolphin_settings);
+        furi_record_close(RECORD_DOLPHIN);
+        item = variable_item_list_add(
+            variable_item_list,
+            "Happy mode",
+            COUNT_OF(happy_mode_text),
+            desktop_settings_scene_start_happy_mode_changed,
+            app);
+        value_index = dolphin_settings.happy_mode ? 1 : 0;
+        variable_item_set_current_value_index(item, value_index);
+        variable_item_set_current_value_text(item, happy_mode_text[value_index]);
+        variable_item_set_values_text(item, happy_mode_text);
+    }
 
     // what each button does is set in one place, Hadal > Desktop Keys: this opens it
-    variable_item_list_add(variable_item_list, "Buttons...", 1, NULL, NULL);
+    item = variable_item_list_add(variable_item_list, "Buttons", 1, NULL, NULL);
+    variable_item_set_opens(item, true);
 
     item = variable_item_list_add(
         variable_item_list,
@@ -266,6 +302,7 @@ void desktop_settings_scene_start_on_enter(void* context) {
     for(uint32_t i = 0; i < DUMMY_BUTTONS; i++) {
         item = variable_item_list_add(variable_item_list, dummy_buttons[i], 1, NULL, NULL);
         variable_item_set_indent(item, 1);
+        variable_item_set_opens(item, true);
     }
     desktop_settings_scene_start_dummy_buttons_hidden(app, !app->settings.dummy_mode);
 
@@ -375,10 +412,6 @@ bool desktop_settings_scene_start_on_event(void* context, SceneManagerEvent even
                 DesktopSettingsAppSceneFavorite,
                 SCENE_STATE_SET_DUMMY_APP | DummyAppOkLong);
             scene_manager_next_scene(app->scene_manager, DesktopSettingsAppSceneFavorite);
-            break;
-
-        case DesktopSettingsHappyMode:
-            scene_manager_next_scene(app->scene_manager, DesktopSettingsAppSceneHappyMode);
             break;
 
         default:

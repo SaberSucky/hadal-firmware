@@ -39,7 +39,7 @@ void hadal_settings_scene_desktop_keys_on_enter(void* context) {
     HadalSettings* app = context;
     VariableItemList* list = app->variable_list;
     variable_item_list_reset(list);
-    variable_item_list_set_header(list, "Desktop Keys");
+    variable_item_list_set_header(list, "Desktop keys");
     // a row a button: what it does on the right, as every setting has it; OK chooses another
     FuriString* action = furi_string_alloc();
     FuriString* label = furi_string_alloc();

@@ -5,7 +5,7 @@
 enum {
     StartInterface,
     StartProtocols,
-    StartMisc,
+    StartSpoofing,
 };
 
 void hadal_settings_scene_start_on_enter(void* context) {
@@ -22,7 +22,8 @@ void hadal_settings_scene_start_on_enter(void* context) {
         app->submenu, "Interface", StartInterface, hadal_settings_submenu_callback, app);
     submenu_add_item(
         app->submenu, "Protocols", StartProtocols, hadal_settings_submenu_callback, app);
-    submenu_add_item(app->submenu, "Misc", StartMisc, hadal_settings_submenu_callback, app);
+    submenu_add_item(
+        app->submenu, "Spoofing", StartSpoofing, hadal_settings_submenu_callback, app);
     submenu_set_selected_item(
         app->submenu, scene_manager_get_scene_state(app->scene_manager, HadalSettingsSceneStart));
     view_dispatcher_switch_to_view(app->view_dispatcher, HadalViewSubmenu);
@@ -36,8 +37,8 @@ bool hadal_settings_scene_start_on_event(void* context, SceneManagerEvent event)
         scene_manager_next_scene(app->scene_manager, HadalSettingsSceneInterface);
     } else if(event.event == StartProtocols) {
         scene_manager_next_scene(app->scene_manager, HadalSettingsSceneProtocols);
-    } else if(event.event == StartMisc) {
-        scene_manager_next_scene(app->scene_manager, HadalSettingsSceneMisc);
+    } else if(event.event == StartSpoofing) {
+        scene_manager_next_scene(app->scene_manager, HadalSettingsSceneSpoof);
     }
     return true;
 }

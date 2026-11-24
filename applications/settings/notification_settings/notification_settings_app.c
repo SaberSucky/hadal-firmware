@@ -742,6 +742,7 @@ static NotificationAppSettings* alloc_settings(void) {
 
     //--- RGB BACKLIGHT ---
     item = variable_item_list_add(app->variable_item_list, "RGB mod settings", 0, NULL, app);
+    variable_item_set_opens(item, true);
     //--- RGB BACKLIGHT END ---
 
     app->variable_item_list_rgb = variable_item_list_alloc();

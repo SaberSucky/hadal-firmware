@@ -1,6 +1,5 @@
 #include <furi.h>
 #include <gui/modules/popup.h>
-#include <gui/modules/dialog_ex.h>
 #include <gui/scene_manager.h>
 #include <namechanger/namechanger.h>
 #include <flipper_format/flipper_format.h>
@@ -59,7 +58,6 @@ DesktopSettingsApp* desktop_settings_app_alloc(void) {
     app->pin_input_view = desktop_view_pin_input_alloc();
     app->pin_setup_howto_view = desktop_settings_view_pin_setup_howto_alloc();
     app->pin_setup_howto2_view = desktop_settings_view_pin_setup_howto2_alloc();
-    app->dialog_ex = dialog_ex_alloc();
 
     view_dispatcher_add_view(
         app->view_dispatcher, DesktopSettingsAppViewMenu, submenu_get_view(app->submenu));
@@ -81,8 +79,6 @@ DesktopSettingsApp* desktop_settings_app_alloc(void) {
         app->view_dispatcher,
         DesktopSettingsAppViewIdPinSetupHowto2,
         desktop_settings_view_pin_setup_howto2_get_view(app->pin_setup_howto2_view));
-    view_dispatcher_add_view(
-        app->view_dispatcher, DesktopSettingsAppViewDialogEx, dialog_ex_get_view(app->dialog_ex));
 
     // Text Input
     app->text_input = text_input_alloc();
@@ -125,7 +121,6 @@ void desktop_settings_app_free(DesktopSettingsApp* app) {
     view_dispatcher_remove_view(app->view_dispatcher, DesktopSettingsAppViewIdPinInput);
     view_dispatcher_remove_view(app->view_dispatcher, DesktopSettingsAppViewIdPinSetupHowto);
     view_dispatcher_remove_view(app->view_dispatcher, DesktopSettingsAppViewIdPinSetupHowto2);
-    view_dispatcher_remove_view(app->view_dispatcher, DesktopSettingsAppViewDialogEx);
     // TextInput
     view_dispatcher_remove_view(app->view_dispatcher, DesktopSettingsAppViewTextInput);
     text_input_free(app->text_input);
@@ -136,7 +131,6 @@ void desktop_settings_app_free(DesktopSettingsApp* app) {
     desktop_view_pin_input_free(app->pin_input_view);
     desktop_settings_view_pin_setup_howto_free(app->pin_setup_howto_view);
     desktop_settings_view_pin_setup_howto2_free(app->pin_setup_howto2_view);
-    dialog_ex_free(app->dialog_ex);
     // View dispatcher
     view_dispatcher_free(app->view_dispatcher);
     scene_manager_free(app->scene_manager);

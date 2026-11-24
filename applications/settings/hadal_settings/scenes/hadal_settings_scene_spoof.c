@@ -52,7 +52,7 @@ static void spoof_save(Storage* storage, const Spoof* spoof) {
     FlipperFormat* file = flipper_format_file_alloc(storage);
     if(flipper_format_file_open_always(file, HADAL_SPOOF_PATH) &&
        flipper_format_write_header_cstr(file, HADAL_SPOOF_HEADER, HADAL_SPOOF_VERSION)) {
-        flipper_format_write_comment_cstr(file, "Set in Settings > Hadal > Misc > Spoofing");
+        flipper_format_write_comment_cstr(file, "Set in Settings > Hadal > Spoofing");
         if(spoof->has_mac) flipper_format_write_hex(file, HADAL_SPOOF_MAC, spoof->mac, 6);
         if(spoof->has_serial) flipper_format_write_hex(file, HADAL_SPOOF_SERIAL, spoof->serial, 8);
     }

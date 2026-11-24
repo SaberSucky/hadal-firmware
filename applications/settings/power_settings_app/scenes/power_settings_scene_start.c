@@ -52,11 +52,14 @@ void power_settings_scene_start_on_enter(void* context) {
 
     // the header every Hadal page has
     variable_item_list_set_header(variable_item_list, "Power");
-    variable_item_list_add(variable_item_list, "Battery info", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "Reboot", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "Power off", 1, NULL, NULL);
-
     VariableItem* item;
+    // each opens a page: ">" as every such row has it
+    item = variable_item_list_add(variable_item_list, "Battery info", 1, NULL, NULL);
+    variable_item_set_opens(item, true);
+    item = variable_item_list_add(variable_item_list, "Reboot", 1, NULL, NULL);
+    variable_item_set_opens(item, true);
+    item = variable_item_list_add(variable_item_list, "Power off", 1, NULL, NULL);
+    variable_item_set_opens(item, true);
     uint8_t value_index;
 
     item = variable_item_list_add(
