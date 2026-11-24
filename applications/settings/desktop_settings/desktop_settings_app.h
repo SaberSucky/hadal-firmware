@@ -29,6 +29,9 @@ typedef enum {
     DesktopSettingsAppViewDialogEx,
 } DesktopSettingsAppView;
 
+/** The argument that opens this page on its Buttons... item: Desktop Keys hands back to it */
+#define DESKTOP_SETTINGS_ARG_BUTTONS "buttons"
+
 typedef struct {
     DesktopSettings settings;
 
@@ -52,6 +55,7 @@ typedef struct {
     char device_name[FURI_HAL_VERSION_ARRAY_NAME_LENGTH];
 
     uint8_t menu_idx;
+    /** opened again from Desktop Keys (DESKTOP_SETTINGS_ARG_BUTTONS): starts on Buttons... */
+    bool open_at_buttons;
     uint32_t pin_menu_idx;
 } DesktopSettingsApp;
-

@@ -74,7 +74,10 @@ static void clock_settings_alarm_draw_callback(Canvas* canvas, void* ctx) {
 
     canvas_set_font(canvas, FontPrimary);
     FuriString* date = furi_string_alloc();
-    locale_format_date(date, &model->now, locale_get_date_format(), ".");
+    // as the Clock app: year first with dashes (ISO), else with dots
+    const LocaleDateFormat date_format = locale_get_date_format();
+    locale_format_date(
+        date, &model->now, date_format, date_format == LocaleDateFormatYMD ? "-" : ".");
     canvas_draw_str(canvas, 60, 44, furi_string_get_cstr(date));
     furi_string_free(date);
 

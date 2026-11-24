@@ -452,6 +452,11 @@ void furi_hal_rtc_set_alarm(const DateTime* datetime, bool enabled) {
     LL_RTC_DisableWriteProtection(RTC);
 
     if(datetime) {
+        // The chip takes a new alarm time only while the alarm is off (and it says it is ready):
+        // written while it was on, the time was dropped without a word, and the old one rang
+        LL_RTC_ALMA_Disable(RTC);
+        for(uint32_t wait = 0; !LL_RTC_IsActiveFlag_ALRAW(RTC) && wait < 100000; wait++) {
+        }
         LL_RTC_ALMA_ConfigTime(
             RTC,
             LL_RTC_ALMA_TIME_FORMAT_AM,

@@ -95,11 +95,12 @@ static void hadal_settings_free(HadalSettings* app) {
 
 int32_t hadal_settings_app(void* p) {
     HadalSettings* app = hadal_settings_alloc();
-    scene_manager_next_scene(app->scene_manager, HadalSettingsSceneStart);
-    // "desktop_keys" (Settings > Desktop > Buttons): straight to Desktop Keys, Back as from there
+    // "desktop_keys" (Settings > Desktop > Buttons): Desktop Keys alone, and Back closes it for
+    // the Desktop page, which the loader opens again after it
     if(p && strcmp(p, "desktop_keys") == 0) {
-        scene_manager_next_scene(app->scene_manager, HadalSettingsSceneInterface);
         scene_manager_next_scene(app->scene_manager, HadalSettingsSceneDesktopKeys);
+    } else {
+        scene_manager_next_scene(app->scene_manager, HadalSettingsSceneStart);
     }
     view_dispatcher_run(app->view_dispatcher);
     hadal_settings_free(app);

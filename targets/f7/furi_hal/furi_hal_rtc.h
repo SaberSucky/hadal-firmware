@@ -26,6 +26,13 @@ typedef enum {
     FuriHalRtcFlagDetailedFilename = (1 << 7),
 } FuriHalRtcFlag;
 
+/** Development mode is on: a restart of the firmware's own, while unlocked and on USB, starts
+ * unlocked (the desktop), and the desktop does not lock itself on USB */
+#define FURI_HAL_RTC_DEVELOPMENT_ON          (1UL << 0)
+/** Set by furi_hal_power_reset() (a crash, a reboot, an update), never by a power-on or a hard
+ * reset (Left+Back), which run no code first; the desktop clears it as it starts */
+#define FURI_HAL_RTC_DEVELOPMENT_OWN_RESTART (1UL << 1)
+
 typedef enum {
     FuriHalRtcBootModeNormal = 0, /**< Normal boot mode, default value */
     FuriHalRtcBootModeDfu, /**< Boot to DFU (MCU bootloader by ST) */
@@ -60,6 +67,9 @@ typedef enum {
     /* Set once the System settings these registers hold are also kept in a file; zero again
      * when the registers are wiped (a flat battery), so they are put back from the file */
     FuriHalRtcRegisterSettingsKept,
+    /** Development mode (FURI_HAL_RTC_DEVELOPMENT_*): whether it is on, and whether the last
+     * restart was the firmware's own */
+    FuriHalRtcRegisterDevelopment,
 
     FuriHalRtcRegisterMAX, /**< Service value, do not use */
 } FuriHalRtcRegister;

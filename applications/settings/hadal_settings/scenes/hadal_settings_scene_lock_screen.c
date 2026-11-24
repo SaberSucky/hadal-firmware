@@ -1,4 +1,5 @@
 #include "../hadal_settings_i.h"
+#include <furi_hal_rtc.h>
 
 /* The lock screen: lock at start, the clock, and what too many wrong PINs do */
 
@@ -12,6 +13,7 @@ enum {
     ItemClock,
     ItemFailAction,
     ItemFailLimit,
+    ItemDevelopment,
 };
 
 static const char* const off_on[] = {"Off", "On"};
@@ -77,6 +79,16 @@ static void action_changed(VariableItem* item) {
         index == DesktopPinFailActionNone);
 }
 
+// Development mode: the Flipper's own restarts on USB stay unlocked (see furi_hal_rtc.h)
+static void development_changed(VariableItem* item) {
+    const uint8_t index = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, off_on[index]);
+    const uint32_t reg = furi_hal_rtc_get_register(FuriHalRtcRegisterDevelopment);
+    furi_hal_rtc_set_register(
+        FuriHalRtcRegisterDevelopment,
+        index ? (reg | FURI_HAL_RTC_DEVELOPMENT_ON) : (reg & ~FURI_HAL_RTC_DEVELOPMENT_ON));
+}
+
 static void limit_changed(VariableItem* item) {
     const uint8_t index = variable_item_get_current_value_index(item);
     variable_item_set_current_value_text(item, fail_limit_texts[index]);
@@ -116,6 +128,16 @@ void hadal_settings_scene_lock_screen_on_enter(void* context) {
     variable_item_set_current_value_index(item, limit);
     variable_item_set_current_value_text(item, fail_limit_texts[limit]);
     variable_item_set_values_text(item, fail_limit_texts);
+
+    // last, as the least used: on, a crash or reboot on USB comes back unlocked
+    item = variable_item_list_add(app->variable_list, "Development", 2, development_changed, app);
+    const uint8_t development =
+        (furi_hal_rtc_get_register(FuriHalRtcRegisterDevelopment) & FURI_HAL_RTC_DEVELOPMENT_ON) ?
+            1 :
+            0;
+    variable_item_set_current_value_index(item, development);
+    variable_item_set_current_value_text(item, off_on[development]);
+    variable_item_set_values_text(item, off_on);
 
     free(settings);
     variable_item_list_set_selected_item(

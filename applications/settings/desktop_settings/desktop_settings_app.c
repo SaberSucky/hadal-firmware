@@ -152,9 +152,8 @@ void desktop_settings_app_free(DesktopSettingsApp* app) {
 }
 
 extern int32_t desktop_settings_app(void* p) {
-    UNUSED(p);
-
     DesktopSettingsApp* app = desktop_settings_app_alloc();
+    app->open_at_buttons = p && strcmp(p, DESKTOP_SETTINGS_ARG_BUTTONS) == 0;
     Desktop* desktop = furi_record_open(RECORD_DESKTOP);
 
     desktop_api_get_settings(desktop, &app->settings);

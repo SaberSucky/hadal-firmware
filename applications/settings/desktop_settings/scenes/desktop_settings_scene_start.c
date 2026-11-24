@@ -229,6 +229,12 @@ void desktop_settings_scene_start_on_enter(void* context) {
     variable_item_list_set_enter_callback(
         variable_item_list, desktop_settings_scene_start_var_list_enter_callback, app);
 
+    // back from Desktop Keys: where it was left
+    if(app->open_at_buttons) {
+        app->open_at_buttons = false;
+        variable_item_list_set_selected_item(variable_item_list, DesktopSettingsButtons);
+    }
+
     view_dispatcher_switch_to_view(app->view_dispatcher, DesktopSettingsAppViewVarItemList);
 }
 
@@ -254,8 +260,10 @@ bool desktop_settings_scene_start_on_event(void* context, SceneManagerEvent even
         case DesktopSettingsButtons: {
             // set where every button and tile is set; the Desktop page closes for it
             Loader* loader = furi_record_open(RECORD_LOADER);
+            loader_enqueue_launch(loader, "Hadal", "desktop_keys", LoaderDeferredLaunchFlagGui);
+            // and Back there comes back here, on this item
             loader_enqueue_launch(
-                loader, "Hadal", "desktop_keys", LoaderDeferredLaunchFlagGui);
+                loader, "Desktop", DESKTOP_SETTINGS_ARG_BUTTONS, LoaderDeferredLaunchFlagGui);
             furi_record_close(RECORD_LOADER);
             scene_manager_stop(app->scene_manager);
             view_dispatcher_stop(app->view_dispatcher);

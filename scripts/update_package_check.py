@@ -26,6 +26,7 @@ package (say a stock build) and reports any difference.
 Exit status is 1 if anything failed.
 """
 
+import io
 import argparse
 import os
 import struct
@@ -209,13 +210,11 @@ def read_resource_archive(path):
         header = HeatshrinkDataStreamHeader.unpack(f.read(7))
         body = f.read()
     tar_bytes = heatshrink2.decompress(body, window_sz2=header.window_size, lookahead_sz2=header.lookahead_size)
-    with tempfile.NamedTemporaryFile(suffix=".tar") as tmp:
-        tmp.write(tar_bytes)
-        tmp.flush()
-        with tarfile.open(tmp.name) as tar:
-            names = tar.getnames()
-            files = {m.name: tar.extractfile(m).read() for m in tar.getmembers() if m.isfile()}
-            first_file = next((m.name for m in tar.getmembers() if m.isfile()), None)
+    # read from memory: a temporary file cannot be opened a second time on Windows
+    with tarfile.open(fileobj=io.BytesIO(tar_bytes)) as tar:
+        names = tar.getnames()
+        files = {m.name: tar.extractfile(m).read() for m in tar.getmembers() if m.isfile()}
+        first_file = next((m.name for m in tar.getmembers() if m.isfile()), None)
     return names, files, first_file
 
 

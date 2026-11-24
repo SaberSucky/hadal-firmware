@@ -26,6 +26,9 @@ typedef enum {
 
 #define RPC_ALL_EVENTS (RpcEvtNewData | RpcEvtDisconnect)
 
+/** The largest free block a session needs to open: its ~9.5 KB and room left for the app */
+#define RPC_SESSION_HEAP_NEEDED (12u * 1024u)
+
 DICT_DEF2(RpcHandlerDict, pb_size_t, M_DEFAULT_OPLIST, RpcHandler, M_POD_OPLIST)
 
 typedef struct {
@@ -392,6 +395,15 @@ static void
 
 RpcSession* rpc_session_open(Rpc* rpc, RpcOwner owner) {
     furi_check(rpc);
+
+    // A session takes ~9.5 KB before it does anything (its 3 KB thread, the 1 KB stream, each
+    // system's context). Opened beside an app that left less (qFlipper connecting while Sub-GHz
+    // lists its saved files) it ran the RAM out and restarted the Flipper: it is refused instead,
+    // as every caller already allows
+    if(memmgr_heap_get_max_free_block() < RPC_SESSION_HEAP_NEEDED) {
+        FURI_LOG_E(TAG, "Not enough RAM for a session");
+        return NULL;
+    }
 
     RpcSession* session = malloc(sizeof(RpcSession));
     session->callbacks_mutex = furi_mutex_alloc(FuriMutexTypeNormal);

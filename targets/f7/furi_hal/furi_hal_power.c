@@ -348,6 +348,11 @@ void furi_hal_power_off(void) {
 }
 
 FURI_NORETURN void furi_hal_power_reset(void) {
+    // the firmware restarting itself: what development mode tells from a power-on
+    furi_hal_rtc_set_register(
+        FuriHalRtcRegisterDevelopment,
+        furi_hal_rtc_get_register(FuriHalRtcRegisterDevelopment) |
+            FURI_HAL_RTC_DEVELOPMENT_OWN_RESTART);
     NVIC_SystemReset();
 }
 

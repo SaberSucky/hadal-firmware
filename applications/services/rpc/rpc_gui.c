@@ -49,6 +49,12 @@ typedef enum {
 
 #define RpcGuiWorkerFlagAny (RpcGuiWorkerFlagTransmit | RpcGuiWorkerFlagExit)
 
+/** The encoded frame (1 KB and its header), and room left beside it for whoever runs */
+#define RPC_GUI_FRAME_HEAP_NEEDED (1024u + 64u + 2048u)
+
+/** Starting the stream: its own ~2.8 KB, and a frame sent after it */
+#define RPC_GUI_STREAM_HEAP_NEEDED (3u * 1024u + RPC_GUI_FRAME_HEAP_NEEDED)
+
 #define RPC_GUI_INPUT_RESET (0u)
 
 typedef struct {
@@ -111,6 +117,14 @@ static int32_t rpc_system_gui_screen_stream_frame_transmit_thread(void* context)
         uint32_t flags =
             furi_thread_flags_wait(RpcGuiWorkerFlagAny, FuriFlagWaitAny, FuriWaitForever);
 
+        // Sending a frame takes a copy of it (~1 KB) from the heap: an app that left less ran the
+        // RAM out from here and restarted the Flipper (qFlipper's screen over Sub-GHz). The frame
+        // is left out instead; the next redraw sends the screen whole again
+        if((flags & RpcGuiWorkerFlagTransmit) &&
+           memmgr_heap_get_max_free_block() < RPC_GUI_FRAME_HEAP_NEEDED) {
+            flags &= ~RpcGuiWorkerFlagTransmit;
+        }
+
         if(flags & RpcGuiWorkerFlagTransmit) {
             transmit_time = furi_get_tick();
             rpc_send(rpc_gui->session, rpc_gui->transmit_frame);
@@ -143,6 +157,11 @@ static void rpc_system_gui_start_screen_stream_process(const PB_Main* request, v
     if(rpc_gui->is_streaming) {
         rpc_send_and_release_empty(
             session, request->command_id, PB_CommandStatus_ERROR_VIRTUAL_DISPLAY_ALREADY_STARTED);
+    } else if(memmgr_heap_get_max_free_block() < RPC_GUI_STREAM_HEAP_NEEDED) {
+        // the stream's frame, message and thread (~2.8 KB) and its first frames: refused, not
+        // the RAM run out beside an app that left little
+        FURI_LOG_E(TAG, "Not enough RAM for the screen stream");
+        rpc_send_and_release_empty(session, request->command_id, PB_CommandStatus_ERROR_BUSY);
     } else {
         rpc_send_and_release_empty(session, request->command_id, PB_CommandStatus_OK);
 

@@ -38,7 +38,8 @@ static void added(HadalSettings* app, const char* entry) {
 void hadal_settings_scene_main_menu_add_on_enter(void* context) {
     HadalSettings* app = context;
     submenu_reset(app->submenu);
-    submenu_set_header(app->submenu, "Add to the main menu");
+    // as the item that opens it (the header has room for about 15 letters)
+    submenu_set_header(app->submenu, "Add an app");
     submenu_add_item(
         app->submenu, "App on the SD card...", ADD_SD_APP, hadal_settings_submenu_callback, app);
     if(!hadal_main_menu_contains(&app->main_menu, LOADER_APPLICATIONS_NAME)) {

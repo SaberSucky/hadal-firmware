@@ -44,6 +44,7 @@ static void desktop_auto_lock_inhibit(Desktop*);
 static void desktop_start_auto_lock_timer(Desktop*);
 static void desktop_apply_settings(Desktop*);
 static void desktop_favorites_to_keybinds(Desktop* desktop);
+static bool desktop_development_on_usb(void);
 static void desktop_apply_asset_pack(Desktop*);
 
 static void desktop_loader_callback(const void* message, void* context) {
@@ -216,6 +217,8 @@ static bool desktop_custom_event_callback(void* context, uint32_t event) {
             if((desktop->settings.usb_inhibit_auto_lock) && (furi_hal_usb_is_locked())) {
                 return (0);
             }
+            // nor while development mode is on and a cable is in
+            if(desktop_development_on_usb()) return 0;
 
             desktop_lock(desktop);
         }
@@ -432,7 +435,8 @@ static void desktop_favorites_to_keybinds(Desktop* desktop) {
         if(!app[0]) continue; // as it always did: nothing to move
         if(!desktop_keybinds_file_get(desktop->storage, moves[i].bind, existing)) {
             const bool none = app[0] == '?' && app[1] == '\0';
-            if(!desktop_keybinds_file_set(desktop->storage, moves[i].bind, none ? "Nothing" : app)) {
+            if(!desktop_keybinds_file_set(
+                   desktop->storage, moves[i].bind, none ? "Nothing" : app)) {
                 continue; // tried again at the next start
             }
         }
@@ -471,6 +475,27 @@ static void desktop_apply_settings(Desktop* desktop) {
     }
 
     desktop->in_transition = false;
+}
+
+/** Development mode is on and a cable is in (the charger's input reads USB's 5 V) */
+static bool desktop_development_on_usb(void) {
+    return (furi_hal_rtc_get_register(FuriHalRtcRegisterDevelopment) &
+            FURI_HAL_RTC_DEVELOPMENT_ON) &&
+           furi_hal_power_get_usb_voltage() > 4.0f;
+}
+
+/** At the start: development mode is on, on USB, and this start is the firmware's own restart
+ * (a crash, a reboot, an update) from unlocked. A power-on or a hard reset (Left+Back), or a
+ * restart while locked, still asks for the PIN. Reads and clears the restart's mark */
+static bool desktop_development_keeps_unlocked(void) {
+    const uint32_t development = furi_hal_rtc_get_register(FuriHalRtcRegisterDevelopment);
+    furi_hal_rtc_set_register(
+        FuriHalRtcRegisterDevelopment, development & ~FURI_HAL_RTC_DEVELOPMENT_OWN_RESTART);
+    const bool keeps = (development & FURI_HAL_RTC_DEVELOPMENT_OWN_RESTART) &&
+                       !furi_hal_rtc_is_flag_set(FuriHalRtcFlagLock) &&
+                       desktop_development_on_usb();
+    if(keeps) FURI_LOG_W(TAG, "Development mode: restarted unlocked");
+    return keeps;
 }
 
 /**
@@ -810,8 +835,10 @@ int32_t desktop_srv(void* p) {
 
     scene_manager_next_scene(desktop->scene_manager, DesktopSceneMain);
 
-    // with a PIN set, the Flipper starts locked unless the user turned that off
-    if(desktop_pin_code_is_set() && !desktop->settings.boot_unlocked) {
+    // with a PIN set, the Flipper starts locked unless the user turned that off, or it restarted
+    // itself in development mode
+    if(desktop_pin_code_is_set() && !desktop->settings.boot_unlocked &&
+       !desktop_development_keeps_unlocked()) {
         desktop_lock(desktop);
     } else {
         desktop_start_usb_port();
