@@ -13,7 +13,7 @@ pub struct Main {
     pub has_next: bool,
     #[prost(
         oneof = "Content",
-        tags = "4, 19, 5, 6, 31, 32, 33, 41, 46, 17, 18, 24, 25, 7, 8, 9, 10, 11, 12, 13, 14, 15"
+        tags = "4, 19, 5, 6, 31, 32, 33, 41, 46, 17, 18, 24, 25, 59, 60, 7, 8, 9, 10, 11, 12, 13, 14, 15"
     )]
     pub content: Option<Content>,
 }
@@ -46,6 +46,10 @@ pub enum Content {
     StatRequest(PathRequest),
     #[prost(message, tag = "25")]
     StatResponse(StatResponse),
+    #[prost(message, tag = "59")]
+    TimestampRequest(PathRequest),
+    #[prost(message, tag = "60")]
+    TimestampResponse(TimestampResponse),
     #[prost(message, tag = "7")]
     ListRequest(ListRequest),
     #[prost(message, tag = "8")]
@@ -135,6 +139,12 @@ pub struct File {
 pub struct StatResponse {
     #[prost(message, optional, tag = "1")]
     pub file: Option<File>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+pub struct TimestampResponse {
+    #[prost(uint32, tag = "1")]
+    pub timestamp: u32,
 }
 
 #[derive(Clone, PartialEq, Message)]

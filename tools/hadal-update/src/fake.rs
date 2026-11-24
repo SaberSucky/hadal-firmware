@@ -21,6 +21,25 @@ pub struct Card {
     pub app_open: bool,
     pub armed: Option<String>,
     pub rebooted: bool,
+    /// FAT timestamps: 2 s apart, one tick per file written
+    pub stamps: BTreeMap<String, u32>,
+    clock: u32,
+    pub md5_requests: usize,
+    /// The most bytes of requests (writes aside) the tool sent before reading an answer
+    pub most_unanswered: usize,
+}
+
+impl Card {
+    /// A file as if written now
+    pub fn put(&mut self, path: &str, data: &[u8]) {
+        self.files.insert(path.to_string(), data.to_vec());
+        self.touch(path);
+    }
+
+    fn touch(&mut self, path: &str) {
+        self.clock += 2;
+        self.stamps.insert(path.to_string(), 1_700_000_000 + self.clock);
+    }
 }
 
 pub struct Fake {
@@ -29,6 +48,7 @@ pub struct Fake {
     input: Vec<u8>,
     output: VecDeque<u8>,
     writing: Option<(u32, String)>,
+    unanswered: usize,
 }
 
 impl Fake {
@@ -39,6 +59,7 @@ impl Fake {
             input: Vec::new(),
             output: VecDeque::new(),
             writing: None,
+            unanswered: 0,
         };
         f.out(b"\r\n_.-------.._  Welcome to Flipper Zero Command Line Interface!\r\n\r\n>: ");
         f
@@ -85,6 +106,11 @@ impl Fake {
                 }
                 let m = Main::decode(&slice[..len as usize]).expect("a message the fake can read");
                 self.input.drain(..head + len as usize);
+                if !matches!(m.content, Some(Content::WriteRequest(_))) {
+                    self.unanswered += head + len as usize;
+                    let mut card = self.card.borrow_mut();
+                    card.most_unanswered = card.most_unanswered.max(self.unanswered);
+                }
                 self.handle(m);
             }
         }
@@ -147,7 +173,19 @@ impl Fake {
                     );
                 }
             }
-            Some(Content::Md5sumRequest(r)) => match card.files.get(&r.path) {
+            Some(Content::TimestampRequest(r)) => match card.stamps.get(&r.path) {
+                Some(&timestamp) => self.reply(
+                    id,
+                    0,
+                    false,
+                    Some(Content::TimestampResponse(TimestampResponse { timestamp })),
+                ),
+                None => self.reply(id, STATUS_STORAGE_NOT_EXIST, false, None),
+            },
+            Some(Content::Md5sumRequest(r)) => match {
+                card.md5_requests += 1;
+                card.files.get(&r.path)
+            } {
                 Some(d) => {
                     let md5sum = format!("{:x}", Md5::digest(d));
                     self.reply(id, 0, false, Some(Content::Md5sumResponse(Md5sumResponse { md5sum })))
@@ -169,12 +207,13 @@ impl Fake {
                 self.reply(id, status, false, None)
             }
             Some(Content::DeleteRequest(r)) => {
+                card.stamps.remove(&r.path);
                 let status = if card.files.remove(&r.path).is_some() { 0 } else { STATUS_STORAGE_NOT_EXIST };
                 self.reply(id, status, false, None)
             }
             Some(Content::WriteRequest(r)) => {
                 if self.writing.as_ref().map(|(i, _)| *i) != Some(id) {
-                    card.files.insert(r.path.clone(), Vec::new());
+                    card.put(&r.path, &[]);
                     self.writing = Some((id, r.path.clone()));
                 }
                 let data = r.file.map(|f| f.data).unwrap_or_default();
@@ -187,6 +226,12 @@ impl Fake {
             }
             Some(Content::ReadRequest(r)) => match card.files.get(&r.path).cloned() {
                 Some(d) => {
+                    let d = d[(r.offset as usize).min(d.len())..].to_vec();
+                    if d.is_empty() {
+                        let file = Some(File::default());
+                        let content = Content::ReadResponse(ReadResponse { file, ranged: true });
+                        return self.reply(id, 0, false, Some(content));
+                    }
                     let chunks: Vec<&[u8]> = d.chunks(512).collect();
                     for (i, c) in chunks.iter().enumerate() {
                         let file = Some(File {
@@ -231,6 +276,7 @@ impl Read for Fake {
         if self.output.is_empty() {
             return Err(io::ErrorKind::TimedOut.into());
         }
+        self.unanswered = 0;
         let n = buf.len().min(self.output.len());
         for (i, b) in self.output.drain(..n).enumerate() {
             buf[i] = b;
@@ -254,5 +300,9 @@ impl Write for Fake {
 impl Port for Fake {
     fn bytes_to_read(&self) -> io::Result<u32> {
         Ok(self.output.len() as u32)
+    }
+
+    fn set_timeout(&mut self, _timeout: std::time::Duration) -> io::Result<()> {
+        Ok(())
     }
 }

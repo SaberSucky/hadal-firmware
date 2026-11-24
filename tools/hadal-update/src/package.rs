@@ -43,6 +43,11 @@ pub struct Package {
     pub build: Option<Build>,
     /// Files in the folder that aren't sent (subfolders)
     pub skipped: Vec<String>,
+    /// The files the updater checks against a CRC before it uses any: the loader when the update
+    /// is armed, the radio stack and the firmware image (its DFU CRC) in the preflight, before the
+    /// restart into the updater. A damaged copy is caught there, so the MD5 check after sending
+    /// can go
+    pub checked_by_updater: Vec<String>,
 }
 
 impl Package {
@@ -87,12 +92,14 @@ pub fn load(path: &Path) -> Result<Package> {
             .then_with(|| a.name.cmp(&b.name))
     });
     check_manifest(&files)?;
+    let checked_by_updater = manifest_values(&files, &["Loader", "Radio", "Firmware"]);
     let build = beside.as_deref().and_then(find_build);
     Ok(Package {
         name,
         files,
         build,
         skipped,
+        checked_by_updater,
     })
 }
 
@@ -212,6 +219,19 @@ fn check_manifest(files: &[PkgFile]) -> Result<()> {
     Ok(())
 }
 
+/// The files update.fuf names under these keys
+fn manifest_values(files: &[PkgFile], keys: &[&str]) -> Vec<String> {
+    let Some(manifest) = files.iter().find(|f| f.name == MANIFEST) else {
+        return Vec::new();
+    };
+    String::from_utf8_lossy(&manifest.data)
+        .lines()
+        .filter_map(|line| line.split_once(':'))
+        .filter(|(key, value)| keys.contains(&key.trim()) && !value.trim().is_empty())
+        .map(|(_, value)| value.trim().to_string())
+        .collect()
+}
+
 /// The newest *-full-*.json in the folder that holds the package
 fn find_build(dir: &Path) -> Option<Build> {
     let mut best: Option<(SystemTime, PathBuf)> = None;
@@ -303,6 +323,7 @@ mod tests {
         assert!(e.contains("b.ths"), "{e}");
         files.push(PkgFile::new("b.ths".into(), vec![3]));
         check_manifest(&files).unwrap();
+        assert_eq!(manifest_values(&files, &["Loader", "Radio", "Firmware"]), ["firmware.dfu"]);
     }
 
     #[test]

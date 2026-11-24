@@ -46,14 +46,6 @@ pub struct Report {
     pub lines: Vec<String>,
 }
 
-/// What was added since `offset`; all of it if the log was started over in between
-pub fn since(log: &[u8], offset: u64) -> &[u8] {
-    match usize::try_from(offset) {
-        Ok(o) if o <= log.len() => &log[o..],
-        _ => log,
-    }
-}
-
 pub fn parse(new_part: &[u8]) -> Report {
     let text = String::from_utf8_lossy(new_part);
     let mut outcome = Outcome::Unknown;
@@ -134,11 +126,5 @@ mod tests {
     fn a_rollback_is_a_failure() {
         let r = parse(b"[1] rollback: hadal-1 put back, the new firmware did not start\n[2] stage 17, progress 100\n");
         assert!(matches!(r.outcome, Outcome::Failed(_)));
-    }
-
-    #[test]
-    fn since_offset() {
-        assert_eq!(since(b"old\nnew\n", 4), b"new\n");
-        assert_eq!(since(b"new\n", 100), b"new\n"); // started over
     }
 }

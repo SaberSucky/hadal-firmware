@@ -3,8 +3,9 @@
 //!
 //! The protocol follows scripts/selfupdate.py and scripts/flipper/storage.py, over RPC (protobuf on
 //! the same serial port, after `start_rpc_session`): writes in 4 KB pieces go faster than the
-//! command line's, and one listing gives every file's size.
+//! command line's, one listing gives every file's size, and small requests can overlap.
 
+mod cache;
 #[cfg(test)]
 mod fake;
 mod link;
@@ -14,7 +15,7 @@ mod rpc;
 mod ui;
 mod updatelog;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::thread::sleep;
@@ -23,15 +24,16 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Result};
 use clap::Parser;
 
-use link::{Link, Lost, Timeout};
+use cache::{Cache, Seen};
+use link::{Link, Timeout};
 use package::{Package, PkgFile, MANIFEST};
 use rpc::Rpc;
 use updatelog::Outcome;
 
 const UPDATE_ROOT: &str = "/ext/update";
-/// What an upload runs at, each file's MD5 check included, for the dry run's estimate. Measured on
-/// a Flipper: 989 KB in 7.7 s (147 KB/s while sending)
-const EST_SPEED: f64 = 128_000.0;
+/// What an upload runs at, for the dry run's estimate. Measured on a Flipper: 990 KB in 6.9 s,
+/// firmware.dfu's and updater.bin's MD5s left to the updater's CRC checks
+const EST_SPEED: f64 = 143_000.0;
 
 /// Install a Hadal update package on a Flipper Zero, sending only the files that changed
 #[derive(Parser)]
@@ -53,6 +55,11 @@ struct Args {
     #[arg(short, long)]
     force: bool,
 
+    /// Check every sent file's MD5 on the Flipper, also those the updater checks by CRC itself
+    /// (firmware.dfu, updater.bin, radio.bin)
+    #[arg(long)]
+    verify: bool,
+
     /// Upload only; don't install
     #[arg(long)]
     no_install: bool,
@@ -73,6 +80,14 @@ struct Args {
     #[arg(long, value_name = "BYTES", default_value_t = 4096,
           value_parser = clap::value_parser!(u32).range(512..=16384))]
     chunk: u32,
+
+    /// Bytes handed to the USB driver per write (0: each message on its own, as measured)
+    #[arg(long, value_name = "BYTES", default_value_t = 0, hide = true)]
+    batch: u32,
+
+    /// Time writes to a scratch file on the Flipper (then deleted) at a few sizes, and stop
+    #[arg(long, hide = true)]
+    bench: bool,
 
     /// Print every RPC message
     #[arg(short, long)]
@@ -105,9 +120,11 @@ struct Step<'a> {
 
 struct Plan<'a> {
     steps: Vec<Step<'a>>,
-    /// Files in the Flipper's package folder that this package doesn't have
+    /// Old package files in the Flipper's folder that this package doesn't have
     extras: Vec<String>,
     folder_exists: bool,
+    /// How many files the Flipper hashed to compare (the rest: their size, or the cache)
+    hashed: usize,
 }
 
 impl Plan<'_> {
@@ -118,6 +135,10 @@ impl Plan<'_> {
             .map(|s| s.file)
     }
 }
+
+/// Files whose MD5 isn't checked after sending (the updater checks their CRC): recorded in the
+/// cache once the install has gone through
+type Unchecked = Vec<(String, Seen)>;
 
 fn run(args: &Args) -> Result<()> {
     let started = Instant::now();
@@ -159,12 +180,18 @@ fn run(args: &Args) -> Result<()> {
         port.name,
         running(&info)
     );
+    if args.bench {
+        return bench(rpc, &pkg);
+    }
 
-    let plan = compare(&mut rpc, &pkg, &remote_dir, args.force)?;
+    let mut cache = Cache::load(info.get("hardware_uid").map_or("", String::as_str));
+    let compare_started = Instant::now();
+    let plan = compare(&mut rpc, &pkg, &remote_dir, args.force, &mut cache)?;
+    cache.save();
     let upload_bytes: u64 = plan.uploads().map(PkgFile::len).sum();
     let upload_count = plan.uploads().count();
     let removals = if args.keep_extra { 0 } else { plan.extras.len() };
-    show_plan(&plan, &remote_dir, args.keep_extra);
+    show_plan(&plan, &remote_dir, args.keep_extra, compare_started.elapsed());
 
     if args.dry_run {
         rpc.stop();
@@ -192,24 +219,32 @@ fn run(args: &Args) -> Result<()> {
         return Ok(());
     }
 
+    let mut unchecked = Unchecked::new();
     if upload_count > 0 {
-        upload(&mut rpc, &plan, &remote_dir, args.chunk as usize, upload_bytes)?;
+        unchecked = upload(&mut rpc, &plan, &pkg, &remote_dir, args, upload_bytes, &mut cache)?;
     } else {
         println!("\nNothing to send: the Flipper already has every file.");
     }
     if removals > 0 {
-        for name in &plan.extras {
-            rpc.delete(&format!("{remote_dir}/{name}"))?;
-            println!("  removed {name}");
+        let paths: Vec<String> = plan
+            .extras
+            .iter()
+            .map(|name| format!("{remote_dir}/{name}"))
+            .collect();
+        rpc.delete_all(&paths)?;
+        for p in &paths {
+            cache.forget(p);
         }
+        println!("  removed {}", plan.extras.join(", "));
     }
+    cache.save();
 
     if args.no_install {
         rpc.stop();
         println!("\nUploaded. Not installed (--no-install).");
         return Ok(());
     }
-    install(rpc, &port.name, &pkg, &remote_dir, args, started)
+    install(rpc, &port.name, &pkg, &remote_dir, args, started, cache, unchecked)
 }
 
 fn plural(n: usize) -> &'static str {
@@ -221,7 +256,7 @@ fn plural(n: usize) -> &'static str {
 }
 
 /// "hadal-20261124 (7fdcf919), built 24-11-2026"
-fn running(info: &std::collections::BTreeMap<String, String>) -> String {
+fn running(info: &BTreeMap<String, String>) -> String {
     let get = |k: &str| info.get(k).map(String::as_str).unwrap_or("?");
     let dirty = if info.get("firmware_commit_dirty").is_some_and(|v| v == "true") {
         "+"
@@ -246,7 +281,13 @@ fn connect(port: &str) -> Result<Link> {
     }
 }
 
-fn compare<'a>(rpc: &mut Rpc, pkg: &'a Package, remote_dir: &str, force: bool) -> Result<Plan<'a>> {
+fn compare<'a>(
+    rpc: &mut Rpc,
+    pkg: &'a Package,
+    remote_dir: &str,
+    force: bool,
+    cache: &mut Cache,
+) -> Result<Plan<'a>> {
     let remote = rpc.list(remote_dir)?;
     let folder_exists = remote.is_some();
     let remote: HashMap<String, rpc::RemoteFile> = remote
@@ -255,30 +296,80 @@ fn compare<'a>(rpc: &mut Rpc, pkg: &'a Package, remote_dir: &str, force: bool) -
         .map(|f| (f.name.clone(), f))
         .collect();
 
-    let mut line = ui::Line::new();
-    let mut steps = Vec::new();
+    let mut actions: Vec<Option<Action>> = Vec::new();
     for file in &pkg.files {
-        let action = match remote.get(&file.name) {
-            None => Action::New,
+        actions.push(match remote.get(&file.name) {
+            None => Some(Action::New),
             Some(r) if r.is_dir => {
                 bail!("{remote_dir}/{} is a folder on the Flipper, not a file", file.name)
             }
-            Some(_) if force => Action::Forced,
-            Some(r) if u64::from(r.size) != file.len() => Action::Changed,
-            Some(_) => {
-                line.show(&format!("  comparing {}…", file.name), true);
-                let theirs = rpc.md5(&format!("{remote_dir}/{}", file.name))?;
-                if theirs.eq_ignore_ascii_case(&file.md5) {
-                    Action::Same
-                } else {
-                    Action::Changed
-                }
-            }
-        };
-        steps.push(Step { file, action });
+            Some(_) if force => Some(Action::Forced),
+            Some(r) if u64::from(r.size) != file.len() => Some(Action::Changed),
+            Some(_) => None, // the same size: the MD5 decides
+        });
     }
-    line.clear();
 
+    // A same-size file the cache saw with this timestamp has the MD5 it noted then; the Flipper
+    // hashes the others. Timestamps are cheap: all of them in one round trip
+    let undecided: Vec<usize> = (0..pkg.files.len()).filter(|&i| actions[i].is_none()).collect();
+    let paths: Vec<String> = undecided
+        .iter()
+        .map(|&i| format!("{remote_dir}/{}", pkg.files[i].name))
+        .collect();
+    let stamps = if paths.is_empty() {
+        Vec::new()
+    } else {
+        rpc.timestamps(&paths)?
+    };
+    let mut theirs: Vec<Option<String>> = vec![None; undecided.len()];
+    let mut to_hash: Vec<usize> = Vec::new();
+    for (k, &i) in undecided.iter().enumerate() {
+        let size = pkg.files[i].len() as u32;
+        match stamps[k].and_then(|ts| cache.md5(&paths[k], size, ts)) {
+            Some(md5) => theirs[k] = Some(md5.to_string()),
+            None => to_hash.push(k),
+        }
+    }
+    if !to_hash.is_empty() {
+        let mut line = ui::Line::new();
+        line.show(
+            &format!("  {} file{} to hash on the Flipper…", to_hash.len(), plural(to_hash.len())),
+            true,
+        );
+        let hash_paths: Vec<String> = to_hash.iter().map(|&k| paths[k].clone()).collect();
+        let sums = rpc.md5s(&hash_paths)?;
+        line.clear();
+        for (&k, md5) in to_hash.iter().zip(sums) {
+            if let Some(timestamp) = stamps[k] {
+                let size = pkg.files[undecided[k]].len() as u32;
+                cache.set(
+                    &paths[k],
+                    Seen {
+                        size,
+                        timestamp,
+                        md5: md5.clone(),
+                    },
+                );
+            }
+            theirs[k] = Some(md5);
+        }
+    }
+    for (k, &i) in undecided.iter().enumerate() {
+        let same = theirs[k]
+            .as_deref()
+            .is_some_and(|m| m.eq_ignore_ascii_case(&pkg.files[i].md5));
+        actions[i] = Some(if same { Action::Same } else { Action::Changed });
+    }
+
+    let steps = pkg
+        .files
+        .iter()
+        .zip(actions)
+        .map(|(file, action)| Step {
+            file,
+            action: action.expect("every file decided"),
+        })
+        .collect();
     let mut extras: Vec<String> = remote
         .values()
         .filter(|r| {
@@ -291,6 +382,7 @@ fn compare<'a>(rpc: &mut Rpc, pkg: &'a Package, remote_dir: &str, force: bool) -
         steps,
         extras,
         folder_exists,
+        hashed: to_hash.len(),
     })
 }
 
@@ -306,10 +398,17 @@ fn left_by_a_package(name: &str) -> bool {
             .any(|ext| lower.ends_with(ext))
 }
 
-fn show_plan(plan: &Plan, remote_dir: &str, keep_extra: bool) {
+fn show_plan(plan: &Plan, remote_dir: &str, keep_extra: bool, took: Duration) {
     println!();
     if plan.folder_exists {
-        println!("On the Flipper  {remote_dir}/");
+        println!(
+            "On the Flipper  {remote_dir}/  (compared in {}{})",
+            ui::took(took),
+            match plan.hashed {
+                0 => String::new(),
+                n => format!(", {n} file{} hashed there", plural(n)),
+            }
+        );
     } else {
         println!("On the Flipper  {remote_dir}/ isn't there yet: every file goes");
     }
@@ -356,26 +455,40 @@ fn show_plan(plan: &Plan, remote_dir: &str, keep_extra: bool) {
     }
 }
 
-fn upload(rpc: &mut Rpc, plan: &Plan, remote_dir: &str, chunk: usize, total: u64) -> Result<()> {
+fn upload(
+    rpc: &mut Rpc,
+    plan: &Plan,
+    pkg: &Package,
+    remote_dir: &str,
+    args: &Args,
+    total: u64,
+    cache: &mut Cache,
+) -> Result<Unchecked> {
     let count = plan.uploads().count();
     println!("\nSending {count} file{}, {}", plural(count), ui::size(total));
     rpc.mkdir(UPDATE_ROOT)?;
     rpc.mkdir(remote_dir)?;
 
+    let (chunk, batch) = (args.chunk as usize, args.batch as usize);
     let width = plan.uploads().map(|f| f.name.len()).max().unwrap_or(0);
     let mut line = ui::Line::new();
     let all = Instant::now();
     let mut done: u64 = 0;
     let mut send_time = Duration::ZERO;
+    let mut sent: Vec<(String, &PkgFile, bool)> = Vec::new();
     for file in plan.uploads() {
         let path = format!("{remote_dir}/{}", file.name);
+        let check = args.verify || !pkg.checked_by_updater.contains(&file.name);
+        // until it's there whole, the cache knows nothing about it
+        cache.forget(&path);
         let mut attempt = 1;
         loop {
             let t = Instant::now();
-            rpc.write_file(&path, &file.data, chunk, |sent| {
+            rpc.write_file(&path, &file.data, chunk, batch, |sent| {
                 let sent = sent as u64;
                 let overall = done + sent;
-                let rate = overall as f64 / (send_time + t.elapsed()).as_secs_f64().max(0.001);
+                let elapsed = send_time + t.elapsed();
+                let rate = overall as f64 / elapsed.as_secs_f64().max(0.001);
                 let left = Duration::from_secs_f64(total.saturating_sub(overall) as f64 / rate.max(1.0));
                 line.show(
                     &format!(
@@ -385,49 +498,76 @@ fn upload(rpc: &mut Rpc, plan: &Plan, remote_dir: &str, chunk: usize, total: u64
                         sent * 100 / file.len().max(1),
                         ui::size(overall),
                         ui::size(total),
-                        ui::speed(overall, send_time + t.elapsed()),
+                        ui::speed(overall, elapsed),
                         ui::clock(left),
                     ),
                     false,
                 );
             })?;
             let sent_in = t.elapsed();
-            line.show(&format!("  {:<width$}  checking…", file.name), true);
-            let theirs = rpc.md5(&path)?;
+            let theirs = if check {
+                line.show(&format!("  {:<width$}  checking…", file.name), true);
+                Some(rpc.md5(&path)?)
+            } else {
+                None
+            };
             line.clear();
-            if theirs.eq_ignore_ascii_case(&file.md5) {
+            if theirs.as_deref().is_none_or(|m| m.eq_ignore_ascii_case(&file.md5)) {
                 send_time += sent_in;
                 done += file.len();
                 println!(
-                    "  ✓ {:<width$}  {:>7}  {:>6}  {}",
+                    "  ✓ {:<width$}  {:>7}  {:>6}  {}{}",
                     file.name,
                     ui::size(file.len()),
                     ui::took(sent_in),
-                    ui::speed(file.len(), sent_in)
+                    ui::speed(file.len(), sent_in),
+                    if check { "" } else { "  (its CRC is checked by the updater)" }
                 );
                 break;
             }
             if attempt == 2 {
                 bail!(
-                    "{} arrived different twice (MD5 on the Flipper {theirs}, here {}).\n\
+                    "{} arrived different twice (MD5 on the Flipper {}, here {}).\n\
                      The SD card may be failing: check it, or try another card.",
                     file.name,
+                    theirs.unwrap_or_default(),
                     file.md5
                 );
             }
             println!("  ! {} arrived different; sending it again", file.name);
             attempt += 1;
         }
+        sent.push((path, file, check));
     }
     println!(
-        "  Sent {} in {} ({} while sending), each file checked on the Flipper",
+        "  Sent {} in {} ({} while sending)",
         ui::size(total),
         ui::took(all.elapsed()),
         ui::speed(total, send_time)
     );
-    Ok(())
+
+    // What the card now has, for the cache: the files checked go in now, the others once the
+    // updater has checked them
+    let paths: Vec<String> = sent.iter().map(|(p, _, _)| p.clone()).collect();
+    let stamps = rpc.timestamps(&paths)?;
+    let mut unchecked = Unchecked::new();
+    for ((path, file, checked), stamp) in sent.into_iter().zip(stamps) {
+        let Some(timestamp) = stamp else { continue };
+        let seen = Seen {
+            size: file.len() as u32,
+            timestamp,
+            md5: file.md5.clone(),
+        };
+        if checked {
+            cache.set(&path, seen);
+        } else {
+            unchecked.push((path, seen));
+        }
+    }
+    Ok(unchecked)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn install(
     mut rpc: Rpc,
     port: &str,
@@ -435,16 +575,18 @@ fn install(
     remote_dir: &str,
     args: &Args,
     started: Instant,
+    mut cache: Cache,
+    unchecked: Unchecked,
 ) -> Result<()> {
     println!("\nInstalling");
-    let log_offset = u64::from(rpc.stat_size(updatelog::LOG_PATH)?.unwrap_or(0));
+    let log_offset = rpc.stat_size(updatelog::LOG_PATH)?.unwrap_or(0);
 
     // The firmware's own `update install` won't run while an app is open; neither does this
     if rpc.app_open()? {
         println!("  An app is open on the Flipper. Close it to go on (Ctrl+C stops here).");
         let t = Instant::now();
         loop {
-            sleep(Duration::from_secs(1));
+            sleep(Duration::from_millis(500));
             if !rpc.app_open()? {
                 break;
             }
@@ -475,19 +617,48 @@ fn install(
         println!("  The Flipper is installing it now (--no-wait: not watching).");
         return Ok(());
     }
-    wait_for_result(port, log_offset, pkg, started)
+    let (rpc, report, timeline) = wait_for_result(port, log_offset)?;
+    finish(rpc, report, timeline, pkg, started, &mut cache, unchecked)
 }
 
-/// After the restart: wait until the Flipper is back from the updater, then read what it did
-fn wait_for_result(port: &str, log_offset: u64, pkg: &Package, started: Instant) -> Result<()> {
-    let t0 = Instant::now();
+/// When things happened while the Flipper updated, from the restart on
+struct Timeline {
+    start: Instant,
+    events: Vec<(Duration, &'static str)>,
+}
+
+impl Timeline {
+    fn note(&mut self, what: &'static str) {
+        if self.events.last().map(|e| e.1) != Some(what) {
+            self.events.push((self.start.elapsed(), what));
+        }
+    }
+
+    fn show(&self) -> String {
+        self.events
+            .iter()
+            .map(|(t, what)| format!("{what} {:.1} s", t.as_secs_f64()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+/// After the restart: wait until the Flipper is back from the updater; then its RPC session,
+/// what the update log says, and when things happened
+fn wait_for_result(port: &str, log_offset: u32) -> Result<(Rpc, updatelog::Report, Timeline)> {
+    let mut timeline = Timeline {
+        start: Instant::now(),
+        events: Vec::new(),
+    };
+    let t0 = timeline.start;
     let mut line = ui::Line::new();
+    let mut port = port.to_string();
     let mut gone_once = false;
     let mut pin_hint = false;
+    let mut undecided_since: Option<Instant> = None;
     let status = |line: &mut ui::Line, what: &str| {
         line.show(&format!("  {}  {what}", ui::clock(t0.elapsed())), false);
     };
-    let mut port = port.to_string();
 
     loop {
         if t0.elapsed() > Duration::from_secs(15 * 60) {
@@ -504,21 +675,23 @@ fn wait_for_result(port: &str, log_offset: u64, pkg: &Package, started: Instant)
         }
         if !link::is_present(&port) {
             gone_once = true;
+            timeline.note("off USB");
             if !pin_hint && t0.elapsed() > Duration::from_secs(150) {
                 line.clear();
                 println!("  Still away. If the Flipper asks for its PIN, enter it on the Flipper.");
                 pin_hint = true;
             }
-            status(&mut line, "the Flipper is off USB while the updater writes the firmware");
-            sleep(Duration::from_millis(400));
+            status(&mut line, "the Flipper is restarting, or writing the firmware off USB");
+            sleep(Duration::from_millis(100));
             continue;
         }
         if !gone_once && t0.elapsed() < Duration::from_secs(20) {
             status(&mut line, "restarting into the updater");
-            sleep(Duration::from_millis(300));
+            sleep(Duration::from_millis(100));
             continue;
         }
 
+        timeline.note("on USB");
         let mut link = match Link::connect(&port, Duration::from_secs(4)) {
             Ok(l) => l,
             Err(e) => {
@@ -531,53 +704,89 @@ fn wait_for_result(port: &str, log_offset: u64, pkg: &Package, started: Instant)
                     pin_hint = true;
                 }
                 status(&mut line, "waiting for the Flipper's command line");
-                sleep(Duration::from_secs(1));
+                sleep(Duration::from_millis(200));
                 continue;
             }
         };
 
-        // Back on USB: is the updater app still at work (before or after the firmware write)?
-        // It's back once two answers in a row, 1.5 s apart, say the updater isn't running: the
-        // first could come from a start that hasn't opened the updater yet
-        let mut back = false;
-        let mut idle_answers = 0;
-        loop {
-            match link.cli("loader info", Duration::from_secs(3)) {
-                Ok(out) if out.contains("\"UpdaterApp\"") => {
-                    gone_once = true;
-                    idle_answers = 0;
-                    status(&mut line, "the updater is at work on the Flipper");
-                }
-                Ok(_) => {
-                    idle_answers += 1;
-                    if idle_answers == 2 {
-                        back = true;
-                        break;
-                    }
-                    status(&mut line, "the Flipper is back; checking");
-                }
-                Err(e) if e.is::<Lost>() => break,
-                Err(_) => break, // no answer: it may be restarting, look again
+        // The updater app at work (before the firmware write, or after it): it restarts the
+        // Flipper when it's done, so keep the port open until that
+        let updater_open = |link: &mut Link| -> Result<bool> {
+            Ok(link
+                .cli("loader info", Duration::from_secs(3))?
+                .contains("\"UpdaterApp\""))
+        };
+        match updater_open(&mut link) {
+            Ok(true) => {
+                gone_once = true;
+                timeline.note("updater at work");
+                status(&mut line, "the updater is at work on the Flipper");
+                let _ = link.hold_until_gone(Duration::from_secs(600));
+                continue;
             }
-            sleep(Duration::from_millis(1500));
+            Ok(false) => {}
+            Err(_) => {
+                sleep(Duration::from_millis(200));
+                continue;
+            }
         }
-        if !back {
-            continue; // it restarted (or stopped answering): look again
+        // Once more, a moment later, before a session takes RAM: a start that hadn't opened the
+        // updater yet would show it now
+        sleep(Duration::from_millis(250));
+        match updater_open(&mut link) {
+            Ok(false) => {}
+            _ => continue,
         }
-        line.clear();
-        return report(link, log_offset, pkg, t0.elapsed(), started);
+
+        let mut rpc = match Rpc::start(link, false) {
+            Ok(r) => r,
+            Err(_) => {
+                sleep(Duration::from_millis(300));
+                continue;
+            }
+        };
+        let report = match read_new_log(&mut rpc, log_offset) {
+            Ok(r) => r,
+            Err(_) => {
+                sleep(Duration::from_millis(300));
+                continue;
+            }
+        };
+        // The log decides; if it says nothing for a few seconds, the caller tells the user so
+        let first_undecided = *undecided_since.get_or_insert_with(Instant::now);
+        if report.outcome != Outcome::Unknown || first_undecided.elapsed() > Duration::from_secs(6)
+        {
+            timeline.note("back");
+            line.clear();
+            return Ok((rpc, report, timeline));
+        }
+        rpc.stop();
+        status(&mut line, "the Flipper is up; its update log has no result yet");
+        sleep(Duration::from_millis(500));
     }
 }
 
-fn report(link: Link, log_offset: u64, pkg: &Package, waited: Duration, started: Instant) -> Result<()> {
-    let mut rpc = Rpc::start(link, false)?;
-    let info = rpc.device_info()?;
-    let log = match rpc.read_file(updatelog::LOG_PATH) {
-        Ok(l) => l,
-        Err(_) => Vec::new(),
+/// What the update log gained since `offset` (all of it if it was started over since)
+fn read_new_log(rpc: &mut Rpc, offset: u32) -> Result<updatelog::Report> {
+    let new = match rpc.stat_size(updatelog::LOG_PATH)? {
+        None => Vec::new(),
+        Some(size) if size < offset => rpc.read_file_from(updatelog::LOG_PATH, 0)?,
+        Some(_) => rpc.read_file_from(updatelog::LOG_PATH, offset)?,
     };
+    Ok(updatelog::parse(&new))
+}
+
+fn finish(
+    mut rpc: Rpc,
+    report: updatelog::Report,
+    timeline: Timeline,
+    pkg: &Package,
+    started: Instant,
+    cache: &mut Cache,
+    unchecked: Unchecked,
+) -> Result<()> {
+    let info = rpc.device_info()?;
     rpc.stop();
-    let report = updatelog::parse(updatelog::since(&log, log_offset));
     let now = running(&info);
     let expected = pkg.build.as_ref().map(|b| {
         info.get("firmware_commit")
@@ -586,10 +795,15 @@ fn report(link: Link, log_offset: u64, pkg: &Package, waited: Duration, started:
                 .get("firmware_version")
                 .is_some_and(|v| *v == b.version)
     });
+    println!("  {}", timeline.show());
 
     match report.outcome {
         Outcome::Done => {
-            println!("  Back after {}: the updater finished", ui::clock(waited));
+            // the updater has checked the files it checks: they're as sent
+            for (path, seen) in unchecked {
+                cache.set(&path, seen);
+            }
+            cache.save();
             println!("\n✓ Installed. The Flipper runs {now}");
             if expected == Some(false) {
                 let b = pkg.build.as_ref().unwrap();
@@ -598,7 +812,7 @@ fn report(link: Link, log_offset: u64, pkg: &Package, waited: Duration, started:
                     b.version, b.commit
                 );
             }
-            println!("  {} in all", ui::clock(started.elapsed()));
+            println!("  {} in all", ui::took(started.elapsed()));
             Ok(())
         }
         Outcome::Failed(reason) => {
@@ -609,7 +823,7 @@ fn report(link: Link, log_offset: u64, pkg: &Package, waited: Duration, started:
             bail!("The update failed: {reason}.\nThe Flipper runs {now}")
         }
         Outcome::Unknown => {
-            println!("  Back after {}. The Flipper runs {now}", ui::clock(waited));
+            println!("  The Flipper is back and runs {now}");
             for l in &report.lines {
                 println!("    {l}");
             }
@@ -626,6 +840,43 @@ fn report(link: Link, log_offset: u64, pkg: &Package, waited: Duration, started:
             }
         }
     }
+}
+
+/// Write the package's biggest file to a scratch file a few ways, timing each; then delete it
+fn bench(mut rpc: Rpc, pkg: &Package) -> Result<()> {
+    let file = pkg
+        .files
+        .iter()
+        .max_by_key(|f| f.len())
+        .expect("a package has files");
+    let path = format!("{UPDATE_ROOT}/.hadal-update-bench");
+    rpc.mkdir(UPDATE_ROOT)?;
+    println!("\nWriting {} ({}) to {path}", file.name, ui::size(file.len()));
+    for (chunk, batch) in [(4096, 0), (8192, 0), (4096, 32768), (8192, 32768)] {
+        let t = Instant::now();
+        rpc.write_file(&path, &file.data, chunk, batch, |_| {})?;
+        let took = t.elapsed();
+        println!(
+            "  {chunk:>5}-byte messages, {:>14}: {:>6}  {}",
+            if batch == 0 {
+                "one per write".to_string()
+            } else {
+                format!("{batch}-byte writes")
+            },
+            ui::took(took),
+            ui::speed(file.len(), took)
+        );
+    }
+    let t = Instant::now();
+    let md5 = rpc.md5(&path)?;
+    println!(
+        "  MD5 on the Flipper: {} ({})",
+        ui::took(t.elapsed()),
+        if md5 == file.md5 { "matches" } else { "DIFFERS" }
+    );
+    rpc.delete(&path)?;
+    rpc.stop();
+    Ok(())
 }
 
 #[cfg(test)]
@@ -647,11 +898,8 @@ mod tests {
         fs::write(dir.join("res-a.ths"), b"resources").unwrap();
         fs::write(
             dir.join(MANIFEST),
-            "Filetype: Flipper firmware upgrade configuration
-Version: 2
-             Firmware: firmware.dfu
-Resources extra: res-a.ths
-",
+            "Filetype: Flipper firmware upgrade configuration\nVersion: 2\n\
+             Firmware: firmware.dfu\nResources extra: res-a.ths\n",
         )
         .unwrap();
         package::load(&dir).unwrap()
@@ -665,6 +913,10 @@ Resources extra: res-a.ths
             "No application is running"
         );
         Rpc::start(link, false).unwrap()
+    }
+
+    fn args(extra: &[&str]) -> Args {
+        Args::parse_from(std::iter::once("hadal-update").chain(extra.iter().copied()))
     }
 
     fn scratch(name: &str) -> PathBuf {
@@ -683,17 +935,18 @@ Resources extra: res-a.ths
             c.dirs.insert(UPDATE_ROOT.into());
             c.dirs.insert(DIR.into());
             // the same resources, a firmware of the same size but older, a file the package dropped
-            c.files.insert(format!("{DIR}/res-a.ths"), b"resources".to_vec());
-            c.files.insert(format!("{DIR}/firmware.dfu"), vec![0; 9000]);
-            c.files.insert(format!("{DIR}/res-old.ths"), vec![1, 2, 3]);
+            c.put(&format!("{DIR}/res-a.ths"), b"resources");
+            c.put(&format!("{DIR}/firmware.dfu"), &[0; 9000]);
+            c.put(&format!("{DIR}/res-old.ths"), &[1, 2, 3]);
             // what the updater itself keeps there
-            c.files.insert(format!("{DIR}/.installed"), b"M 00\n".to_vec());
-            c.files.insert(format!("{DIR}/backup.tar"), vec![0; 512]);
+            c.put(&format!("{DIR}/.installed"), b"M 00\n");
+            c.put(&format!("{DIR}/backup.tar"), &[0; 512]);
         }
         let mut rpc = session(&card);
         assert_eq!(rpc.device_info().unwrap()["hardware_name"], "Fakey");
 
-        let plan = compare(&mut rpc, &pkg, DIR, false).unwrap();
+        let mut cache = Cache::in_memory();
+        let plan = compare(&mut rpc, &pkg, DIR, false, &mut cache).unwrap();
         let actions: Vec<(&str, Action)> = plan
             .steps
             .iter()
@@ -708,28 +961,63 @@ Resources extra: res-a.ths
             ]
         );
         assert_eq!(plan.extras, ["res-old.ths"]);
+        assert_eq!(plan.hashed, 2);
 
         let total = plan.uploads().map(PkgFile::len).sum();
-        upload(&mut rpc, &plan, DIR, 4096, total).unwrap();
+        let hashed_before = card.borrow().md5_requests;
+        let unchecked = upload(&mut rpc, &plan, &pkg, DIR, &args(&[]), total, &mut cache).unwrap();
         for f in &pkg.files {
             assert_eq!(card.borrow().files[&format!("{DIR}/{}", f.name)], f.data, "{}", f.name);
         }
         let manifest_len = pkg.files.last().unwrap().data.len();
+        // 4096-byte messages
         assert_eq!(card.borrow().pieces, [4096, 4096, 808, manifest_len]);
+        // the manifest is checked; firmware.dfu, whose CRC the updater checks, isn't
+        assert_eq!(card.borrow().md5_requests - hashed_before, 1);
+        assert_eq!(unchecked.len(), 1);
+        assert_eq!(unchecked[0].0, format!("{DIR}/firmware.dfu"));
 
-        rpc.delete(&format!("{DIR}/res-old.ths")).unwrap();
+        rpc.delete_all(&[format!("{DIR}/res-old.ths")]).unwrap();
         assert!(!card.borrow().files.contains_key(&format!("{DIR}/res-old.ths")));
 
-        // a second look finds nothing to send
-        let again = compare(&mut rpc, &pkg, DIR, false).unwrap();
+        // a second look finds nothing to send, and hashes only what the cache doesn't know yet
+        let again = compare(&mut rpc, &pkg, DIR, false, &mut cache).unwrap();
         assert_eq!(again.uploads().count(), 0);
         assert!(again.extras.is_empty());
+        assert_eq!(again.hashed, 1); // firmware.dfu: cached only once an install has gone through
+        for (path, seen) in unchecked {
+            cache.set(&path, seen);
+        }
+        let third = compare(&mut rpc, &pkg, DIR, false, &mut cache).unwrap();
+        assert_eq!(third.hashed, 0);
+
+        // someone rewrites a file with the same size: its timestamp moves, so it's hashed again
+        card.borrow_mut().put(&format!("{DIR}/res-a.ths"), b"RESOURCES");
+        let fourth = compare(&mut rpc, &pkg, DIR, false, &mut cache).unwrap();
+        assert_eq!(fourth.hashed, 1);
+        assert_eq!(fourth.uploads().map(|f| f.name.as_str()).collect::<Vec<_>>(), ["res-a.ths"]);
 
         assert!(!rpc.app_open().unwrap());
         assert_eq!(rpc.prepare_update(&format!("{DIR}/{MANIFEST}")).unwrap(), 0);
         assert_eq!(rpc.prepare_update("/ext/update/nope/update.fuf").unwrap(), 2);
         rpc.reboot_to_update().unwrap();
         assert!(card.borrow().rebooted);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn verify_checks_everything() {
+        let root = scratch("verify");
+        let pkg = make_package(&root);
+        let card = Rc::new(RefCell::new(Card::default()));
+        let mut rpc = session(&card);
+        let mut cache = Cache::in_memory();
+        let plan = compare(&mut rpc, &pkg, DIR, false, &mut cache).unwrap();
+        let unchecked =
+            upload(&mut rpc, &plan, &pkg, DIR, &args(&["--verify"]), pkg.total(), &mut cache)
+                .unwrap();
+        assert!(unchecked.is_empty());
+        assert_eq!(card.borrow().md5_requests, 3);
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -749,14 +1037,24 @@ Resources extra: res-a.ths
         let pkg = make_package(&root);
         let card = Rc::new(RefCell::new(Card::default()));
         let mut rpc = session(&card);
-        let plan = compare(&mut rpc, &pkg, DIR, false).unwrap();
+        let mut cache = Cache::in_memory();
+        let plan = compare(&mut rpc, &pkg, DIR, false, &mut cache).unwrap();
         assert!(!plan.folder_exists);
         assert!(plan.steps.iter().all(|s| s.action == Action::New));
-        upload(&mut rpc, &plan, DIR, 4096, pkg.total()).unwrap();
+        // batched: messages handed to the port 16 KB at a time arrive the same
+        upload(&mut rpc, &plan, &pkg, DIR, &args(&["--batch", "16384"]), pkg.total(), &mut cache)
+            .unwrap();
+        assert_eq!(card.borrow().pieces, [4096, 4096, 808, 9, pkg.files[2].data.len()]);
         assert!(card.borrow().dirs.contains(DIR));
         assert_eq!(card.borrow().files.len(), 3);
         assert_eq!(rpc.stat_size(&format!("{DIR}/res-a.ths")).unwrap(), Some(9));
         assert_eq!(rpc.stat_size(updatelog::LOG_PATH).unwrap(), None);
+
+        // the update log, read from where it was
+        card.borrow_mut().put(updatelog::LOG_PATH, b"[1] old\n[2] stage 17, progress 100\n");
+        let report = read_new_log(&mut rpc, 8).unwrap();
+        assert_eq!(report.outcome, Outcome::Done);
+        assert_eq!(report.lines.len(), 1);
         rpc.stop();
         let _ = fs::remove_dir_all(&root);
     }
@@ -767,12 +1065,26 @@ Resources extra: res-a.ths
         let pkg = make_package(&root);
         let card = Rc::new(RefCell::new(Card::default()));
         card.borrow_mut().dirs.insert(DIR.into());
-        card.borrow_mut()
-            .files
-            .insert(format!("{DIR}/res-a.ths"), b"resources".to_vec());
+        card.borrow_mut().put(&format!("{DIR}/res-a.ths"), b"resources");
         let mut rpc = session(&card);
-        let plan = compare(&mut rpc, &pkg, DIR, true).unwrap();
+        let plan = compare(&mut rpc, &pkg, DIR, true, &mut Cache::in_memory()).unwrap();
         assert_eq!(plan.steps[1].action, Action::Forced);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn many_requests_in_a_window() {
+        // more requests than fit in the Flipper's 1 KB buffer at once
+        let card = Rc::new(RefCell::new(Card::default()));
+        let paths: Vec<String> = (0..60).map(|i| format!("{DIR}/res-{i:02}-abcdef.ths")).collect();
+        for p in &paths {
+            card.borrow_mut().put(p, p.as_bytes());
+        }
+        let mut rpc = session(&card);
+        let stamps = rpc.timestamps(&paths).unwrap();
+        assert!(stamps.iter().all(Option::is_some));
+        let sums = rpc.md5s(&paths).unwrap();
+        assert_eq!(sums[59], format!("{:x}", <md5::Md5 as md5::Digest>::digest(paths[59].as_bytes())));
+        assert!(card.borrow().most_unanswered <= 768, "{}", card.borrow().most_unanswered);
     }
 }

@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, bail, Result};
 use prost::Message;
 
-use crate::link::{Link, Timeout};
+use crate::link::{find, Link, Timeout};
 use crate::proto::*;
 
 /// A write that makes no progress for this long has stalled
@@ -69,7 +69,7 @@ impl Rpc {
         id
     }
 
-    fn send(&mut self, id: u32, has_next: bool, content: Content) -> Result<()> {
+    fn frame(&self, id: u32, has_next: bool, content: Content) -> Vec<u8> {
         let m = Main {
             command_id: id,
             command_status: 0,
@@ -79,7 +79,64 @@ impl Rpc {
         if self.verbose {
             eprintln!("    rpc > #{id}{} {}", if has_next { "+" } else { "" }, describe(&m));
         }
-        self.link.write_all(&m.encode_length_delimited_to_vec(), STALL)
+        m.encode_length_delimited_to_vec()
+    }
+
+    fn send(&mut self, id: u32, has_next: bool, content: Content) -> Result<()> {
+        let bytes = self.frame(id, has_next, content);
+        self.link.write_all(&bytes, STALL)
+    }
+
+    /// Send several requests without waiting for each answer: the round trips overlap. For each,
+    /// its status and its answers.
+    ///
+    /// No more than WINDOW bytes of requests are unanswered at a time. The session reads them
+    /// through a 1 KB buffer (RPC_BUFFER_SIZE), and the command line drops what it can't put
+    /// there within 3 s; kept under that, nothing ever waits on it.
+    fn pipeline(
+        &mut self,
+        what: &str,
+        contents: Vec<Content>,
+        timeout: Duration,
+    ) -> Result<Vec<(i32, Vec<Main>)>> {
+        const WINDOW: usize = 768;
+        let first = self.next_id;
+        let frames: Vec<Vec<u8>> = contents
+            .into_iter()
+            .map(|c| {
+                let id = self.new_id();
+                self.frame(id, false, c)
+            })
+            .collect();
+        let n = frames.len();
+        let mut out: Vec<(i32, Vec<Main>)> = (0..n).map(|_| (STATUS_OK, Vec::new())).collect();
+        let (mut next, mut in_flight, mut open) = (0, 0, n);
+        while open > 0 {
+            let mut bytes = Vec::new();
+            while next < n && (in_flight == 0 || in_flight + frames[next].len() <= WINDOW) {
+                in_flight += frames[next].len();
+                bytes.extend_from_slice(&frames[next]);
+                next += 1;
+            }
+            if !bytes.is_empty() {
+                self.link.write_all(&bytes, STALL)?;
+            }
+            let m = self.receive(what, timeout)?;
+            let Some(i) = m.command_id.checked_sub(first).map(|i| i as usize).filter(|&i| i < n)
+            else {
+                continue;
+            };
+            let done = !m.has_next || m.command_status != STATUS_OK;
+            if m.command_status != STATUS_OK {
+                out[i].0 = m.command_status;
+            }
+            out[i].1.push(m);
+            if done {
+                open -= 1;
+                in_flight -= frames[i].len();
+            }
+        }
+        Ok(out)
     }
 
     /// A whole message out of what has arrived, if there is one
@@ -174,16 +231,32 @@ impl Rpc {
         self.collect(id, what, timeout)
     }
 
+    /// The first message of a session: a session that couldn't start says so in text instead
     pub fn ping(&mut self) -> Result<()> {
         let data = b"hadal-update".to_vec();
-        let answers = self.call(
-            "answer a ping",
-            Content::PingRequest(Ping { data: data.clone() }),
-            Duration::from_secs(3),
-        )?;
-        match answers.last().and_then(|m| m.content.as_ref()) {
-            Some(Content::PingResponse(p)) if p.data == data => Ok(()),
-            _ => bail!("The Flipper's RPC answered a ping with something else"),
+        let id = self.new_id();
+        self.send(id, false, Content::PingRequest(Ping { data: data.clone() }))?;
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            if find(&self.link.buf, b"Session start error").is_some() {
+                bail!(
+                    "The Flipper hasn't enough free RAM for an RPC session.\n\
+                     Close the app that's open on it and try again."
+                );
+            }
+            while let Some(m) = self.take_message()? {
+                if m.command_id != id {
+                    continue;
+                }
+                return match m.content {
+                    Some(Content::PingResponse(p)) if p.data == data => Ok(()),
+                    _ => bail!("The Flipper's RPC answered a ping with something else"),
+                };
+            }
+            if Instant::now() > deadline {
+                return Err(Timeout("The Flipper's RPC session didn't answer a ping".into()).into());
+            }
+            self.link.read_some()?;
         }
     }
 
@@ -248,6 +321,79 @@ impl Rpc {
         }
     }
 
+    /// Files' timestamps (None where there's no file), in one round trip
+    pub fn timestamps(&mut self, paths: &[String]) -> Result<Vec<Option<u32>>> {
+        let requests = paths
+            .iter()
+            .map(|p| Content::TimestampRequest(PathRequest { path: p.clone() }))
+            .collect();
+        let answers = self.pipeline("give timestamps", requests, Duration::from_secs(10))?;
+        Ok(answers
+            .into_iter()
+            .map(|(status, msgs)| {
+                if status != STATUS_OK {
+                    return None;
+                }
+                msgs.into_iter().find_map(|m| match m.content {
+                    Some(Content::TimestampResponse(t)) => Some(t.timestamp),
+                    _ => None,
+                })
+            })
+            .collect())
+    }
+
+    /// Several files' MD5s, asked for in one go; the Flipper hashes one after another
+    pub fn md5s(&mut self, paths: &[String]) -> Result<Vec<String>> {
+        let requests = paths
+            .iter()
+            .map(|p| Content::Md5sumRequest(PathRequest { path: p.clone() }))
+            .collect();
+        let answers = self.pipeline("hash files", requests, Duration::from_secs(60))?;
+        answers
+            .into_iter()
+            .zip(paths)
+            .map(|((status, msgs), path)| {
+                if status != STATUS_OK {
+                    return Err(Refused {
+                        what: format!("hash {path}"),
+                        status,
+                    }
+                    .into());
+                }
+                msgs.into_iter()
+                    .find_map(|m| match m.content {
+                        Some(Content::Md5sumResponse(r)) => Some(r.md5sum.to_ascii_lowercase()),
+                        _ => None,
+                    })
+                    .ok_or_else(|| anyhow!("The Flipper sent no MD5 for {path}"))
+            })
+            .collect()
+    }
+
+    /// Delete several files in one go
+    pub fn delete_all(&mut self, paths: &[String]) -> Result<()> {
+        let requests = paths
+            .iter()
+            .map(|p| {
+                Content::DeleteRequest(DeleteRequest {
+                    path: p.clone(),
+                    recursive: false,
+                })
+            })
+            .collect();
+        let answers = self.pipeline("delete files", requests, Duration::from_secs(15))?;
+        for ((status, _), path) in answers.into_iter().zip(paths) {
+            if status != STATUS_OK && status != STATUS_STORAGE_NOT_EXIST {
+                return Err(Refused {
+                    what: format!("delete {path}"),
+                    status,
+                }
+                .into());
+            }
+        }
+        Ok(())
+    }
+
     /// The MD5 of a file on the Flipper, as lowercase hex
     pub fn md5(&mut self, path: &str) -> Result<String> {
         let answers = self.call(
@@ -293,12 +439,14 @@ impl Rpc {
         .map(|_| ())
     }
 
-    pub fn read_file(&mut self, path: &str) -> Result<Vec<u8>> {
+    /// A file from `offset` on (all of it from 0)
+    pub fn read_file_from(&mut self, path: &str, offset: u32) -> Result<Vec<u8>> {
         let answers = self.call(
             &format!("read {path}"),
             Content::ReadRequest(ReadRequest {
                 path: path.to_string(),
-                ..Default::default()
+                offset,
+                size: 0,
             }),
             Duration::from_secs(15),
         )?;
@@ -314,12 +462,14 @@ impl Rpc {
         Ok(data)
     }
 
-    /// Write a file in pieces of `chunk` bytes; `progress` gets the bytes sent so far
+    /// Write a file in messages of `chunk` bytes of data, handed to the port `batch` bytes at a
+    /// time; `progress` gets the bytes sent so far
     pub fn write_file(
         &mut self,
         path: &str,
         data: &[u8],
         chunk: usize,
+        batch: usize,
         mut progress: impl FnMut(usize),
     ) -> Result<()> {
         let id = self.new_id();
@@ -331,9 +481,11 @@ impl Rpc {
         };
         let last = pieces.len() - 1;
         let mut sent = 0;
+        let mut pending: Vec<u8> = Vec::with_capacity(batch + chunk + 64);
+        let mut pending_data = 0;
         for (i, piece) in pieces.into_iter().enumerate() {
             let has_next = i < last;
-            self.send(
+            let bytes = self.frame(
                 id,
                 has_next,
                 Content::WriteRequest(WriteRequest {
@@ -343,8 +495,16 @@ impl Rpc {
                         ..Default::default()
                     }),
                 }),
-            )?;
-            sent += piece.len();
+            );
+            pending.extend(bytes);
+            pending_data += piece.len();
+            if has_next && pending.len() < batch {
+                continue;
+            }
+            self.link.write_all(&pending, STALL)?;
+            pending.clear();
+            sent += pending_data;
+            pending_data = 0;
             progress(sent);
             if has_next {
                 // The Flipper answers once, after the last piece, unless a write fails: then
@@ -441,6 +601,8 @@ fn describe(m: &Main) -> String {
             Content::LockStatusResponse(r) => format!("app open: {}", r.locked),
             Content::StatRequest(r) => format!("stat {}", r.path),
             Content::StatResponse(r) => format!("stat: {:?}", r.file.as_ref().map(|f| f.size)),
+            Content::TimestampRequest(r) => format!("timestamp {}", r.path),
+            Content::TimestampResponse(r) => format!("timestamp {}", r.timestamp),
             Content::ListRequest(r) => format!("list {}", r.path),
             Content::ListResponse(r) => format!("{} entries", r.file.len()),
             Content::ReadRequest(r) => format!("read {}", r.path),

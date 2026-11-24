@@ -109,12 +109,29 @@ impl std::error::Error for Lost {}
 /// What a Link talks through: the serial port, or a fake Flipper in the tests
 pub trait Port: Read + Write {
     fn bytes_to_read(&self) -> io::Result<u32>;
+    /// How long a read or a write may wait. Windows has one setting for both (COMMTIMEOUTS)
+    fn set_timeout(&mut self, timeout: Duration) -> io::Result<()>;
 }
 
 impl Port for Box<dyn SerialPort> {
     fn bytes_to_read(&self) -> io::Result<u32> {
         SerialPort::bytes_to_read(&**self).map_err(io::Error::from)
     }
+
+    fn set_timeout(&mut self, timeout: Duration) -> io::Result<()> {
+        SerialPort::set_timeout(&mut **self, timeout).map_err(io::Error::from)
+    }
+}
+
+/// What the port's timeout is set for
+#[derive(Clone, Copy, PartialEq)]
+enum Waiting {
+    /// Reads give up after POLL, so the callers can look at the time
+    Reads,
+    /// Writes wait as long as the Flipper takes. A write cut short by its timeout is cancelled in
+    /// the driver part way through, and what it reports sent then can be wrong: a 32 KB write
+    /// under a 100 ms timeout left the Flipper's RPC stream garbled and stuck
+    Writes(Duration),
 }
 
 pub struct Link {
@@ -122,6 +139,7 @@ pub struct Link {
     pub name: String,
     /// Received, not yet used
     pub buf: Vec<u8>,
+    waiting: Waiting,
 }
 
 impl Link {
@@ -150,7 +168,22 @@ impl Link {
             port,
             name: name.to_string(),
             buf: Vec::new(),
+            waiting: Waiting::Reads,
         }
+    }
+
+    fn wait_for(&mut self, waiting: Waiting) -> Result<()> {
+        if self.waiting != waiting {
+            let timeout = match waiting {
+                Waiting::Reads => POLL,
+                Waiting::Writes(t) => t,
+            };
+            self.port
+                .set_timeout(timeout)
+                .map_err(|e| self.lost(e))?;
+            self.waiting = waiting;
+        }
+        Ok(())
     }
 
     /// Open the port and wait for the command line's prompt
@@ -166,6 +199,7 @@ impl Link {
 
     /// Wait up to POLL for data; how many bytes came
     pub fn read_some(&mut self) -> Result<usize> {
+        self.wait_for(Waiting::Reads)?;
         let mut tmp = [0u8; 16 * 1024];
         match self.port.read(&mut tmp) {
             Ok(n) => {
@@ -190,6 +224,7 @@ impl Link {
 
     /// Write everything; fails if the Flipper takes nothing for `stall`
     pub fn write_all(&mut self, mut data: &[u8], stall: Duration) -> Result<()> {
+        self.wait_for(Waiting::Writes(stall))?;
         let mut progress = Instant::now();
         while !data.is_empty() {
             match self.port.write(data) {
@@ -269,7 +304,7 @@ impl Link {
             }
             self.read_some()?;
         }
-        self.drain_quiet(Duration::from_millis(150), Duration::from_secs(2))?;
+        self.drain_quiet(Duration::from_millis(50), Duration::from_secs(2))?;
         self.buf.clear();
         Ok(())
     }
@@ -282,23 +317,34 @@ impl Link {
         Ok(clean_text(&out))
     }
 
-    /// Switch the port from the command line to RPC (protobuf)
+    /// Switch the port from the command line to RPC (protobuf). Rpc::start's ping tells
+    /// whether the session started
     pub fn start_rpc(&mut self) -> Result<()> {
         self.write_all(b"start_rpc_session\r", Duration::from_secs(5))?;
         self.read_until(b"start_rpc_session\r\n", Duration::from_secs(3))?;
-        // A session that can't start says so at once; one that starts says nothing
+        Ok(())
+    }
+
+    /// Keep the port open, reading nothing in particular, until the Flipper goes off USB (it
+    /// restarts) or `max` passes; whether it went
+    pub fn hold_until_gone(&mut self, max: Duration) -> Result<bool> {
         let start = Instant::now();
-        while start.elapsed() < Duration::from_millis(150) {
-            self.read_some()?;
-            if find(&self.buf, b"Session start error").is_some() {
-                bail!(
-                    "The Flipper hasn't enough free RAM for an RPC session.\n\
-                     Close the app that's open on it and try again."
-                );
+        let mut looked = Instant::now();
+        while start.elapsed() < max {
+            match self.read_some() {
+                Ok(_) => self.buf.clear(),
+                Err(e) if e.is::<Lost>() => return Ok(true),
+                Err(e) => return Err(e),
+            }
+            // a reset doesn't always fail the read at once: look at USB too
+            if looked.elapsed() > Duration::from_millis(250) {
+                if !is_present(&self.name) {
+                    return Ok(true);
+                }
+                looked = Instant::now();
             }
         }
-        self.buf.clear();
-        Ok(())
+        Ok(false)
     }
 }
 
