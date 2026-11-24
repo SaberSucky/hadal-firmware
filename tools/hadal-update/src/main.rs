@@ -29,8 +29,9 @@ use rpc::Rpc;
 use updatelog::Outcome;
 
 const UPDATE_ROOT: &str = "/ext/update";
-/// What an upload runs at, for the dry run's estimate (measured: ~120 KB/s, plus the checks)
-const EST_SPEED: f64 = 110_000.0;
+/// What an upload runs at, each file's MD5 check included, for the dry run's estimate. Measured on
+/// a Flipper: 989 KB in 7.7 s (147 KB/s while sending)
+const EST_SPEED: f64 = 128_000.0;
 
 /// Install a Hadal update package on a Flipper Zero, sending only the files that changed
 #[derive(Parser)]
@@ -176,7 +177,7 @@ fn run(args: &Args) -> Result<()> {
                 plural(upload_count),
                 ui::size(upload_bytes),
                 ui::took(Duration::from_secs_f64(
-                    upload_bytes as f64 / EST_SPEED + upload_count as f64 * 0.3
+                    upload_bytes as f64 / EST_SPEED + upload_count as f64 * 0.05
                 )),
                 if removals > 0 {
                     format!(" and remove {removals}")
