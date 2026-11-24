@@ -13,8 +13,8 @@ enum BtSettingIndex {
 };
 
 const char* const bt_settings_text[BtSettingNum] = {
-    "OFF",
-    "ON",
+    "Off",
+    "On",
 };
 
 static void bt_settings_scene_start_var_list_change_callback(VariableItem* item) {
@@ -40,6 +40,8 @@ void bt_settings_scene_start_on_enter(void* context) {
     VariableItem* item;
 
     if(furi_hal_bt_is_gatt_gap_supported()) {
+        // the header every Hadal page has
+        variable_item_list_set_header(var_item_list, "Bluetooth");
         item = variable_item_list_add(
             var_item_list,
             "Bluetooth",
@@ -55,7 +57,7 @@ void bt_settings_scene_start_on_enter(void* context) {
             variable_item_set_current_value_text(item, bt_settings_text[BtSettingOff]);
             variable_item_set_values_text(item, bt_settings_text);
         }
-        variable_item_list_add(var_item_list, "Unpair All Devices", 1, NULL, NULL);
+        variable_item_list_add(var_item_list, "Unpair all devices", 1, NULL, NULL);
         variable_item_list_set_enter_callback(
             var_item_list, bt_settings_scene_start_var_list_enter_callback, app);
     } else {

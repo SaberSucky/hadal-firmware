@@ -42,6 +42,8 @@ static ExpansionSettingsApp* expansion_settings_app_alloc(void) {
     VariableItem* item;
     uint8_t value_index;
 
+    // the header every Hadal page has
+    variable_item_list_set_header(app->var_item_list, "Expansion");
     item = variable_item_list_add(
         app->var_item_list,
         "Listen UART",

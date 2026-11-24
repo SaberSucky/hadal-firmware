@@ -19,21 +19,23 @@ void infrared_scene_start_on_enter(void* context) {
     Submenu* submenu = infrared->submenu;
     SceneManager* scene_manager = infrared->scene_manager;
 
+    // the header every Hadal page has: which app this is
+    submenu_set_header(submenu, "Infrared");
     submenu_add_item(
         submenu,
-        "Universal Remotes",
+        "Universal remotes",
         SubmenuIndexUniversalRemotes,
         infrared_scene_start_submenu_callback,
         infrared);
     submenu_add_item(
         submenu,
-        "Learn New Remote",
+        "Learn new remote",
         SubmenuIndexLearnNewRemote,
         infrared_scene_start_submenu_callback,
         infrared);
     submenu_add_item(
         submenu,
-        "Saved Remotes",
+        "Saved remotes",
         SubmenuIndexSavedRemotes,
         infrared_scene_start_submenu_callback,
         infrared);
@@ -47,7 +49,7 @@ void infrared_scene_start_on_enter(void* context) {
     if(infrared->app_state.is_debug_enabled) {
         submenu_add_item(
             submenu,
-            "Learn New Remote RAW",
+            "Learn new remote (RAW)",
             SubmenuIndexLearnNewRemoteRaw,
             infrared_scene_start_submenu_callback,
             infrared);

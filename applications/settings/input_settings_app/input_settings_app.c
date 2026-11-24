@@ -8,7 +8,7 @@
 
 // vibro touch human readable levels
 const char* const vibro_touch_level_text[VIBRO_TOUCH_LEVEL_COUNT] = {
-    "OFF",
+    "Off",
     "1",
     "2",
     "3",
@@ -82,9 +82,11 @@ InputSettingsApp* input_settings_app_alloc(void) {
     VariableItem* item;
     uint8_t value_index;
 
+    // the header every Hadal page has
+    variable_item_list_set_header(app->variable_item_list, "Input");
     item = variable_item_list_add(
         app->variable_item_list,
-        "Buttons Vibro",
+        "Button vibration",
         VIBRO_TOUCH_LEVEL_COUNT,
         input_settings_vibro_touch_level_changed,
         app);
@@ -98,7 +100,7 @@ InputSettingsApp* input_settings_app_alloc(void) {
     const bool vibro_off = value_index == 0;
     item = variable_item_list_add(
         app->variable_item_list,
-        "Trigger",
+        "Vibrate on",
         VIBRO_TOUCH_TRIGGER_MASK_COUNT,
         input_settings_vibro_touch_trigger_mask_changed,
         app);

@@ -298,6 +298,12 @@ def run(steps):
             t, _, v = a.partition("=")
             tag = f"[{time.time() - t0:5.1f}s] {a}"
             if t == "c":
+                # these take the USB port for themselves (keyboard, security key, storage): the
+                # link to this script drops until someone closes them on the Flipper
+                if v.startswith("loader open") and any(
+                    n in v for n in ("Bad USB", "Bad KB", "U2F", "Mass Storage", "USB Keyboard")):
+                    print(f"{tag}: refused, it takes over USB (open it on the Flipper by hand)")
+                    continue
                 print(f"{tag}\n{dev.cli(v, 30)}")
             elif t == "k":
                 k, _, kind = v.partition(":")

@@ -40,7 +40,7 @@ void desktop_settings_scene_pin_menu_on_enter(void* context) {
             app);
     }
 
-    submenu_set_header(app->submenu, "PIN Code Settings");
+    submenu_set_header(app->submenu, "PIN code settings");
     submenu_set_selected_item(app->submenu, app->pin_menu_idx);
     view_dispatcher_switch_to_view(app->view_dispatcher, DesktopSettingsAppViewMenu);
 }

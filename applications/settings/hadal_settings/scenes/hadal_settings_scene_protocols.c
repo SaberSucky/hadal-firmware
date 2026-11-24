@@ -82,6 +82,8 @@ static void enter_callback(void* context, uint32_t index) {
 void hadal_settings_scene_protocols_on_enter(void* context) {
     HadalSettings* app = context;
     variable_item_list_reset(app->variable_list);
+    // the header every Hadal page has
+    variable_item_list_set_header(app->variable_list, "Protocols");
     VariableItem* item =
         variable_item_list_add(app->variable_list, "Extended Sub-GHz", 2, extended_changed, app);
     const bool on = hadal_settings_extended_range_get(app->storage);

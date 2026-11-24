@@ -1088,7 +1088,8 @@ static uint16_t elements_hint_width(Canvas* canvas, const ElementsHint* hint) {
     return width;
 }
 
-uint16_t elements_hints(Canvas* canvas, int32_t x, int32_t y, Align horizontal, const char* hints) {
+uint16_t
+    elements_hints(Canvas* canvas, int32_t x, int32_t y, Align horizontal, const char* hints) {
     furi_check(canvas);
     furi_check(hints);
     canvas_set_font(canvas, FontSecondary);
@@ -1143,4 +1144,50 @@ void elements_hint_bar(Canvas* canvas, const char* hints) {
     }
     // a clear row under the rule, and under the descenders above the screen's edge
     elements_hints(canvas, width / 2, canvas_height(canvas) - 3, AlignCenter, hints);
+}
+
+/* Abyss's light, 6 x 6, a glint up on its left: the end of every header's line */
+static const uint8_t elements_header_light[6] = {
+    0x1E, /* .####. */
+    0x27, /* #..### */
+    0x2F, /* #.#### */
+    0x3F, /* ###### */
+    0x3F, /* ###### */
+    0x1E, /* .####. */
+};
+
+#define ELEMENTS_HEADER_BASELINE 11 // the title's: a clear row over its capitals at the top
+#define ELEMENTS_HEADER_LIGHT_X  112 // the light's left: clear of the scrollbar's column
+
+void elements_header(Canvas* canvas, const char* title) {
+    furi_check(canvas);
+    furi_check(title);
+    const int32_t baseline = ELEMENTS_HEADER_BASELINE;
+    const int32_t light_x = ELEMENTS_HEADER_LIGHT_X;
+    const int32_t line_y = baseline - 4; // through the middle of the capitals
+
+    canvas_set_color(canvas, ColorBlack);
+    canvas_set_font(canvas, FontPrimary);
+    FuriString* text = furi_string_alloc_set_str(title);
+    elements_string_fit_width(canvas, text, light_x - 3 - 8);
+    // bold whatever the font: an asset pack may give the bold slot a light font of its own
+    canvas_draw_str(canvas, 3, baseline, furi_string_get_cstr(text));
+    canvas_draw_str(canvas, 4, baseline, furi_string_get_cstr(text));
+    const int32_t line_x = 4 + canvas_string_width(canvas, furi_string_get_cstr(text)) + 4;
+    furi_string_free(text);
+
+    // the line the light hangs from: dotted, dipping into the light at its end
+    for(int32_t x = line_x; x < light_x - 2; x += 2) {
+        canvas_draw_dot(canvas, x, line_y);
+    }
+    canvas_draw_dot(canvas, light_x - 2, line_y);
+    canvas_draw_dot(canvas, light_x - 1, line_y + 1);
+    for(int32_t row = 0; row < 6; row++) {
+        for(int32_t col = 0; col < 6; col++) {
+            if(elements_header_light[row] & (1 << (5 - col))) {
+                canvas_draw_dot(canvas, light_x + col, line_y - 2 + row);
+            }
+        }
+    }
+    canvas_set_font(canvas, FontSecondary);
 }

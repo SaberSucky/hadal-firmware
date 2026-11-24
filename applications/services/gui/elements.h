@@ -336,6 +336,18 @@ uint16_t elements_hints(Canvas* canvas, int32_t x, int32_t y, Align horizontal, 
  */
 void elements_hint_bar(Canvas* canvas, const char* hints);
 
+/** Height of the header elements_header() draws: the rows of a page start under it */
+#define ELEMENTS_HEADER_HEIGHT 16
+
+/** Draw Hadal's header across the top ELEMENTS_HEADER_HEIGHT pixels: the page's title in the
+ * bold font, then a fine line out to Abyss's light, short of the scrollbar's column. Every page
+ * that has a title draws it so (submenus and settings lists with one, and screens of their own).
+ *
+ * @param      canvas  Canvas instance
+ * @param[in]  title   the page's title, in the case it is written (it is shortened to fit)
+ */
+void elements_header(Canvas* canvas, const char* title);
+
 #ifdef __cplusplus
 }
 #endif

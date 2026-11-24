@@ -524,6 +524,9 @@ static void desktop_init_settings(Desktop* desktop) {
     }
 
     desktop_settings_load(&desktop->settings);
+    // the old favourites move to Desktop Keys here too: with the card there at the start (as it
+    // nearly always is) no reload ever came to move them, and Left kept opening the old favourite
+    desktop_favorites_to_keybinds(desktop);
     desktop_apply_settings(desktop);
 }
 

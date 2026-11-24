@@ -50,9 +50,11 @@ void gpio_scene_start_on_enter(void* context) {
     variable_item_list_set_enter_callback(
         var_item_list, gpio_scene_start_var_list_enter_callback, app);
 
-    variable_item_list_add(var_item_list, "USB-UART Bridge", 0, NULL, NULL);
+    // the header every Hadal page has
+    variable_item_list_set_header(var_item_list, "GPIO");
+    variable_item_list_add(var_item_list, "USB-UART bridge", 0, NULL, NULL);
 
-    variable_item_list_add(var_item_list, "GPIO Manual Control", 0, NULL, NULL);
+    variable_item_list_add(var_item_list, "Manual control", 0, NULL, NULL);
 
     item = variable_item_list_add(
         var_item_list,

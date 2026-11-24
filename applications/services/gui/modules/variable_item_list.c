@@ -11,23 +11,26 @@
 #define SCROLL_INTERVAL (333)
 
 // Controls: how an item's value is drawn, chosen from what the item is (see the header)
-#define VALUE_RIGHT       122 // the value area's right end: the selection's last column
-#define CONTROL_RIGHT     (VALUE_RIGHT - 3) // a control's last column: two clear inside the selection
-#define SWITCH_W          17
-#define SWITCH_H          9
-#define METER_MIN_VALUES  5 // a numeric value with this many steps or more gets a meter
-#define SEGMENTS_MAX      3
-#define SEGMENT_PAD       3 // either side of a segment's text
+#define VALUE_RIGHT        122 // the value area's right end: the selection's last column
+#define CONTROL_RIGHT      (VALUE_RIGHT - 3) // a control's last column: two clear inside the selection
+#define SWITCH_W           17
+#define SWITCH_H           9
+#define METER_MIN_VALUES   5 // a numeric value with this many steps or more gets a meter
+#define SEGMENTS_MAX       3
+#define LEVELS_MAX         10 // levels (bare 1..N after an Off) drawn as bars, at most this many
+#define SEGMENT_PAD        3 // either side of a segment's text
 #define SEGMENTS_WIDTH_MAX 64
-#define DROPDOWN_ROWS     3
+#define DROPDOWN_ROWS      3
 // a dropdown row: its selection, two clear rows over the capitals and one under the descenders
-#define DROPDOWN_ROW_H    12
-#define TEXT_PAD          3 // either side of a text, inside what holds it
-#define ITEM_H            16
-#define ITEMS_ON_SCREEN   4
-#define INDENT_W          8 // an indented item's label, per level
-#define INDENT_MAX        2
-#define SLIDE_INTERVAL    20 // ms between the frames of a row sliding in or out
+#define DROPDOWN_ROW_H     12
+#define TEXT_PAD           3 // either side of a text, inside what holds it
+#define ITEM_H             16
+#define ITEMS_ON_SCREEN    4
+#define INDENT_W           8 // an indented item's label, per level
+#define INDENT_MAX         2
+#define SLIDE_INTERVAL     20 // ms between the frames of a row sliding in or out
+#define OPENS_VALUE_RIGHT  112 // a row that opens a page: its value ends here, before the ">"
+#define OPENS_VALUE_MAX    72 // and takes at most this much of the row; a longer one scrolls
 
 typedef enum {
     VariableItemControlArrows, // < value >, as Flipper always drew it
@@ -35,6 +38,8 @@ typedef enum {
     VariableItemControlMeter, // a number, with how far along its range it is
     VariableItemControlSegments, // two or three short choices side by side
     VariableItemControlDropdown, // OK opens the choices as a list
+    VariableItemControlOpens, // OK opens a page for it: value then ">" (variable_item_set_opens)
+    VariableItemControlLevels, // Off, 1, 2... N: rising bars, as a volume or a signal
 } VariableItemControl;
 
 struct VariableItem {
@@ -48,6 +53,7 @@ struct VariableItem {
     VariableItemChangeCallback change_callback;
     bool locked;
     bool hidden;
+    bool opens;
     uint8_t indent;
     uint8_t height; // as drawn: ITEM_H when shown, 0 when hidden, between while it slides
     FuriString* locked_message;
@@ -80,7 +86,13 @@ typedef struct {
     // rows take their heights at once on the next draw (a new list, or one coming on screen)
     bool snap;
     FuriTimer* slide_timer; // the list's: the draw starts it while a row slides
+    FuriString* header; // Hadal's header over the rows, as a submenu has; empty: none
 } VariableItemListModel;
+
+/** Rows a screen holds: one fewer under a header */
+static size_t variable_item_list_rows(const VariableItemListModel* model) {
+    return furi_string_empty(model->header) ? ITEMS_ON_SCREEN : ITEMS_ON_SCREEN - 1;
+}
 
 static void variable_item_list_process_up(VariableItemList* variable_item_list);
 static void variable_item_list_process_down(VariableItemList* variable_item_list);
@@ -136,8 +148,48 @@ static bool variable_item_is_number(const VariableItem* item) {
     return true;
 }
 
+/** Off (or 0), then 1, 2... with no unit: levels, drawn as rising bars. A unit or a percentage
+ * (a brightness, a time) keeps the meter's line, which shows how far along a range it is */
+static bool variable_item_is_levels(const VariableItem* item) {
+    if(!item->values_text || item->values_count < 3 || item->values_count > LEVELS_MAX + 1) {
+        return false;
+    }
+    const char* first = item->values_text[0];
+    if(!variable_item_text_is(first, switch_off_words) && strcmp(first, "0") != 0) return false;
+    for(uint8_t i = 1; i < item->values_count; i++) {
+        const char* text = item->values_text[i];
+        if(atoi(text) != i) return false;
+        for(; *text; text++) {
+            if(*text < '0' || *text > '9') return false;
+        }
+    }
+    return true;
+}
+
+/** The bars of a level, centred between x0 and x1, their feet on the baseline: as many as there
+ * are levels, rising; the ones up to the level filled, the others a dot at their foot */
+static void variable_item_draw_levels(
+    Canvas* canvas,
+    const VariableItem* item,
+    int32_t x0,
+    int32_t x1,
+    int32_t baseline) {
+    const int32_t count = item->values_count - 1;
+    const int32_t width = count * 3 - 1;
+    int32_t x = x0 + (x1 - x0 + 1 - width) / 2;
+    for(int32_t i = 1; i <= count; i++, x += 3) {
+        const int32_t height = 2 + (i - 1) * 6 / (count > 1 ? count - 1 : 1);
+        if(i <= item->current_value_index) {
+            canvas_draw_box(canvas, x, baseline - height + 1, 2, height);
+        } else {
+            canvas_draw_dot(canvas, x, baseline);
+        }
+    }
+}
+
 /** The segments' total width, or 0 when they do not fit in width */
-static uint16_t variable_item_segments_width(Canvas* canvas, const VariableItem* item, uint16_t width) {
+static uint16_t
+    variable_item_segments_width(Canvas* canvas, const VariableItem* item, uint16_t width) {
     uint16_t total = 0;
     for(uint8_t i = 0; i < item->values_count; i++) {
         total += canvas_string_width(canvas, item->values_text[i]) + 2 * SEGMENT_PAD;
@@ -151,8 +203,10 @@ static uint16_t variable_item_segments_width(Canvas* canvas, const VariableItem*
  * on show turned "Off" into a switch and its other value back into arrows */
 static VariableItemControl
     variable_item_control(Canvas* canvas, const VariableItem* item, uint16_t width) {
+    if(item->opens) return VariableItemControlOpens;
     if(!item->values_text || item->values_count < 2) return VariableItemControlArrows;
     if(variable_item_is_switch(item, NULL)) return VariableItemControlSwitch;
+    if(variable_item_is_levels(item)) return VariableItemControlLevels;
     if(item->values_count >= METER_MIN_VALUES && variable_item_is_number(item)) {
         return VariableItemControlMeter;
     }
@@ -257,9 +311,8 @@ static void variable_item_draw_meter(
     int32_t x1,
     int32_t y) {
     const int32_t width = x1 - x0 + 1;
-    const int32_t fill = item->values_count > 1 ?
-                             width * item->current_value_index / (item->values_count - 1) :
-                             0;
+    const int32_t fill =
+        item->values_count > 1 ? width * item->current_value_index / (item->values_count - 1) : 0;
     if(fill) canvas_draw_line(canvas, x0, y, x0 + fill - 1, y);
     for(int32_t x = x0 + fill + 1; x <= x1; x += 2) {
         canvas_draw_dot(canvas, x, y);
@@ -301,7 +354,8 @@ static void variable_item_list_draw_dropdown(
     canvas_draw_box(canvas, left - 1, y - 1, 128 - (left - 1), height + 2);
     canvas_set_color(canvas, ColorBlack);
     canvas_draw_rframe(canvas, left, y, width, height, 3);
-    canvas_draw_rframe(canvas, left + 1, y, width - 2, height, 3); // a heavier side edge: it floats
+    canvas_draw_rframe(
+        canvas, left + 1, y, width - 2, height, 3); // a heavier side edge: it floats
 
     for(uint8_t row = 0; row < rows; row++) {
         const uint8_t index = model->dropdown_window + row;
@@ -318,7 +372,12 @@ static void variable_item_list_draw_dropdown(
     }
     if(scrolls) {
         elements_scrollbar_pos(
-            canvas, right - 2, y + 2, rows * DROPDOWN_ROW_H, model->dropdown_index, item->values_count);
+            canvas,
+            right - 2,
+            y + 2,
+            rows * DROPDOWN_ROW_H,
+            model->dropdown_index,
+            item->values_count);
     }
     // the control centre's picker's words: Up and Down browse, OK chooses
     elements_hint_bar(canvas, "ud=Browse;ok=Choose;back=Cancel");
@@ -361,9 +420,12 @@ static void variable_item_list_fit_window(VariableItemListModel* model) {
     const size_t shown = variable_item_list_rank(model, VariableItemArray_size(model->items));
     const size_t cursor = variable_item_list_rank(model, model->position);
     size_t window = variable_item_list_rank(model, model->window_position);
-    size_t last = shown > ITEMS_ON_SCREEN ? shown - ITEMS_ON_SCREEN : 0;
-    if(model->dropdown_open && cursor > 2) last = MAX(last, cursor - 2);
-    if(cursor > window + 2) window = cursor - 2;
+    const size_t rows = variable_item_list_rows(model);
+    size_t last = shown > rows ? shown - rows : 0;
+    // the cursor's row: never the last on screen while more follow, nor under a dropdown's hints
+    const size_t low = rows - 2;
+    if(model->dropdown_open && cursor > low) last = MAX(last, cursor - low);
+    if(cursor > window + low) window = cursor - low;
     if(cursor < window + 1) window = cursor ? cursor - 1 : 0;
     window = MIN(window, last);
     model->window_position = variable_item_list_at_rank(model, window);
@@ -385,8 +447,10 @@ static bool variable_item_list_settle(VariableItemListModel* model) {
     if(!count) return false;
     if(model->position >= count) model->position = 0;
     size_t position = model->position;
-    while(position > 0 && variable_item_list_hidden(model, position)) position--;
-    while(position + 1 < count && variable_item_list_hidden(model, position)) position++;
+    while(position > 0 && variable_item_list_hidden(model, position))
+        position--;
+    while(position + 1 < count && variable_item_list_hidden(model, position))
+        position++;
     model->position = position;
     variable_item_list_fit_window(model);
     return sliding;
@@ -427,7 +491,10 @@ static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
     }
 
     int32_t selected_y = -1;
-    int32_t rows_end = 0; // where the rows drawn so far end
+    // Hadal's header, as a submenu's: the bold title, a line out to Abyss's light
+    const int32_t top = furi_string_empty(model->header) ? 0 : ELEMENTS_HEADER_HEIGHT;
+    if(top) elements_header(canvas, furi_string_get_cstr(model->header));
+    int32_t rows_end = top; // where the rows drawn so far end
     const int32_t screen_y = canvas->offset_y;
 
     canvas_set_font(canvas, FontSecondary);
@@ -487,7 +554,14 @@ static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
                                variable_item_control(canvas, item, SEGMENTS_WIDTH_MAX);
             item->control = control; // segments or dropdown hangs on the texts' widths
             uint16_t segments = 0;
-            if(control == VariableItemControlSwitch) {
+            uint16_t opens_value_w = 0;
+            if(control == VariableItemControlOpens) {
+                // the value right-aligned before the ">", the label in the room it leaves
+                opens_value_w = MIN(
+                    canvas_string_width(canvas, furi_string_get_cstr(item->current_value_text)),
+                    OPENS_VALUE_MAX);
+                temp_w_default = OPENS_VALUE_RIGHT - opens_value_w - 4 - 6;
+            } else if(control == VariableItemControlSwitch) {
                 // the label has the room the arrows took
                 temp_w_default = CONTROL_RIGHT + 1 - SWITCH_W - 4 - 6;
             } else if(control == VariableItemControlSegments) {
@@ -500,10 +574,13 @@ static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
             if(position == model->position) {
                 selected_y = item_y;
                 const size_t value_room =
-                    control == VariableItemControlDropdown ? (size_t)(CONTROL_RIGHT - 9 - temp_x_default) :
+                    control == VariableItemControlOpens ?
+                        (size_t)OPENS_VALUE_MAX :
+                    control == VariableItemControlDropdown ?
+                        (size_t)(CONTROL_RIGHT - 9 - temp_x_default) :
                     (control == VariableItemControlArrows || control == VariableItemControlMeter) ?
-                                                             37 :
-                                                             SIZE_MAX;
+                        37 :
+                        SIZE_MAX;
                 model->selected_scrolls =
                     canvas_string_width(canvas, item->label) > temp_w_default ||
                     canvas_string_width(canvas, furi_string_get_cstr(item->current_value_text)) >
@@ -540,6 +617,35 @@ static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
                 variable_item_draw_switch(canvas, CONTROL_RIGHT + 1, item_y + 4, on, ink);
             } else if(control == VariableItemControlSegments) {
                 variable_item_draw_segments(canvas, item, item_y, segments, ink);
+            } else if(control == VariableItemControlLevels) {
+                // "Off" in words at nothing; else the bars, between the arrows as always
+                if(item->current_value_index > 0) {
+                    canvas_draw_str(canvas, temp_x_default, item_text_y, "<");
+                    variable_item_draw_levels(
+                        canvas, item, temp_x_default + 6, 112, item_text_y - 1);
+                } else {
+                    canvas_draw_str_aligned(
+                        canvas,
+                        (115 + temp_x_default) / 2 + 1,
+                        item_text_y,
+                        AlignCenter,
+                        AlignBottom,
+                        furi_string_get_cstr(item->current_value_text));
+                }
+                if(item->current_value_index < item->values_count - 1) {
+                    canvas_draw_str(canvas, 115, item_text_y, ">");
+                }
+            } else if(control == VariableItemControlOpens) {
+                elements_scrollable_text_line_str(
+                    canvas,
+                    OPENS_VALUE_RIGHT - opens_value_w,
+                    item_text_y,
+                    opens_value_w,
+                    furi_string_get_cstr(item->current_value_text),
+                    scroll_counter,
+                    false,
+                    false);
+                canvas_draw_str(canvas, 115, item_text_y, ">");
             } else if(control == VariableItemControlDropdown) {
                 elements_scrollable_text_line_str(
                     canvas,
@@ -553,9 +659,11 @@ static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
                 // a chevron: OK opens the choices
                 const int32_t chevron = CONTROL_RIGHT - 6;
                 canvas_draw_line(canvas, chevron, item_text_y - 5, chevron + 3, item_text_y - 2);
-                canvas_draw_line(canvas, chevron + 3, item_text_y - 2, chevron + 6, item_text_y - 5);
+                canvas_draw_line(
+                    canvas, chevron + 3, item_text_y - 2, chevron + 6, item_text_y - 5);
                 canvas_draw_line(canvas, chevron, item_text_y - 4, chevron + 3, item_text_y - 1);
-                canvas_draw_line(canvas, chevron + 3, item_text_y - 1, chevron + 6, item_text_y - 4);
+                canvas_draw_line(
+                    canvas, chevron + 3, item_text_y - 1, chevron + 6, item_text_y - 4);
             } else {
                 if(control == VariableItemControlMeter) {
                     variable_item_draw_meter(canvas, item, temp_x_default + 7, 112, item_y + 13);
@@ -582,10 +690,20 @@ static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
         }
     }
 
-    elements_scrollbar(
-        canvas,
-        variable_item_list_rank(model, model->position),
-        variable_item_list_rank(model, VariableItemArray_size(model->items)));
+    if(top) {
+        elements_scrollbar_pos(
+            canvas,
+            canvas_width(canvas),
+            top,
+            canvas_height(canvas) - top,
+            variable_item_list_rank(model, model->position),
+            variable_item_list_rank(model, VariableItemArray_size(model->items)));
+    } else {
+        elements_scrollbar(
+            canvas,
+            variable_item_list_rank(model, model->position),
+            variable_item_list_rank(model, VariableItemArray_size(model->items)));
+    }
 
     if(model->dropdown_open && model->position < VariableItemArray_size(model->items)) {
         const VariableItem* item = VariableItemArray_cget(model->items, model->position);
@@ -637,7 +755,8 @@ uint8_t variable_item_list_get_selected_item_index(VariableItemList* variable_it
 }
 
 /** Up and Down go through the open dropdown's choices, OK sets the item to one, Back leaves it */
-static bool variable_item_list_dropdown_input(VariableItemList* variable_item_list, InputEvent* event) {
+static bool
+    variable_item_list_dropdown_input(VariableItemList* variable_item_list, InputEvent* event) {
     if(event->type != InputTypeShort && event->type != InputTypeRepeat) return true;
     with_view_model(
         variable_item_list->view,
@@ -853,7 +972,8 @@ void variable_item_list_process_ok(VariableItemList* variable_item_list) {
                 model->locked_message_visible = true;
                 furi_timer_start(
                     variable_item_list->locked_timer, furi_kernel_get_tick_frequency() * 3);
-            } else if(item->control == VariableItemControlSwitch && variable_item_is_switch(item, &on)) {
+            } else if(
+                item->control == VariableItemControlSwitch && variable_item_is_switch(item, &on)) {
                 item->current_value_index = !item->current_value_index;
                 model->scroll_counter = 0;
                 if(item->change_callback) item->change_callback(item);
@@ -863,7 +983,8 @@ void variable_item_list_process_ok(VariableItemList* variable_item_list) {
                 if(item->change_callback) item->change_callback(item);
             } else if(
                 (item->control == VariableItemControlDropdown ||
-                 item->control == VariableItemControlMeter) &&
+                 item->control == VariableItemControlMeter ||
+                 item->control == VariableItemControlLevels) &&
                 item->values_text) {
                 model->dropdown_open = true;
                 model->dropdown_index = item->current_value_index;
@@ -871,7 +992,8 @@ void variable_item_list_process_ok(VariableItemList* variable_item_list) {
                 // the hint bar covers the bottom row: the item scrolls up to stay in sight
                 variable_item_list_fit_window(model);
                 const uint8_t rows = MIN(item->values_count, DROPDOWN_ROWS);
-                if(model->dropdown_index >= rows) model->dropdown_window = model->dropdown_index - rows + 1;
+                if(model->dropdown_index >= rows)
+                    model->dropdown_window = model->dropdown_index - rows + 1;
             } else if(variable_item_list->callback) {
                 variable_item_list->callback(variable_item_list->context, model->position);
             }
@@ -886,9 +1008,7 @@ static void variable_item_list_scroll_timer_callback(void* context) {
     with_view_model(
         variable_item_list->view,
         VariableItemListModel * model,
-        {
-            redraw = elements_scroll_step(&model->scroll_counter) && model->selected_scrolls;
-        },
+        { redraw = elements_scroll_step(&model->scroll_counter) && model->selected_scrolls; },
         redraw);
 }
 
@@ -949,6 +1069,7 @@ VariableItemList* variable_item_list_alloc(void) {
             model->scroll_counter = 0;
             model->snap = true;
             model->slide_timer = variable_item_list->slide_timer;
+            model->header = furi_string_alloc();
         },
         true);
     // Started on view enter, not here: a list that is allocated but not on screen asked the GUI
@@ -973,6 +1094,7 @@ void variable_item_list_free(VariableItemList* variable_item_list) {
                 furi_string_free(VariableItemArray_ref(it)->locked_message);
             }
             VariableItemArray_clear(model->items);
+            furi_string_free(model->header);
         },
         false);
     furi_timer_stop(variable_item_list->scroll_timer);
@@ -999,6 +1121,7 @@ void variable_item_list_reset(VariableItemList* variable_item_list) {
                 furi_string_free(VariableItemArray_ref(it)->locked_message);
             }
             VariableItemArray_reset(model->items);
+            furi_string_reset(model->header); // as a submenu's: each page sets its own
             model->dropdown_open = false;
             model->snap = true;
         },
@@ -1035,6 +1158,7 @@ VariableItem* variable_item_list_add(
             item->control = VariableItemControlArrows;
             item->locked = false;
             item->hidden = false;
+            item->opens = false;
             item->indent = 0;
             item->height = ITEM_H;
             item->locked_message = furi_string_alloc();
@@ -1105,6 +1229,24 @@ void variable_item_set_locked(VariableItem* item, bool locked, const char* locke
         furi_assert(locked_message);
         furi_string_set(item->locked_message, locked_message);
     }
+}
+
+void variable_item_list_set_header(VariableItemList* variable_item_list, const char* header) {
+    furi_check(variable_item_list);
+    with_view_model(
+        variable_item_list->view,
+        VariableItemListModel * model,
+        {
+            furi_string_set_str(model->header, header ? header : "");
+            // a row fewer: the window settles over the cursor again
+            if(VariableItemArray_size(model->items)) variable_item_list_fit_window(model);
+        },
+        true);
+}
+
+void variable_item_set_opens(VariableItem* item, bool opens) {
+    furi_check(item);
+    item->opens = opens;
 }
 
 void variable_item_set_hidden(VariableItem* item, bool hidden) {

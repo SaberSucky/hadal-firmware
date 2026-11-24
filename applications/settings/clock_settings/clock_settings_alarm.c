@@ -1,4 +1,5 @@
 #include <furi.h>
+#include <gui/elements.h>
 #include <furi_hal.h>
 
 #include <gui/gui.h>
@@ -81,10 +82,8 @@ static void clock_settings_alarm_draw_callback(Canvas* canvas, void* ctx) {
     canvas_draw_str(canvas, 60, 44, furi_string_get_cstr(date));
     furi_string_free(date);
 
-    // Press Back to snooze
-    canvas_set_font(canvas, FontPrimary);
-    canvas_draw_icon_ex(canvas, 5, 50, &I_Pin_back_arrow_10x8, 0);
-    canvas_draw_str_aligned(canvas, 20, 50, AlignLeft, AlignTop, "Snooze");
+    // both its keys, as every screen says them: Back snoozes, any other key stops it
+    elements_hint_bar(canvas, "ok=Stop;back=Snooze");
 }
 
 static void clock_settings_alarm_input_callback(InputEvent* input_event, void* ctx) {
@@ -133,9 +132,16 @@ int32_t clock_settings_alarm(void* p) {
     // Process events
     InputEvent event;
     bool running = true;
+    // A key acts as it is let go, not as it goes down: the screen stays until the whole press has
+    // come and gone, so no part of it (its short press, its release) reaches the desktop under
+    // it. Acting on the press, OK that stopped the alarm also opened the main menu
+    InputKey pressed = InputKeyMAX;
     while(running) {
         if(furi_message_queue_get(event_queue, &event, 2000) == FuriStatusOk) {
             if(event.type == InputTypePress) {
+                pressed = event.key;
+            } else if(event.type == InputTypeRelease && event.key == pressed) {
+                pressed = InputKeyMAX;
                 // Snooze
                 if(event.key == InputKeyBack) {
                     furi_hal_rtc_get_datetime(&model.snooze_until);

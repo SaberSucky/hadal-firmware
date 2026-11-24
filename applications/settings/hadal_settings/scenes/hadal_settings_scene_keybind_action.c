@@ -28,7 +28,7 @@ static const struct {
     {"Lock", "Lock with PIN"},
     {"Lock Keypad", "Lock (no PIN)"},
     {"Archive", "Archive"},
-    {"Power Off", "Power Off"},
+    {"Power Off", "Power off"},
     {"Nothing", "Nothing"},
 };
 
@@ -46,8 +46,7 @@ void hadal_settings_scene_keybind_action_on_enter(void* context) {
     HadalSettings* app = context;
     submenu_reset(app->submenu);
     submenu_set_header(app->submenu, "Do what?");
-    submenu_add_item(
-        app->submenu, "Default", ActionDefault, hadal_settings_submenu_callback, app);
+    submenu_add_item(app->submenu, "Default", ActionDefault, hadal_settings_submenu_callback, app);
     for(size_t i = 0; i < COUNT_OF(action_words); i++) {
         submenu_add_item(
             app->submenu,
@@ -58,10 +57,15 @@ void hadal_settings_scene_keybind_action_on_enter(void* context) {
     }
     submenu_add_item(
         app->submenu, "App on the SD card...", ActionSdApp, hadal_settings_submenu_callback, app);
-    submenu_add_item(app->submenu, "Open a file...", ActionFile, hadal_settings_submenu_callback, app);
+    submenu_add_item(
+        app->submenu, "Open a file...", ActionFile, hadal_settings_submenu_callback, app);
     for(size_t i = 0; i < FLIPPER_APPS_COUNT; i++) {
         submenu_add_item(
-            app->submenu, FLIPPER_APPS[i].name, ActionBuiltin + i, hadal_settings_submenu_callback, app);
+            app->submenu,
+            FLIPPER_APPS[i].name,
+            ActionBuiltin + i,
+            hadal_settings_submenu_callback,
+            app);
     }
     for(size_t i = 0; i < FLIPPER_EXTERNAL_APPS_COUNT; i++) {
         submenu_add_item(

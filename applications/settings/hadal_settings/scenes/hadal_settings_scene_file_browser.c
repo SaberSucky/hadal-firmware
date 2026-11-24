@@ -67,6 +67,8 @@ void hadal_settings_scene_file_browser_on_enter(void* context) {
     variable_item_set_current_value_text(item, sort_texts[prefs.sort_by]);
     variable_item_set_values_text(item, sort_texts);
 
+    // the header every Hadal page has
+    variable_item_list_set_header(app->variable_list, "File Browser");
     item = variable_item_list_add(app->variable_list, "Folders", 2, folders_changed, app);
     variable_item_set_current_value_index(item, prefs.folders_mixed ? 1 : 0);
     variable_item_set_current_value_text(item, folder_texts[prefs.folders_mixed ? 1 : 0]);

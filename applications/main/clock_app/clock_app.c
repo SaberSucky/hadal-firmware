@@ -271,11 +271,21 @@ static void clock_render_callback(Canvas* const canvas, void* ctx) {
             state->settings.alarm_hour,
             state->settings.alarm_minute,
             state->time_format);
-        char alarm_str[16];
-        // '!' stands in for a bell - the default font has no bell glyph.
-        snprintf(alarm_str, sizeof(alarm_str), "! %s", alarm_time);
+        // a bell, then the time it rings
+        static const char* const bell[] = {
+            "...#...", "..###..", ".#####.", ".#####.", ".#####.", "#######", ".......", "...#..."};
+        for(uint8_t row = 0; row < COUNT_OF(bell); row++) {
+            for(uint8_t col = 0; bell[row][col]; col++) {
+                if(bell[row][col] == '#') canvas_draw_dot(canvas, 2 + col, 55 + row);
+            }
+        }
         canvas_set_font(canvas, FontSecondary);
-        canvas_draw_str_aligned(canvas, 2, 62, AlignLeft, AlignBottom, alarm_str);
+        canvas_draw_str_aligned(canvas, 11, 62, AlignLeft, AlignBottom, alarm_time);
+    }
+    if(timer_start_timestamp == 0) {
+        // Right: where the alarm is set
+        canvas_set_font(canvas, FontSecondary);
+        canvas_draw_str_aligned(canvas, 126, 62, AlignRight, AlignBottom, "Alarm >");
     }
 }
 
@@ -307,11 +317,7 @@ static void ns_settings_save(AppState* app) {
     NsSettings saved = app->settings;
     saved.alarm_enabled = false;
     saved_struct_save(
-        NS_SETTINGS_PATH,
-        &saved,
-        sizeof(NsSettings),
-        NS_SETTINGS_MAGIC,
-        NS_SETTINGS_VERSION);
+        NS_SETTINGS_PATH, &saved, sizeof(NsSettings), NS_SETTINGS_MAGIC, NS_SETTINGS_VERSION);
 }
 
 static void ns_switch(AppState* app, NsViewId view) {
@@ -408,8 +414,7 @@ static void alarm_time_draw(Canvas* canvas, void* ctx) {
     bool h12mode = (app->time_format == LocaleTimeFormat12h);
     canvas_clear(canvas);
 
-    canvas_set_font(canvas, FontPrimary);
-    canvas_draw_str_aligned(canvas, 64, 4, AlignCenter, AlignTop, "Alarm time");
+    elements_header(canvas, "Alarm");
 
     char hh[4], mm[4];
     bool pm = false;
@@ -427,31 +432,24 @@ static void alarm_time_draw(Canvas* canvas, void* ctx) {
     uint8_t cx = h12mode ? 53 : 64;
     uint8_t mx = h12mode ? 72 : 83;
 
+    const uint8_t mid = 34; // between the header and the hint bar
     canvas_set_font(canvas, FontBigNumbers);
-    canvas_draw_str_aligned(canvas, hx, 32, AlignCenter, AlignCenter, hh);
-    canvas_draw_str_aligned(canvas, cx, 32, AlignCenter, AlignCenter, ":");
-    canvas_draw_str_aligned(canvas, mx, 32, AlignCenter, AlignCenter, mm);
+    canvas_draw_str_aligned(canvas, hx, mid, AlignCenter, AlignCenter, hh);
+    canvas_draw_str_aligned(canvas, cx, mid, AlignCenter, AlignCenter, ":");
+    canvas_draw_str_aligned(canvas, mx, mid, AlignCenter, AlignCenter, mm);
     if(h12mode) {
         canvas_set_font(canvas, FontPrimary);
-        canvas_draw_str_aligned(canvas, 104, 32, AlignCenter, AlignCenter, pm ? "PM" : "AM");
+        canvas_draw_str_aligned(canvas, 104, mid, AlignCenter, AlignCenter, pm ? "PM" : "AM");
     }
 
-    // Underline whichever field Up/Down currently changes.
-    uint8_t ux, uw;
-    if(app->edit_field == 0) {
-        ux = hx;
-        uw = 20;
-    } else if(app->edit_field == 1) {
-        ux = mx;
-        uw = 20;
-    } else { // meridian (12h only)
-        ux = 104;
-        uw = 18;
+    // The field Up and Down turn, as a picker's wheel: a chevron over it and one under it
+    const uint8_t ux = app->edit_field == 0 ? hx : app->edit_field == 1 ? mx : 104;
+    for(uint8_t row = 0; row < 3; row++) {
+        canvas_draw_line(canvas, ux - row, mid - 14 + row, ux + row, mid - 14 + row);
+        canvas_draw_line(canvas, ux - row, mid + 14 - row, ux + row, mid + 14 - row);
     }
-    canvas_draw_line(canvas, ux - uw / 2, 46, ux + uw / 2, 46);
 
-    canvas_set_font(canvas, FontSecondary);
-    canvas_draw_str_aligned(canvas, 64, 60, AlignCenter, AlignBottom, "Up/Down set  OK save");
+    elements_hint_bar(canvas, "ud=Set;lr=Move;ok=Save");
 }
 
 static bool alarm_time_input(InputEvent* event, void* context) {
@@ -625,13 +623,16 @@ int32_t clock_app(void* p) {
 
     // Alarm menu
     app->alarm_menu = variable_item_list_alloc();
+    variable_item_list_set_header(app->alarm_menu, "Alarm");
+    // it rings every day at its time: the switch says so, the time opens its picker
     app->alarm_toggle_item =
-        variable_item_list_add(app->alarm_menu, "Alarm", 2, alarm_toggle_changed, app);
+        variable_item_list_add(app->alarm_menu, "Every day", 2, alarm_toggle_changed, app);
     variable_item_set_values_text(app->alarm_toggle_item, alarm_toggle_text);
     variable_item_set_current_value_index(app->alarm_toggle_item, app->settings.alarm_enabled);
     variable_item_set_current_value_text(
         app->alarm_toggle_item, alarm_toggle_text[app->settings.alarm_enabled]);
-    app->alarm_time_item = variable_item_list_add(app->alarm_menu, "Set time", 1, NULL, app);
+    app->alarm_time_item = variable_item_list_add(app->alarm_menu, "Time", 1, NULL, app);
+    variable_item_set_opens(app->alarm_time_item, true);
     refresh_time_menu_item(app);
     variable_item_list_set_enter_callback(app->alarm_menu, alarm_menu_enter, app);
     view_dispatcher_add_view(

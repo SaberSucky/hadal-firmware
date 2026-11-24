@@ -100,6 +100,8 @@ void hadal_settings_scene_lock_screen_on_enter(void* context) {
     DesktopSettings* settings = hadal_settings_desktop_get(app);
     variable_item_list_reset(app->variable_list);
 
+    // the header every Hadal page has
+    variable_item_list_set_header(app->variable_list, "Lock Screen");
     VariableItem* item =
         variable_item_list_add(app->variable_list, "Lock at start", 2, boot_changed, app);
     const uint8_t boot_locked = settings->boot_unlocked ? 0 : 1;

@@ -11,19 +11,21 @@ void lfrfid_scene_start_on_enter(void* context) {
     LfRfid* app = context;
     Submenu* submenu = app->submenu;
 
+    // the header every Hadal page has: which app this is
+    submenu_set_header(submenu, "RFID");
     submenu_add_item(
         submenu, "Read", LfRfidMenuIndexRead, lfrfid_scene_start_submenu_callback, app);
     submenu_add_item(
         submenu, "Saved", LfRfidMenuIndexSaved, lfrfid_scene_start_submenu_callback, app);
     submenu_add_item(
         submenu,
-        "Add Manually",
+        "Add manually",
         LfRfidMenuIndexAddManually,
         lfrfid_scene_start_submenu_callback,
         app);
     submenu_add_item(
         submenu,
-        "Extra Actions",
+        "Extra actions",
         LfRfidMenuIndexExtraActions,
         lfrfid_scene_start_submenu_callback,
         app);

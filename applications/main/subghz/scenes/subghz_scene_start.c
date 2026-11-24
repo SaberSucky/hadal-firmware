@@ -25,6 +25,8 @@ void subghz_scene_start_on_enter(void* context) {
     //place that can afford to go looking for a module plugged back in
     subghz_txrx_radio_device_poll_reacquire(subghz->txrx);
 
+    // the header every Hadal page has: which app this is
+    submenu_set_header(subghz->submenu, "Sub-GHz");
     submenu_add_item(
         subghz->submenu, "Read", SubmenuIndexRead, subghz_scene_start_submenu_callback, subghz);
     submenu_add_item(
@@ -37,25 +39,25 @@ void subghz_scene_start_on_enter(void* context) {
         subghz->submenu, "Saved", SubmenuIndexSaved, subghz_scene_start_submenu_callback, subghz);
     submenu_add_item(
         subghz->submenu,
-        "Add Manually",
+        "Add manually",
         SubmenuIndexAddManually,
         subghz_scene_start_submenu_callback,
         subghz);
     submenu_add_item(
         subghz->submenu,
-        "Add Manually [Advanced]",
+        "Add manually (advanced)",
         SubmenuIndexAddManuallyAdvanced,
         subghz_scene_start_submenu_callback,
         subghz);
     submenu_add_item(
         subghz->submenu,
-        "Frequency Analyzer",
+        "Frequency analyzer",
         SubmenuIndexFrequencyAnalyzer,
         subghz_scene_start_submenu_callback,
         subghz);
     submenu_add_item(
         subghz->submenu,
-        "Radio Settings",
+        "Radio settings",
         SubmenuIndexExtSettings,
         subghz_scene_start_submenu_callback,
         subghz);

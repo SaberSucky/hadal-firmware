@@ -15,9 +15,11 @@ void ibutton_scene_start_on_enter(void* context) {
 
     ibutton_reset_key(ibutton);
 
+    // the header every Hadal page has: which app this is
+    submenu_set_header(submenu, "iButton");
     submenu_add_item(submenu, "Read", SubmenuIndexRead, ibutton_submenu_callback, ibutton);
     submenu_add_item(submenu, "Saved", SubmenuIndexSaved, ibutton_submenu_callback, ibutton);
-    submenu_add_item(submenu, "Add Manually", SubmenuIndexAdd, ibutton_submenu_callback, ibutton);
+    submenu_add_item(submenu, "Add manually", SubmenuIndexAdd, ibutton_submenu_callback, ibutton);
     submenu_add_item(submenu, "Settings", SubmenuIndexSettings, ibutton_submenu_callback, ibutton);
 
     submenu_set_selected_item(

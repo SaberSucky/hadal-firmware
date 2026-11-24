@@ -11,5 +11,6 @@ App(
     stack_size=1 * 1024,
     order=10,
     fap_libs=["assets"],
+    fap_icon_assets="images",
     fap_category="assets",
 )

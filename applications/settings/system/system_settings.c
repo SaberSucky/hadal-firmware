@@ -97,8 +97,8 @@ static void log_baud_rate_changed(VariableItem* item) {
 }
 
 const char* const debug_text[] = {
-    "OFF",
-    "ON",
+    "Off",
+    "On",
 };
 
 static void debug_changed(VariableItem* item) {
@@ -251,6 +251,8 @@ SystemSettings* system_settings_alloc(void) {
     uint8_t value_index;
     app->var_item_list = variable_item_list_alloc();
 
+    // the header every Hadal page has
+    variable_item_list_set_header(app->var_item_list, "System");
     item = variable_item_list_add(
         app->var_item_list, "Left-handed", COUNT_OF(hand_mode), hand_orient_changed, app);
     value_index = furi_hal_rtc_is_flag_set(FuriHalRtcFlagHandOrient) ? 1 : 0;
@@ -271,7 +273,7 @@ SystemSettings* system_settings_alloc(void) {
     variable_item_set_values_text(item, measurement_units_text);
 
     item = variable_item_list_add(
-        app->var_item_list, "Time Format", COUNT_OF(time_format_text), time_format_changed, app);
+        app->var_item_list, "Time format", COUNT_OF(time_format_text), time_format_changed, app);
     value_index = value_index_uint32(
         locale_get_time_format(), time_format_value, COUNT_OF(time_format_value));
     variable_item_set_current_value_index(item, value_index);
@@ -279,7 +281,7 @@ SystemSettings* system_settings_alloc(void) {
     variable_item_set_values_text(item, time_format_text);
 
     item = variable_item_list_add(
-        app->var_item_list, "Date Format", COUNT_OF(date_format_text), date_format_changed, app);
+        app->var_item_list, "Date format", COUNT_OF(date_format_text), date_format_changed, app);
     value_index = value_index_uint32(
         locale_get_date_format(), date_format_value, COUNT_OF(date_format_value));
     variable_item_set_current_value_index(item, value_index);
@@ -287,7 +289,7 @@ SystemSettings* system_settings_alloc(void) {
     variable_item_set_values_text(item, date_format_text);
 
     item = variable_item_list_add(
-        app->var_item_list, "Log Level", COUNT_OF(log_level_text), log_level_changed, app);
+        app->var_item_list, "Log level", COUNT_OF(log_level_text), log_level_changed, app);
     value_index = value_index_uint32(
         furi_hal_rtc_get_log_level(), log_level_value, COUNT_OF(log_level_text));
     variable_item_set_current_value_index(item, value_index);
@@ -295,7 +297,7 @@ SystemSettings* system_settings_alloc(void) {
     variable_item_set_values_text(item, log_level_text);
 
     item = variable_item_list_add(
-        app->var_item_list, "Log Device", COUNT_OF(log_device_text), log_device_changed, app);
+        app->var_item_list, "Log device", COUNT_OF(log_device_text), log_device_changed, app);
     value_index = value_index_uint32(
         furi_hal_rtc_get_log_device(), log_device_value, COUNT_OF(log_device_text));
     variable_item_set_current_value_index(item, value_index);
@@ -305,7 +307,7 @@ SystemSettings* system_settings_alloc(void) {
 
     item = variable_item_list_add(
         app->var_item_list,
-        "Log Baud Rate",
+        "Log baud rate",
         COUNT_OF(log_baud_rate_text),
         log_baud_rate_changed,
         app);
@@ -326,7 +328,7 @@ SystemSettings* system_settings_alloc(void) {
 
     item = variable_item_list_add(
         app->var_item_list,
-        "Heap Trace",
+        "Heap trace",
         COUNT_OF(heap_trace_mode_text),
         heap_trace_mode_changed,
         app);
@@ -338,14 +340,14 @@ SystemSettings* system_settings_alloc(void) {
     variable_item_set_values_text(item, heap_trace_mode_text);
 
     item = variable_item_list_add(
-        app->var_item_list, "Sleep Method", COUNT_OF(sleep_method), sleep_method_changed, app);
+        app->var_item_list, "Sleep method", COUNT_OF(sleep_method), sleep_method_changed, app);
     value_index = furi_hal_rtc_is_flag_set(FuriHalRtcFlagLegacySleep) ? 1 : 0;
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, sleep_method[value_index]);
     variable_item_set_values_text(item, sleep_method);
 
     item = variable_item_list_add(
-        app->var_item_list, "File Naming", COUNT_OF(filename_scheme), filename_scheme_changed, app);
+        app->var_item_list, "File naming", COUNT_OF(filename_scheme), filename_scheme_changed, app);
     value_index = furi_hal_rtc_is_flag_set(FuriHalRtcFlagDetailedFilename) ? 1 : 0;
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, filename_scheme[value_index]);

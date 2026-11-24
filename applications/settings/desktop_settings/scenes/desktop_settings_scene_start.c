@@ -17,6 +17,7 @@ typedef enum {
     DesktopSettingsChangeName,
     DesktopSettingsHappyMode,
     DesktopSettingsButtons,
+    DesktopSettingsDummyMode,
     DesktopSettingsDummyLeft,
     DesktopSettingsDummyLeftLong,
     DesktopSettingsDummyRight,
@@ -30,15 +31,15 @@ typedef enum {
 
 #define AUTO_LOCK_DELAY_COUNT 9
 const char* const auto_lock_delay_text[AUTO_LOCK_DELAY_COUNT] = {
-    "OFF",
-    "10s",
-    "15s",
-    "30s",
-    "60s",
-    "90s",
-    "2min",
-    "5min",
-    "10min",
+    "Off",
+    "10 s",
+    "15 s",
+    "30 s",
+    "60 s",
+    "90 s",
+    "2 min",
+    "5 min",
+    "10 min",
 };
 
 const uint32_t auto_lock_delay_value[AUTO_LOCK_DELAY_COUNT] =
@@ -47,16 +48,16 @@ const uint32_t auto_lock_delay_value[AUTO_LOCK_DELAY_COUNT] =
 #define USB_INHIBIT_AUTO_LOCK_DELAY_COUNT 2
 
 const char* const usb_inhibit_auto_lock_delay_text[USB_INHIBIT_AUTO_LOCK_DELAY_COUNT] = {
-    "OFF",
-    "ON",
+    "Off",
+    "On",
 };
 
 const uint32_t usb_inhibit_auto_lock_delay_value[USB_INHIBIT_AUTO_LOCK_DELAY_COUNT] = {0, 1};
 
 #define CLOCK_ENABLE_COUNT 2
 const char* const clock_enable_text[CLOCK_ENABLE_COUNT] = {
-    "OFF",
-    "ON",
+    "Off",
+    "On",
 };
 
 const uint32_t clock_enable_value[CLOCK_ENABLE_COUNT] = {0, 1};
@@ -119,6 +120,27 @@ static void desktop_settings_scene_start_auto_lock_delay_changed(VariableItem* i
         index == 0);
 }
 
+// Dummy mode's buttons mean nothing while it is off: they slide in under it when it is turned on
+static const char* const dummy_mode_text[] = {"Off", "On"};
+#define DUMMY_BUTTONS (DesktopSettingsDummyOkLong - DesktopSettingsDummyLeft + 1)
+
+static void
+    desktop_settings_scene_start_dummy_buttons_hidden(DesktopSettingsApp* app, bool hidden) {
+    for(uint32_t i = 0; i < DUMMY_BUTTONS; i++) {
+        variable_item_set_hidden(
+            variable_item_list_get(app->variable_item_list, DesktopSettingsDummyLeft + i), hidden);
+    }
+}
+
+static void desktop_settings_scene_start_dummy_mode_changed(VariableItem* item) {
+    DesktopSettingsApp* app = variable_item_get_context(item);
+    uint8_t index = variable_item_get_current_value_index(item);
+
+    variable_item_set_current_value_text(item, dummy_mode_text[index]);
+    app->settings.dummy_mode = index;
+    desktop_settings_scene_start_dummy_buttons_hidden(app, !index);
+}
+
 static void desktop_settings_scene_start_usb_inhibit_auto_lock_delay_changed(VariableItem* item) {
     DesktopSettingsApp* app = variable_item_get_context(item);
     uint8_t index = variable_item_get_current_value_index(item);
@@ -134,11 +156,13 @@ void desktop_settings_scene_start_on_enter(void* context) {
     VariableItem* item;
     uint8_t value_index;
 
-    variable_item_list_add(variable_item_list, "PIN Setup", 1, NULL, NULL);
+    // the header every Hadal page has
+    variable_item_list_set_header(variable_item_list, "Desktop");
+    variable_item_list_add(variable_item_list, "PIN setup", 1, NULL, NULL);
 
     item = variable_item_list_add(
         variable_item_list,
-        "Auto Lock Time",
+        "Auto-lock time",
         AUTO_LOCK_DELAY_COUNT,
         desktop_settings_scene_start_auto_lock_delay_changed,
         app);
@@ -170,7 +194,7 @@ void desktop_settings_scene_start_on_enter(void* context) {
 
     item = variable_item_list_add(
         variable_item_list,
-        "Battery View",
+        "Battery view",
         BATTERY_VIEW_COUNT,
         desktop_settings_scene_start_battery_view_changed,
         app);
@@ -185,7 +209,7 @@ void desktop_settings_scene_start_on_enter(void* context) {
 
     item = variable_item_list_add(
         variable_item_list,
-        "Show Clock",
+        "Show clock",
         CLOCK_ENABLE_COUNT,
         desktop_settings_scene_start_clock_enable_changed,
         app);
@@ -209,22 +233,41 @@ void desktop_settings_scene_start_on_enter(void* context) {
 
     // the menu style and the asset pack are set in Settings > Hadal > Interface
 
-    variable_item_list_add(variable_item_list, "Change Flipper Name", 0, NULL, app);
+    variable_item_list_add(variable_item_list, "Change Flipper name", 0, NULL, app);
 
-    variable_item_list_add(variable_item_list, "Happy Mode", 1, NULL, NULL);
+    variable_item_list_add(variable_item_list, "Happy mode", 1, NULL, NULL);
 
     // what each button does is set in one place, Hadal > Desktop Keys: this opens it
     variable_item_list_add(variable_item_list, "Buttons...", 1, NULL, NULL);
 
-    variable_item_list_add(variable_item_list, "Dummy: Left", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "Dummy: Left hold", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "Dummy: Right", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "Dummy: Right hold", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "Dummy: Up hold", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "Dummy: Down", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "Dummy: Down hold", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "Dummy: OK", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "Dummy: OK hold", 1, NULL, NULL);
+    item = variable_item_list_add(
+        variable_item_list,
+        "Dummy mode",
+        COUNT_OF(dummy_mode_text),
+        desktop_settings_scene_start_dummy_mode_changed,
+        app);
+    value_index = app->settings.dummy_mode ? 1 : 0;
+    variable_item_set_current_value_index(item, value_index);
+    variable_item_set_current_value_text(item, dummy_mode_text[value_index]);
+    variable_item_set_values_text(item, dummy_mode_text);
+
+    // what each button opens in Dummy mode, under it
+    static const char* const dummy_buttons[DUMMY_BUTTONS] = {
+        "Left",
+        "Left held",
+        "Right",
+        "Right held",
+        "Up held",
+        "Down",
+        "Down held",
+        "OK",
+        "OK held",
+    };
+    for(uint32_t i = 0; i < DUMMY_BUTTONS; i++) {
+        item = variable_item_list_add(variable_item_list, dummy_buttons[i], 1, NULL, NULL);
+        variable_item_set_indent(item, 1);
+    }
+    desktop_settings_scene_start_dummy_buttons_hidden(app, !app->settings.dummy_mode);
 
     variable_item_list_set_enter_callback(
         variable_item_list, desktop_settings_scene_start_var_list_enter_callback, app);

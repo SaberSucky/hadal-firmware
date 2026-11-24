@@ -1,5 +1,4 @@
 #include "submenu.h"
-#include "../hadal_title_font.h"
 
 #include <assets_icons.h>
 #include <gui/elements.h>
@@ -122,17 +121,8 @@ static void submenu_view_draw_callback(Canvas* canvas, void* _model) {
     canvas_clear(canvas);
 
     if(!furi_string_empty(model->header)) {
-        // Hadal's header: the title font's bold capitals over a dotted rule
-        canvas_set_custom_u8g2_font(canvas, hadal_title_font);
-        FuriString* header = furi_string_alloc_set(model->header);
-        elements_string_fit_width(canvas, header, item_width - 4);
-        canvas_draw_str(canvas, 3, 2 + HADAL_TITLE_FONT_HEIGHT, furi_string_get_cstr(header));
-        furi_string_free(header);
-        if(!hints) {
-            for(uint8_t x = 3; x < item_width - 1; x += 2) {
-                canvas_draw_dot(canvas, x, header_height - 2);
-            }
-        }
+        // Hadal's header: the bold title, a line out to Abyss's light
+        elements_header(canvas, furi_string_get_cstr(model->header));
     }
 
     canvas_set_font(canvas, FontSecondary);
@@ -179,8 +169,8 @@ static void submenu_view_draw_callback(Canvas* canvas, void* _model) {
                 // the selected one scrolls, so the whole of it can be read
                 model->selected_scrolls = true;
                 const size_t counter = elements_scroll_position(model->scroll_counter);
-                const size_t scroll = counter > SUBMENU_SCROLL_PAUSE ? counter - SUBMENU_SCROLL_PAUSE :
-                                                                      0;
+                const size_t scroll =
+                    counter > SUBMENU_SCROLL_PAUSE ? counter - SUBMENU_SCROLL_PAUSE : 0;
                 elements_scrollable_text_line_str(
                     canvas, 6, text_y, text_width, label, scroll, false, false);
             } else {

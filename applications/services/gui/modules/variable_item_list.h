@@ -140,6 +140,22 @@ void variable_item_set_values_text(VariableItem* item, const char* const* values
  */
 void variable_item_set_locked(VariableItem* item, bool locked, const char* locked_message);
 
+/** Set a header over the list: Hadal's title capitals over a dotted rule, as a submenu's. One
+ * row fewer shows. variable_item_list_reset() clears it.
+ *
+ * @param      variable_item_list  VariableItemList instance
+ * @param      header              the header, or NULL for none
+ */
+void variable_item_list_set_header(VariableItemList* variable_item_list, const char* header);
+
+/** Make an item a row that opens a page: its value text right-aligned before a ">", using the
+ * room the label leaves; OK calls the list's enter callback (no values to step through).
+ *
+ * @param      item   VariableItem to change
+ * @param      opens  whether it opens a page
+ */
+void variable_item_set_opens(VariableItem* item, bool opens);
+
 /** Hide an item, or show it again: for a setting that means nothing while another is off (Night
  * Shift's start and end while it is off). A hidden item keeps its place and its index (the enter
  * callback and variable_item_list_get count it as before); Up and Down pass over it. Shown or

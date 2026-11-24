@@ -11,6 +11,9 @@
 #include <furi_hal_region.h>
 #include <furi_hal_bt.h>
 #include <furi_hal_info.h>
+#include <toolbox/version.h>
+
+#include "about_icons.h"
 
 typedef DialogMessageButton (*AboutDialogScreen)(DialogsApp* dialogs, DialogMessage* message);
 
@@ -69,6 +72,30 @@ static DialogMessageButton compliance_screen(DialogsApp* dialogs, DialogMessage*
     result = dialog_message_show(dialogs, message);
     dialog_message_set_text(message, NULL, 0, 0, AlignLeft, AlignTop);
 
+    return result;
+}
+
+/* The first page: Abyss, and which Hadal this is */
+static DialogMessageButton hadal_hello_screen(DialogsApp* dialogs, DialogMessage* message) {
+    DialogMessageButton result;
+    const Version* version = version_get();
+    // the date as every screen writes it (dots), the build's own way being dashes
+    FuriString* date = furi_string_alloc_set_str(version_get_builddate(version));
+    furi_string_replace_all(date, "-", ".");
+    FuriString* text = furi_string_alloc_printf(
+        "%s\n%s\nfrom the deep", version_get_githash(version), furi_string_get_cstr(date));
+    furi_string_free(date);
+
+    // clear of the Next button under it
+    dialog_message_set_icon(message, &I_Abyss_32x32, 4, 10);
+    dialog_message_set_header(message, "Hadal", 42, 6, AlignLeft, AlignTop);
+    dialog_message_set_text(message, furi_string_get_cstr(text), 42, 17, AlignLeft, AlignTop);
+    result = dialog_message_show(dialogs, message);
+    dialog_message_set_icon(message, NULL, 0, 0);
+    dialog_message_set_header(message, NULL, 0, 0, AlignLeft, AlignTop);
+    dialog_message_set_text(message, NULL, 0, 0, AlignLeft, AlignTop);
+
+    furi_string_free(text);
     return result;
 }
 
@@ -193,6 +220,7 @@ static DialogMessageButton fw_version_screen(DialogsApp* dialogs, DialogMessage*
 }
 
 const AboutDialogScreen about_screens[] = {
+    hadal_hello_screen,
     hadal_info_screen,
     hadal_license_screen,
     hadal_credits_screen,

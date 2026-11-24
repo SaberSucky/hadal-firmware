@@ -28,6 +28,9 @@ static uint8_t menu_style_ps4_level(void) {
     return level;
 }
 
+#define PS4_PILL_HEIGHT 10 // the name's pill: a clear row over its capitals, one under descenders
+#define PS4_PILL_PAD    3 // clear columns either side of the name
+
 static void menu_style_ps4_draw(Canvas* canvas, MenuModel* model) {
     size_t position = model->position;
     size_t count = model->count;
@@ -50,22 +53,28 @@ static void menu_style_ps4_draw(Canvas* canvas, MenuModel* model) {
             width += 10;
             height += 10;
             y += 2;
-            canvas_draw_box(canvas, x - width / 2, y + height / 2, width, 9);
+            // The app's name in the pill hanging from the selected tile (it said "Start", the
+            // name beside it): as wide as the name, at least the tile's width, at most to the
+            // screen's edge, where a longer name scrolls
+            const char* label = menu_style_label(item, true);
+            const int32_t left = x - width / 2;
+            const int32_t top = y + height / 2 - 1; // over the tile's own bottom edge
+            const int32_t room = canvas_width(canvas) - 1 - left;
+            int32_t pill = (int32_t)canvas_string_width(canvas, label) + PS4_PILL_PAD * 2 + 1;
+            if(pill < width) pill = width;
+            if(pill > room) pill = room;
+            canvas_draw_rbox(canvas, left, top, pill, PS4_PILL_HEIGHT, 2);
             canvas_set_color(canvas, ColorWhite);
-            canvas_set_font(canvas, FontBatteryPercent);
-            canvas_draw_str_aligned(canvas, x, y + height / 2 + 1, AlignCenter, AlignTop, "Start");
-
-            canvas_set_color(canvas, ColorBlack);
-            canvas_set_font(canvas, FontSecondary);
             elements_scrollable_text_line_str(
                 canvas,
-                x + width / 2 + 2,
-                y + height / 2 + 7,
-                74,
-                menu_style_label(item, true),
+                left + PS4_PILL_PAD,
+                top + PS4_PILL_HEIGHT - 2,
+                pill - PS4_PILL_PAD * 2,
+                label,
                 menu_style_scroll(model, true),
                 false,
                 false);
+            canvas_set_color(canvas, ColorBlack);
         } else {
             x += (width + 1) * i + (i < 0 ? -6 : 6);
         }

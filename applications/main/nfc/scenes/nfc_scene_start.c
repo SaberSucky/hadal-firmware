@@ -27,18 +27,20 @@ void nfc_scene_start_on_enter(void* context) {
     // Reset detected protocols list
     nfc_detected_protocols_reset(nfc->detected_protocols);
 
+    // the header every Hadal page has: which app this is
+    submenu_set_header(submenu, "NFC");
     submenu_add_item(submenu, "Read", SubmenuIndexRead, nfc_scene_start_submenu_callback, nfc);
     submenu_add_item(
         submenu,
-        "Extract MFC Keys",
+        "Extract MFC keys",
         SubmenuIndexDetectReader,
         nfc_scene_start_submenu_callback,
         nfc);
     submenu_add_item(submenu, "Saved", SubmenuIndexSaved, nfc_scene_start_submenu_callback, nfc);
     submenu_add_item(
-        submenu, "Extra Actions", SubmenuIndexExtraAction, nfc_scene_start_submenu_callback, nfc);
+        submenu, "Extra actions", SubmenuIndexExtraAction, nfc_scene_start_submenu_callback, nfc);
     submenu_add_item(
-        submenu, "Add Manually", SubmenuIndexAddManually, nfc_scene_start_submenu_callback, nfc);
+        submenu, "Add manually", SubmenuIndexAddManually, nfc_scene_start_submenu_callback, nfc);
 
     if(furi_hal_rtc_is_flag_set(FuriHalRtcFlagDebug)) {
         submenu_add_item(

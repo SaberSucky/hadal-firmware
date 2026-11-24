@@ -21,9 +21,10 @@ typedef struct {
 
 // saturation in steps of 5%: 255 steps took 2 KB of texts and as many presses to cross
 #define SATURATION_COUNT 20
-static const char* const saturation_text[SATURATION_COUNT] = {
-    "5%",  "10%", "15%", "20%", "25%", "30%", "35%", "40%", "45%", "50%",
-    "55%", "60%", "65%", "70%", "75%", "80%", "85%", "90%", "95%", "100%"};
+static const char* const saturation_text[SATURATION_COUNT] = {"5%",  "10%", "15%", "20%", "25%",
+                                                              "30%", "35%", "40%", "45%", "50%",
+                                                              "55%", "60%", "65%", "70%", "75%",
+                                                              "80%", "85%", "90%", "95%", "100%"};
 
 /** The step nearest a saturation of 1..255 */
 static uint8_t saturation_index(uint8_t saturation) {
@@ -72,26 +73,26 @@ const float volume_value[VOLUME_COUNT] = {
 
 #define DELAY_COUNT 12
 const char* const delay_text[DELAY_COUNT] = {
-    "Always ON",
-    "2s",
-    "5s",
-    "10s",
-    "15s",
-    "30s",
-    "60s",
-    "90s",
-    "120s",
-    "5min",
-    "10min",
-    "30min",
+    "Always on",
+    "2 s",
+    "5 s",
+    "10 s",
+    "15 s",
+    "30 s",
+    "60 s",
+    "90 s",
+    "120 s",
+    "5 min",
+    "10 min",
+    "30 min",
 };
 const uint32_t delay_value[DELAY_COUNT] =
     {0, 2000, 5000, 10000, 15000, 30000, 60000, 90000, 120000, 300000, 600000, 1800000};
 
 #define VIBRO_COUNT 2
 const char* const vibro_text[VIBRO_COUNT] = {
-    "OFF",
-    "ON",
+    "Off",
+    "On",
 };
 const bool vibro_value[VIBRO_COUNT] = {false, true};
 
@@ -99,14 +100,14 @@ const bool vibro_value[VIBRO_COUNT] = {false, true};
 
 #define RGB_BACKLIGHT_INSTALLED_COUNT 2
 const char* const rgb_backlight_installed_text[RGB_BACKLIGHT_INSTALLED_COUNT] = {
-    "OFF",
-    "ON",
+    "Off",
+    "On",
 };
 const bool rgb_backlight_installed_value[RGB_BACKLIGHT_INSTALLED_COUNT] = {false, true};
 
 #define RGB_BACKLIGHT_RAINBOW_MODE_COUNT 3
 const char* const rgb_backlight_rainbow_mode_text[RGB_BACKLIGHT_RAINBOW_MODE_COUNT] = {
-    "OFF",
+    "Off",
     "Rainbow",
     "Wave",
 };
@@ -123,7 +124,7 @@ const char* const rgb_backlight_rainbow_speed_text[RGB_BACKLIGHT_RAINBOW_SPEED_C
     "0.7",
     "0.8",
     "0.9",
-    "1s",
+    "1 s",
 };
 
 const uint32_t rgb_backlight_rainbow_speed_value[RGB_BACKLIGHT_RAINBOW_SPEED_COUNT] = {
@@ -173,7 +174,7 @@ typedef enum {
 // --- NIGHT SHIFT ---
 #define NIGHT_SHIFT_COUNT 7
 const char* const night_shift_text[NIGHT_SHIFT_COUNT] =
-    {"OFF", "-10%", "-20%", "-30%", "-40%", "-50%", "-60%"
+    {"Off", "-10%", "-20%", "-30%", "-40%", "-50%", "-60%"
 
 };
 const float night_shift_value[NIGHT_SHIFT_COUNT] = {
@@ -260,8 +261,8 @@ const uint32_t night_shift_end_value[NIGHT_SHIFT_END_COUNT] = {
 
 #define LCD_INVERSION_COUNT 2
 const char* const lcd_inversion_text[LCD_INVERSION_COUNT] = {
-    "OFF",
-    "ON",
+    "Off",
+    "On",
 };
 const bool lcd_inversion_value[LCD_INVERSION_COUNT] = {false, true};
 
@@ -291,7 +292,7 @@ static void screen_changed(VariableItem* item) {
     variable_item_set_current_value_text(item, delay_text[index]);
     app->notification->settings.display_off_delay_ms = delay_value[index];
 
-    // Switch off current backlight delay timer if user choose "Always ON"
+    // Switch off current backlight delay timer if user choose "Always on"
     if((delay_value[index] == 0) & (furi_timer_is_running(app->notification->display_timer))) {
         furi_timer_stop(app->notification->display_timer);
     }
@@ -637,7 +638,7 @@ static NotificationAppSettings* alloc_settings(void) {
         app->variable_item_list, variable_item_list_enter_callback, app);
 
     item = variable_item_list_add(
-        app->variable_item_list, "LCD Contrast", CONTRAST_COUNT, contrast_changed, app);
+        app->variable_item_list, "LCD contrast", CONTRAST_COUNT, contrast_changed, app);
     value_index =
         value_index_int32(app->notification->settings.contrast, contrast_value, CONTRAST_COUNT);
     variable_item_set_current_value_index(item, value_index);
@@ -653,7 +654,7 @@ static NotificationAppSettings* alloc_settings(void) {
     variable_item_set_values_text(item, backlight_text);
 
     item = variable_item_list_add(
-        app->variable_item_list, "Backlight Time", DELAY_COUNT, screen_changed, app);
+        app->variable_item_list, "Backlight time", DELAY_COUNT, screen_changed, app);
     value_index = value_index_uint32(
         app->notification->settings.display_off_delay_ms, delay_value, DELAY_COUNT);
     variable_item_set_current_value_index(item, value_index);
@@ -670,11 +671,7 @@ static NotificationAppSettings* alloc_settings(void) {
     variable_item_set_values_text(item, night_shift_text);
 
     item = variable_item_list_add(
-        app->variable_item_list,
-        "Start",
-        NIGHT_SHIFT_START_COUNT,
-        night_shift_start_changed,
-        app);
+        app->variable_item_list, "Start", NIGHT_SHIFT_START_COUNT, night_shift_start_changed, app);
     value_index = value_index_uint32(
         app->notification->settings.night_shift_start,
         night_shift_start_value,
@@ -698,7 +695,7 @@ static NotificationAppSettings* alloc_settings(void) {
     // --- NIGHT SHIFT END---
 
     item = variable_item_list_add(
-        app->variable_item_list, "LED Brightness", BACKLIGHT_COUNT, led_changed, app);
+        app->variable_item_list, "LED brightness", BACKLIGHT_COUNT, led_changed, app);
     value_index = value_index_float(
         app->notification->settings.led_brightness, backlight_value, BACKLIGHT_COUNT);
     variable_item_set_current_value_index(item, value_index);
@@ -736,7 +733,7 @@ static NotificationAppSettings* alloc_settings(void) {
     }
 
     item = variable_item_list_add(
-        app->variable_item_list, "Dark Mode", LCD_INVERSION_COUNT, lcd_inversion_changed, app);
+        app->variable_item_list, "Dark mode", LCD_INVERSION_COUNT, lcd_inversion_changed, app);
     value_index = value_index_bool(
         app->notification->settings.lcd_inversion, lcd_inversion_value, LCD_INVERSION_COUNT);
     variable_item_set_current_value_index(item, value_index);
@@ -744,7 +741,7 @@ static NotificationAppSettings* alloc_settings(void) {
     variable_item_set_values_text(item, lcd_inversion_text);
 
     //--- RGB BACKLIGHT ---
-    item = variable_item_list_add(app->variable_item_list, "RGB Mod Settings", 0, NULL, app);
+    item = variable_item_list_add(app->variable_item_list, "RGB mod settings", 0, NULL, app);
     //--- RGB BACKLIGHT END ---
 
     app->variable_item_list_rgb = variable_item_list_alloc();
