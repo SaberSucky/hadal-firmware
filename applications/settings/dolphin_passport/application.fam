@@ -2,6 +2,7 @@ App(
     appid="passport",
     name="Passport",
     apptype=FlipperAppType.EXTSETTINGS,
+    icon="I_Passport_settings_10px",
     entry_point="passport_app",
     cdefines=["APP_PASSPORT"],
     requires=[

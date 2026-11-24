@@ -5,6 +5,7 @@ App(
     appid="hadal_settings",
     name="Hadal",
     apptype=FlipperAppType.EXTSETTINGS,
+    icon="I_Hadal_settings_10px",
     entry_point="hadal_settings_app",
     requires=[
         "desktop",

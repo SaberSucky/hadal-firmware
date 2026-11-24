@@ -1,7 +1,8 @@
 App(
     appid="notification_settings",
-    name="LCD and Notifications",
+    name="LCD and notifications",
     apptype=FlipperAppType.EXTSETTINGS,
+    icon="I_Notification_settings_10px",
     entry_point="notification_settings_app",
     requires=["notification"],
     stack_size=1 * 1024,

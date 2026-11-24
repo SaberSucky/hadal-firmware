@@ -127,6 +127,14 @@ uint32_t submenu_get_selected_item(Submenu* submenu);
  */
 void submenu_set_selected_item(Submenu* submenu, uint32_t index);
 
+/** Set an item's icon, 10 by 10, drawn before its label
+ *
+ * @param      submenu  Submenu instance
+ * @param      index    the item's index, as it was added
+ * @param      icon     the icon, NULL for none
+ */
+void submenu_set_item_icon(Submenu* submenu, uint32_t index, const Icon* icon);
+
 /** Set optional header for submenu
  * Must be called before adding items OR after adding items and before set_selected_item()
  *

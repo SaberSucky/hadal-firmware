@@ -10,6 +10,7 @@
 #include <gui/modules/variable_item_list.h>
 #include <gui/modules/number_input.h>
 #include <gui/modules/byte_input.h>
+#include <gui/modules/text_input.h>
 #include <dialogs/dialogs.h>
 #include <storage/storage.h>
 #include <desktop/desktop.h>
@@ -30,6 +31,7 @@ typedef enum {
     HadalViewVariableList,
     HadalViewNumberInput,
     HadalViewByteInput,
+    HadalViewTextInput,
     HadalViewPackPreview, /**< Asset Pack's, while it is open */
 } HadalView;
 
@@ -50,6 +52,8 @@ typedef struct {
     VariableItemList* variable_list;
     NumberInput* number_input;
     ByteInput* byte_input;
+    TextInput* text_input;
+    char text[16]; /**< what the text input edits */
     uint8_t bytes[8]; /**< what the byte input edits */
 
     HadalMainMenu main_menu;

@@ -256,7 +256,9 @@ static void loader_menu_build_menu(LoaderMenu* loader_menu) {
     }
 }
 
+// Settings: the header every page has, and each entry's icon before its name
 static void loader_menu_build_submenu(Submenu* submenu, LoaderMenu* loader_menu) {
+    submenu_set_header(submenu, "Settings");
     for(size_t i = 0; i < FLIPPER_EXTSETTINGS_APPS_COUNT; i++) {
         submenu_add_item_ex(
             submenu,
@@ -264,6 +266,8 @@ static void loader_menu_build_submenu(Submenu* submenu, LoaderMenu* loader_menu)
             (uint32_t)FLIPPER_EXTSETTINGS_APPS[i].name,
             loader_menu_settings_menu_callback,
             loader_menu);
+        submenu_set_item_icon(
+            submenu, (uint32_t)FLIPPER_EXTSETTINGS_APPS[i].name, FLIPPER_EXTSETTINGS_APPS[i].icon);
     }
     for(size_t i = 0; i < FLIPPER_SETTINGS_APPS_COUNT; i++) {
         submenu_add_item_ex(
@@ -272,6 +276,8 @@ static void loader_menu_build_submenu(Submenu* submenu, LoaderMenu* loader_menu)
             (uint32_t)FLIPPER_SETTINGS_APPS[i].name,
             loader_menu_settings_menu_callback,
             loader_menu);
+        submenu_set_item_icon(
+            submenu, (uint32_t)FLIPPER_SETTINGS_APPS[i].name, FLIPPER_SETTINGS_APPS[i].icon);
     }
 }
 

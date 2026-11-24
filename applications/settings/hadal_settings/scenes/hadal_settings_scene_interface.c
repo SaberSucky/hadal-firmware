@@ -22,6 +22,7 @@ static const char* const header_styles[ElementsHeaderStyleCount] = {
     [ElementsHeaderStyleRule] = "Rule",
     [ElementsHeaderStyleDots] = "Dots",
     [ElementsHeaderStylePlain] = "Plain",
+    [ElementsHeaderStyleLine] = "Line",
 };
 
 /* The menu styles on the card, while the page is open: their names are the dropdown's choices */

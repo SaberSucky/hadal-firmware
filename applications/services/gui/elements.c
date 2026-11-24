@@ -1181,6 +1181,9 @@ void elements_header(Canvas* canvas, const char* title) {
     if(style == ElementsHeaderStyleRule) {
         // a fine rule under it all, a clear row over the rows
         canvas_draw_line(canvas, 3, ELEMENTS_HEADER_HEIGHT - 3, end, ELEMENTS_HEADER_HEIGHT - 3);
+    } else if(style == ElementsHeaderStyleLine && length > 0) {
+        // one straight line after the title, to the end
+        canvas_draw_line(canvas, line_x, line_y, end, line_y);
     } else if(style == ElementsHeaderStyleDots) {
         // dots, their gaps widening from two pixels to six
         for(int32_t x = line_x; length > 0 && x <= end;) {

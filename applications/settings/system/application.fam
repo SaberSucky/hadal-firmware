@@ -2,6 +2,7 @@ App(
     appid="system_settings",
     name="System",
     apptype=FlipperAppType.EXTSETTINGS,
+    icon="I_settings_10px",
     entry_point="system_settings_app",
     requires=["gui", "locale"],
     stack_size=1 * 1024,

@@ -28,6 +28,7 @@ typedef struct {
 
     bool locked;
     FuriString* locked_message;
+    const Icon* icon; /**< 10 px, before the label, when set */
 } SubmenuItem;
 
 static void SubmenuItem_init(SubmenuItem* item) {
@@ -37,6 +38,7 @@ static void SubmenuItem_init(SubmenuItem* item) {
     item->callback_context = NULL;
     item->locked = false;
     item->locked_message = furi_string_alloc();
+    item->icon = NULL;
 }
 
 static void SubmenuItem_init_set(SubmenuItem* item, const SubmenuItem* src) {
@@ -46,6 +48,7 @@ static void SubmenuItem_init_set(SubmenuItem* item, const SubmenuItem* src) {
     item->callback_context = src->callback_context;
     item->locked = src->locked;
     item->locked_message = furi_string_alloc_set(src->locked_message);
+    item->icon = src->icon;
 }
 
 static void SubmenuItem_set(SubmenuItem* item, const SubmenuItem* src) {
@@ -55,6 +58,7 @@ static void SubmenuItem_set(SubmenuItem* item, const SubmenuItem* src) {
     item->callback_context = src->callback_context;
     item->locked = src->locked;
     furi_string_set(item->locked_message, src->locked_message);
+    item->icon = src->icon;
 }
 
 static void SubmenuItem_clear(SubmenuItem* item) {
@@ -159,10 +163,16 @@ static void submenu_view_draw_callback(Canvas* canvas, void* _model) {
                     &I_Lock_7x8);
             }
 
-            const size_t text_width = item_width - (is_locked ? 21 : 11);
+            const Icon* icon = SubmenuItemArray_cref(it)->icon;
+            const uint8_t text_x = icon ? 19 : 6;
+            const size_t text_width = item_width - (is_locked ? 21 : 11) - (text_x - 6);
             const char* label = furi_string_get_cstr(SubmenuItemArray_cref(it)->label);
             const uint8_t text_y =
                 y_offset + (item_position * item_height) + item_height - (hints ? 3 : 4);
+            if(icon) {
+                // its icon before it, on the line of its capitals
+                canvas_draw_icon(canvas, 5, text_y - 9, icon);
+            }
             // (compact: capitals 3 rows under the row's top, descenders a row above its selection's
             // bottom; as before: the stock layout)
             if(position == model->position && canvas_string_width(canvas, label) > text_width) {
@@ -172,12 +182,12 @@ static void submenu_view_draw_callback(Canvas* canvas, void* _model) {
                 const size_t scroll =
                     counter > SUBMENU_SCROLL_PAUSE ? counter - SUBMENU_SCROLL_PAUSE : 0;
                 elements_scrollable_text_line_str(
-                    canvas, 6, text_y, text_width, label, scroll, false, false);
+                    canvas, text_x, text_y, text_width, label, scroll, false, false);
             } else {
                 if(position == model->position) model->selected_scrolls = false;
                 FuriString* disp_str = furi_string_alloc_set_str(label);
                 elements_string_fit_width(canvas, disp_str, text_width);
-                canvas_draw_str(canvas, 6, text_y, furi_string_get_cstr(disp_str));
+                canvas_draw_str(canvas, text_x, text_y, furi_string_get_cstr(disp_str));
                 furi_string_free(disp_str);
             }
         }
@@ -648,6 +658,21 @@ void submenu_process_ok(Submenu* submenu, InputType input_type) {
     } else if(item->has_extended_events && item->callback_ex) {
         item->callback_ex(item->callback_context, input_type, item->index);
     }
+}
+
+void submenu_set_item_icon(Submenu* submenu, uint32_t index, const Icon* icon) {
+    furi_check(submenu);
+    with_view_model(
+        submenu->view,
+        SubmenuModel * model,
+        {
+            SubmenuItemArray_it_t it;
+            for(SubmenuItemArray_it(it, model->items); !SubmenuItemArray_end_p(it);
+                SubmenuItemArray_next(it)) {
+                if(SubmenuItemArray_ref(it)->index == index) SubmenuItemArray_ref(it)->icon = icon;
+            }
+        },
+        true);
 }
 
 void submenu_set_header(Submenu* submenu, const char* header) {

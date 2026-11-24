@@ -2,6 +2,7 @@ App(
     appid="power_settings",
     name="Power",
     apptype=FlipperAppType.EXTSETTINGS,
+    icon="I_Power_settings_10px",
     entry_point="power_settings_app",
     requires=[
         "gui",

@@ -16,10 +16,12 @@
 #include "m-algo.h"
 #include <m-array.h>
 
-#define LIST_ITEMS   5u
+// Under the header that names the folder: four rows
+#define LIST_ITEMS   4u
 #define MAX_LEN_PX   110
 #define FRAME_HEIGHT 12
-#define Y_OFFSET     3
+#define Y_OFFSET     ELEMENTS_HEADER_HEIGHT
+#define TITLE_SIZE   24
 
 #define ITEM_LIST_LEN_MAX 50
 
@@ -167,6 +169,7 @@ typedef struct {
     bool hide_ext;
     size_t scroll_counter;
     bool selected_scrolls; /**< the selected name is too long and scrolls: the timer redraws */
+    char title[TITLE_SIZE]; /**< the folder, as the header names it */
 
     uint32_t button_held_for_ticks;
 } FileBrowserModel;
@@ -401,12 +404,37 @@ static void browser_update_offset(FileBrowser* browser) {
         true);
 }
 
+/* The header's name for a folder: an app's own folder by the app's name, the card's root as the
+ * card, any other by its own name, as the rows below write it */
+static void browser_title_of(const char* path, char* title) {
+    static const char* const apps[][2] = {
+        {"subghz", "Sub-GHz"},
+        {"nfc", "NFC"},
+        {"lfrfid", "RFID"},
+        {"infrared", "Infrared"},
+        {"ibutton", "iButton"},
+        {"badusb", "Bad USB"},
+        {"apps", "Apps"},
+    };
+    const char* name = strrchr(path, '/');
+    name = name ? name + 1 : path;
+    const bool in_root = strncmp(path, STORAGE_EXT_PATH_PREFIX "/", 5) == 0 &&
+                         strchr(path + 5, '/') == NULL;
+    if(!*name || strcmp(path, STORAGE_EXT_PATH_PREFIX) == 0) name = "SD card";
+    for(size_t i = 0; in_root && i < COUNT_OF(apps); i++) {
+        if(strcmp(name, apps[i][0]) == 0) name = apps[i][1];
+    }
+    strlcpy(title, name, TITLE_SIZE);
+}
+
 static void
     browser_folder_open_cb(void* context, uint32_t item_cnt, int32_t file_idx, bool is_root) {
     furi_check(context);
     FileBrowser* browser = (FileBrowser*)context;
 
     int32_t load_offset = 0;
+    char title[TITLE_SIZE];
+    browser_title_of(file_browser_worker_get_path_current(browser->worker), title);
 
     with_view_model(
         browser->view,
@@ -430,6 +458,7 @@ static void
             model->list_loading = true;
             model->folder_loading = false;
             model->folder_error = false;
+            memcpy(model->title, title, TITLE_SIZE);
         },
         false);
     browser_update_offset(browser);
@@ -593,15 +622,16 @@ static void browser_draw_frame(Canvas* canvas, uint16_t idx, bool scrollbar) {
 }
 
 static void browser_draw_loading(Canvas* canvas, FileBrowserModel* model) {
-    UNUSED(model);
+    if(model->title[0]) elements_header(canvas, model->title);
 
     uint8_t x = 128 / 2 - 24 / 2;
-    uint8_t y = 64 / 2 - 24 / 2;
+    uint8_t y = Y_OFFSET + (64 - Y_OFFSET) / 2 - 24 / 2;
 
     canvas_draw_icon(canvas, x, y, &A_Loading_24);
 }
 
 static void browser_draw_list(Canvas* canvas, FileBrowserModel* model) {
+    elements_header(canvas, model->title);
     uint32_t array_size = items_array_size(model->items);
     bool show_scrollbar = model->item_cnt > LIST_ITEMS;
 
@@ -696,10 +726,10 @@ static void browser_draw_list(Canvas* canvas, FileBrowserModel* model) {
         canvas_draw_str_aligned(
             canvas,
             canvas_width(canvas) / 2,
-            canvas_height(canvas) / 2,
+            Y_OFFSET + (canvas_height(canvas) - Y_OFFSET) / 2,
             AlignCenter,
             AlignCenter,
-            model->folder_error ? "Cannot read folder" : "<Empty>");
+            model->folder_error ? "Cannot read folder" : "Empty");
     }
 
     furi_string_free(filename);

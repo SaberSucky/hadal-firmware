@@ -342,6 +342,7 @@ typedef enum {
     ElementsHeaderStyleRule, /**< a fine rule under the title, the width of the page */
     ElementsHeaderStyleDots, /**< a dotted line after the title, its gaps widening */
     ElementsHeaderStylePlain, /**< the title alone */
+    ElementsHeaderStyleLine, /**< a straight solid line after the title, to the right edge */
     ElementsHeaderStyleCount,
 } ElementsHeaderStyle;
 

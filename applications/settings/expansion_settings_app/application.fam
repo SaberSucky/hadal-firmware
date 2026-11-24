@@ -1,7 +1,8 @@
 App(
     appid="expansion_settings",
-    name="Expansion Modules",
+    name="Expansion modules",
     apptype=FlipperAppType.EXTSETTINGS,
+    icon="I_Expansion_settings_10px",
     entry_point="expansion_settings_app",
     requires=["gui"],
     stack_size=1 * 1024,

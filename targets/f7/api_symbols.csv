@@ -1,5 +1,5 @@
 entry,status,name,type,params
-Version,+,88.36,,
+Version,+,88.37,,
 Header,+,applications/drivers/subghz/cc1101_ext/cc1101_ext_interconnect.h,,
 Header,+,applications/services/applications.h,,
 Header,+,applications/services/bt/bt_service/bt.h,,
@@ -4030,6 +4030,7 @@ Function,+,submenu_get_view,View*,Submenu*
 Function,+,submenu_remove_item,void,"Submenu*, uint32_t"
 Function,+,submenu_reset,void,Submenu*
 Function,+,submenu_set_header,void,"Submenu*, const char*"
+Function,+,submenu_set_item_icon,void,"Submenu*, uint32_t, const Icon*"
 Function,+,submenu_set_hints,void,"Submenu*, const char*"
 Function,+,submenu_set_orientation,void,"Submenu*, ViewOrientation"
 Function,+,submenu_set_selected_item,void,"Submenu*, uint32_t"

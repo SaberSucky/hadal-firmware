@@ -1,7 +1,8 @@
 App(
     appid="clock_settings",
-    name="Clock & Alarm",
+    name="Clock & alarm",
     apptype=FlipperAppType.EXTSETTINGS,
+    icon="I_Clock_settings_10px",
     entry_point="clock_settings",
     requires=["gui"],
     provides=["clock_settings_start"],

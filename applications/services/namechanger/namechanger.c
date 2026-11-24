@@ -8,6 +8,22 @@
 
 #define TAG "NameChanger"
 
+/* 2 to 8 letters and digits: what a Flipper name may be */
+static bool namechanger_name_valid(const char* name) {
+    const size_t size = strlen(name);
+    if(size < 2 || size > 8) return false;
+    for(; *name; ++name) {
+        const char c = *name;
+        if((c < '0' || c > '9') && (c < 'A' || c > 'Z') && (c < 'a' || c > 'z')) return false;
+    }
+    return true;
+}
+
+static void namechanger_set_name(const char* name) {
+    version_set_custom_name(NULL, strdup(name));
+    furi_hal_version_set_name(version_get_custom_name(NULL));
+}
+
 static bool namechanger_init() {
     Storage* storage = furi_record_open(RECORD_STORAGE);
 
@@ -37,28 +53,8 @@ static bool namechanger_init() {
         if(version != NAMECHANGER_VERSION) break;
 
         if(!flipper_format_read_string(file, "Name", str)) break;
-        // Check for size
-        size_t temp_string_size = furi_string_size(str);
-        if(temp_string_size > (size_t)8) break;
-        if(temp_string_size < (size_t)2) break;
-
-        // Check for forbidden characters
-        const char* name_ptr = furi_string_get_cstr(str);
-        bool chars_check_failed = false;
-
-        for(; *name_ptr; ++name_ptr) {
-            const char c = *name_ptr;
-            if((c < '0' || c > '9') && (c < 'A' || c > 'Z') && (c < 'a' || c > 'z')) {
-                chars_check_failed = true;
-                break;
-            }
-        }
-
-        if(chars_check_failed) break;
-
-        // If all checks was good we can set the name
-        version_set_custom_name(NULL, strdup(furi_string_get_cstr(str)));
-        furi_hal_version_set_name(version_get_custom_name(NULL));
+        if(!namechanger_name_valid(furi_string_get_cstr(str))) break;
+        namechanger_set_name(furi_string_get_cstr(str));
 
         res = true;
     } while(false);
@@ -70,7 +66,11 @@ static bool namechanger_init() {
     return res;
 }
 
-// The spoofed Bluetooth address and serial, if the user set them; true if the address changed
+// The Generation of the spoofing applied: shared as RECORD_NAMECHANGER_DONE's byte
+static uint8_t namechanger_generation;
+
+// The identity set in Hadal > Spoofing: its address (fixed, or new at every start), serial and
+// name. True if the address or the name changed
 static bool namechanger_spoof_init(void) {
     Storage* storage = furi_record_open(RECORD_STORAGE);
     FlipperFormat* file = flipper_format_file_alloc(storage);
@@ -80,10 +80,25 @@ static bool namechanger_spoof_init(void) {
         uint32_t version;
         if(!flipper_format_file_open_existing(file, HADAL_SPOOF_PATH)) break;
         if(!flipper_format_read_header(file, header, &version)) break;
-        if(furi_string_cmp_str(header, HADAL_SPOOF_HEADER) || version != HADAL_SPOOF_VERSION) break;
+        if(furi_string_cmp_str(header, HADAL_SPOOF_HEADER) || version < 1 ||
+           version > HADAL_SPOOF_VERSION)
+            break;
 
+        uint32_t generation = 0;
+        if(flipper_format_read_uint32(file, HADAL_SPOOF_GENERATION, &generation, 1)) {
+            namechanger_generation = (uint8_t)generation;
+        }
+        flipper_format_rewind(file);
+        bool random = false;
+        flipper_format_read_bool(file, HADAL_SPOOF_RANDOM, &random, 1);
+        flipper_format_rewind(file);
         uint8_t mac[6];
-        if(flipper_format_read_hex(file, HADAL_SPOOF_MAC, mac, sizeof(mac))) {
+        if(random) {
+            // one device, not a group, and marked as made up: a random address says so
+            furi_hal_random_fill_buf(mac, sizeof(mac));
+            mac[0] = (mac[0] & 0xFC) | 0x02;
+        }
+        if(random || flipper_format_read_hex(file, HADAL_SPOOF_MAC, mac, sizeof(mac))) {
             // written most significant first; the radio wants it the other way round
             uint8_t reversed[6];
             for(size_t i = 0; i < sizeof(mac); i++) {
@@ -96,6 +111,12 @@ static bool namechanger_spoof_init(void) {
         uint8_t serial[8];
         if(flipper_format_read_hex(file, HADAL_SPOOF_SERIAL, serial, sizeof(serial))) {
             furi_hal_version_set_uid(serial);
+        }
+        flipper_format_rewind(file);
+        if(flipper_format_read_string(file, HADAL_SPOOF_NAME, header) &&
+           namechanger_name_valid(furi_string_get_cstr(header))) {
+            namechanger_set_name(furi_string_get_cstr(header));
+            mac_set = true; // Bluetooth starts again with the name
         }
     } while(false);
     furi_string_free(header);
@@ -124,13 +145,15 @@ static void namechanger_apply(void) {
     // Hehe bad code now here, bad bad bad, very bad, bad example, dont take it, make it better
 
     const bool renamed = namechanger_init();
-    // after the name: a spoofed address goes over the one the name gives
+    // after the name: a spoofed address goes over the one the name gives, a profile's name over
+    // Desktop's
     const bool spoofed = namechanger_spoof_init();
     // the name is final: the USB port may come up
+    done_marker = namechanger_generation;
     furi_record_create(RECORD_NAMECHANGER_DONE, &done_marker);
     // The desktop normally brings the USB port up after this, with the new name already in place.
     // Only if it gave up waiting is the port up with the old name: reconnect it once.
-    if(renamed) {
+    if(renamed || spoofed) {
         CliVcp* cli = furi_record_open(RECORD_CLI_VCP);
         if(cli_vcp_is_enabled(cli)) {
             cli_vcp_disable(cli);
