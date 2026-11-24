@@ -320,7 +320,8 @@ static void variable_item_list_draw_dropdown(
         elements_scrollbar_pos(
             canvas, right - 2, y + 2, rows * DROPDOWN_ROW_H, model->dropdown_index, item->values_count);
     }
-    elements_hint_bar(canvas, "ud=Choose;ok=Set;back=Cancel");
+    // the control centre's picker's words: Up and Down browse, OK chooses
+    elements_hint_bar(canvas, "ud=Browse;ok=Choose;back=Cancel");
 }
 
 /* ---- hidden items ----
@@ -463,7 +464,7 @@ static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
                 canvas_set_color(canvas, ColorBlack);
                 canvas_draw_rbox(canvas, 0, item_y + 1, item_width, item_height - 2, 3);
                 canvas_set_color(canvas, ColorWhite);
-                scroll_counter = model->scroll_counter;
+                scroll_counter = elements_scroll_position(model->scroll_counter);
                 if(scroll_counter < 1) {
                     scroll_counter = 0;
                 } else {
@@ -886,8 +887,7 @@ static void variable_item_list_scroll_timer_callback(void* context) {
         variable_item_list->view,
         VariableItemListModel * model,
         {
-            model->scroll_counter++;
-            redraw = model->selected_scrolls;
+            redraw = elements_scroll_step(&model->scroll_counter) && model->selected_scrolls;
         },
         redraw);
 }

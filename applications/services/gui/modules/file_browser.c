@@ -166,6 +166,7 @@ typedef struct {
     const Icon* file_icon;
     bool hide_ext;
     size_t scroll_counter;
+    bool selected_scrolls; /**< the selected name is too long and scrolls: the timer redraws */
 
     uint32_t button_held_for_ticks;
 } FileBrowserModel;
@@ -195,7 +196,13 @@ static void browser_long_load_cb(void* context);
 static void file_browser_scroll_timer_callback(void* context) {
     furi_check(context);
     FileBrowser* browser = context;
-    with_view_model(browser->view, FileBrowserModel * model, { model->scroll_counter++; }, true);
+    // drawn again only while the selected name scrolls, and not once it has come to rest
+    bool redraw = false;
+    with_view_model(
+        browser->view,
+        FileBrowserModel * model,
+        { redraw = elements_scroll_step(&model->scroll_counter) && model->selected_scrolls; },
+        redraw);
 }
 
 static void file_browser_view_enter_callback(void* context) {
@@ -637,8 +644,11 @@ static void browser_draw_list(Canvas* canvas, FileBrowserModel* model) {
             furi_string_set(filename, ". .");
         }
 
-        size_t scroll_counter = model->scroll_counter;
+        size_t scroll_counter = elements_scroll_position(model->scroll_counter);
+        const size_t text_width = show_scrollbar ? MAX_LEN_PX - 6 : MAX_LEN_PX;
         if(model->item_idx == idx) {
+            model->selected_scrolls =
+                canvas_string_width(canvas, furi_string_get_cstr(filename)) > text_width;
             browser_draw_frame(canvas, i, show_scrollbar);
             if(scroll_counter < SCROLL_DELAY) {
                 scroll_counter = 0;
@@ -664,7 +674,7 @@ static void browser_draw_list(Canvas* canvas, FileBrowserModel* model) {
             canvas,
             15,
             Y_OFFSET + 9 + i * FRAME_HEIGHT,
-            (show_scrollbar ? MAX_LEN_PX - 6 : MAX_LEN_PX),
+            text_width,
             filename,
             scroll_counter,
             (model->item_idx != idx));

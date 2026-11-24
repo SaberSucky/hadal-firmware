@@ -128,7 +128,8 @@ static char* with_key(const char* text, const char* key, uint32_t hz) {
 
 static char* without_key(const char* text, const char* key, uint32_t hz) {
     text = base(text);
-    char* out = malloc(strlen(text) + 1);
+    // every line kept ends in a newline, the last one too when the file's did not: one more
+    char* out = malloc(strlen(text) + 2);
     if(!out) return NULL;
     size_t length = 0;
     out[0] = '\0';

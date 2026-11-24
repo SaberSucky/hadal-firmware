@@ -88,6 +88,11 @@ static void control_centre_label(const ControlCentreModel* model, char* out, siz
         return;
     }
     if(model->column == TILE_COLUMNS + 1) {
+        if(state->on[ControlCentreTileStealth]) {
+            // as Settings shows it: Silent, and the slider stays where it is
+            snprintf(out, size, "Volume: Silent");
+            return;
+        }
         snprintf(
             out,
             size,

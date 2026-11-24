@@ -64,7 +64,7 @@ static void button_menu_draw_text(
                 item_y + ITEM_HEIGHT - 4,
                 ITEM_WIDTH - 8,
                 disp_str,
-                model->scroll_counter,
+                elements_scroll_position(model->scroll_counter),
                 false);
             draw_static = false;
         }
@@ -158,7 +158,7 @@ static void button_menu_view_draw_callback(Canvas* canvas, void* _model) {
         if(header_width >= ITEM_WIDTH - 8) {
             model->scrolls = true;
             elements_scrollable_text_line(
-                canvas, 3, 13, ITEM_WIDTH - 8, disp_str, model->scroll_counter, false);
+                canvas, 3, 13, ITEM_WIDTH - 8, disp_str, elements_scroll_position(model->scroll_counter), false);
         } else {
             elements_string_fit_width(canvas, disp_str, ITEM_WIDTH - 8);
             canvas_draw_str_aligned(
@@ -410,8 +410,7 @@ static void button_menu_process_timer_callback(void* context) {
         button_menu->view,
         ButtonMenuModel * model,
         {
-            model->scroll_counter++;
-            redraw = model->scrolls;
+            redraw = elements_scroll_step(&model->scroll_counter) && model->scrolls;
         },
         redraw);
 }

@@ -5,9 +5,12 @@
 #include <stdio.h>
 
 #define REPORT_QUEUE_LEN 48U
-// Leave the radio a little time for the Flipper's own advertising
-#define SCAN_INTERVAL_MS 100U
-#define SCAN_WINDOW_MS   90U
+// Listening most of the time to find one device (a little left for the Flipper's own
+// advertising), a quarter of it to list what is around
+#define SCAN_INTERVAL_FAST_MS 100U
+#define SCAN_WINDOW_FAST_MS   90U
+#define SCAN_INTERVAL_MS      200U
+#define SCAN_WINDOW_MS        50U
 // Signal strengths drawn as empty and full
 #define RSSI_FLOOR (-100)
 #define RSSI_CEIL  (-35)
@@ -18,17 +21,24 @@ static void scan_callback(const GapScannerReport* report, void* context) {
     if(furi_message_queue_put(scan->reports, report, 0) != FuriStatusOk) scan->dropped++;
 }
 
-bool ble_tools_scan_start(BleToolsScan* scan, bool active) {
+bool ble_tools_scan_start(BleToolsScan* scan, bool active, bool fast) {
     if(!scan->reports) scan->reports = furi_message_queue_alloc(REPORT_QUEUE_LEN, sizeof(GapScannerReport));
     ble_tools_scan_stop(scan);
+    scan->active = active;
+    scan->fast = fast;
     if(!furi_hal_bt_scanner_is_supported()) return false;
     const GapScannerConfig config = {
-        .interval_ms = SCAN_INTERVAL_MS,
-        .window_ms = SCAN_WINDOW_MS,
+        .interval_ms = fast ? SCAN_INTERVAL_FAST_MS : SCAN_INTERVAL_MS,
+        .window_ms = fast ? SCAN_WINDOW_FAST_MS : SCAN_WINDOW_MS,
         .active = active,
     };
     scan->scanning = furi_hal_bt_scanner_start(&config, scan_callback, scan);
     return scan->scanning;
+}
+
+void ble_tools_scan_set_fast(BleToolsScan* scan, bool fast) {
+    if(!scan->scanning || scan->fast == fast) return;
+    ble_tools_scan_start(scan, scan->active, fast);
 }
 
 void ble_tools_scan_stop(BleToolsScan* scan) {

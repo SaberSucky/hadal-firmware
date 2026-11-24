@@ -25,6 +25,7 @@ static const struct {
     {"main menu", DesktopKeybindActionMainMenu},
     {"lock menu", DesktopKeybindActionLockMenu},
     {"lock", DesktopKeybindActionLock},
+    {"lock keypad", DesktopKeybindActionLockKeypad},
     {"archive", DesktopKeybindActionArchive},
     {"power off", DesktopKeybindActionPowerOff},
     {"nothing", DesktopKeybindActionNothing},

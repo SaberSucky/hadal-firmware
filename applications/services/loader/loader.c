@@ -430,6 +430,37 @@ static const FlipperInternalApplication* loader_find_application_by_name(const c
 static const char* loader_app_short_name(const char* path);
 static void loader_check_leak(Loader* loader);
 
+/* Apps on the SD card that only draw, read keys and settings and use files: the chip may sleep
+ * deeply between keys while they are open (the drivers they use keep it awake while they work:
+ * the card, I2C, the speaker, Bluetooth). Every app on the card kept it from deep sleep (the
+ * PLL running, a thousand wakes a second) for as long as it was open, the Settings pages too. An
+ * app that times signals itself (radio, infrared, NFC, RFID, iButton, GPIO) is not here */
+static const char* const loader_insomnia_safe_faps[] = {
+    "about",
+    "battery_history",
+    "bt_settings",
+    "clock",
+    "clock_settings",
+    "crowd_meter",
+    "desktop_settings",
+    "expansion_settings",
+    "find_my_stuff",
+    "hadal_settings",
+    "input_settings",
+    "notification_settings",
+    "passport",
+    "power_settings",
+    "system_settings",
+    "tracker_detector",
+};
+
+static bool loader_fap_is_insomnia_safe(const char* appid) {
+    for(size_t i = 0; i < COUNT_OF(loader_insomnia_safe_faps); i++) {
+        if(strcmp(appid, loader_insomnia_safe_faps[i]) == 0) return true;
+    }
+    return false;
+}
+
 static void loader_start_app_thread(Loader* loader, FlipperInternalApplicationFlag flags) {
     // setup heap trace
     FuriHalRtcHeapTrackMode mode = furi_hal_rtc_get_heap_track_mode();
@@ -649,6 +680,10 @@ static LoaderMessageLoaderStatusResult loader_start_external_app(
         FuriString* app_name = furi_string_alloc();
         path_extract_filename_no_ext(path, app_name);
         furi_thread_set_appid(loader->app.thread, furi_string_get_cstr(app_name));
+        const FlipperInternalApplicationFlag flags =
+            loader_fap_is_insomnia_safe(furi_string_get_cstr(app_name)) ?
+                FlipperInternalApplicationFlagInsomniaSafe :
+                FlipperInternalApplicationFlagDefault;
         furi_string_free(app_name);
 
         /* This flag is set by the debugger - to break on app start */
@@ -659,7 +694,7 @@ static LoaderMessageLoaderStatusResult loader_start_external_app(
             __asm volatile("bkpt 0");
         }
 
-        loader_start_app_thread(loader, FlipperInternalApplicationFlagDefault);
+        loader_start_app_thread(loader, flags);
     } while(0);
 
     if(result.value != LoaderStatusOk) {

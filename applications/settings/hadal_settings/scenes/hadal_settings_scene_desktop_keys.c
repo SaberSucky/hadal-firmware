@@ -14,8 +14,8 @@ static const char* const button_labels[DesktopKeybindCount] = {
     [DesktopKeybindOkPress] = "OK",
     [DesktopKeybindOkHold] = "OK held",
     // the control centre's two app tiles (Up on the desktop)
-    [DesktopKeybindControl1] = "Up panel app 1",
-    [DesktopKeybindControl2] = "Up panel app 2",
+    [DesktopKeybindControl1] = "Control Centre app 1",
+    [DesktopKeybindControl2] = "Control Centre app 2",
 };
 
 void hadal_settings_scene_desktop_keys_on_enter(void* context) {
@@ -27,9 +27,9 @@ void hadal_settings_scene_desktop_keys_on_enter(void* context) {
     FuriString* item = furi_string_alloc();
     for(size_t bind = 0; bind < DesktopKeybindCount; bind++) {
         if(hadal_keybinds_get(app->storage, bind, action)) {
-            hadal_keybinds_label(furi_string_get_cstr(action), label);
+            hadal_keybinds_label(app->storage, furi_string_get_cstr(action), label);
         } else {
-            furi_string_set_str(label, bind < DesktopKeybindButtonCount ? "default" : "none");
+            furi_string_set_str(label, bind < DesktopKeybindButtonCount ? "Default" : "None");
         }
         furi_string_printf(item, "%s: %s", button_labels[bind], furi_string_get_cstr(label));
         submenu_add_item(

@@ -178,9 +178,9 @@ static void submenu_view_draw_callback(Canvas* canvas, void* _model) {
             if(position == model->position && canvas_string_width(canvas, label) > text_width) {
                 // the selected one scrolls, so the whole of it can be read
                 model->selected_scrolls = true;
-                const size_t scroll = model->scroll_counter > SUBMENU_SCROLL_PAUSE ?
-                                          model->scroll_counter - SUBMENU_SCROLL_PAUSE :
-                                          0;
+                const size_t counter = elements_scroll_position(model->scroll_counter);
+                const size_t scroll = counter > SUBMENU_SCROLL_PAUSE ? counter - SUBMENU_SCROLL_PAUSE :
+                                                                      0;
                 elements_scrollable_text_line_str(
                     canvas, 6, text_y, text_width, label, scroll, false, false);
             } else {
@@ -291,12 +291,13 @@ void submenu_timer_callback(void* context) {
 
 static void submenu_scroll_timer_callback(void* context) {
     Submenu* submenu = context;
-    // redrawn only when there is something to scroll
+    // redrawn only when there is something to scroll, and not once it has come to rest
+    bool redraw = false;
     with_view_model(
         submenu->view,
         SubmenuModel * model,
-        { model->scroll_counter++; },
-        model->selected_scrolls);
+        { redraw = elements_scroll_step(&model->scroll_counter) && model->selected_scrolls; },
+        redraw);
 }
 
 static void submenu_view_enter(void* context) {

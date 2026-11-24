@@ -11,9 +11,10 @@
 #define KEEPER_MAGIC   (0x4B) // 'K'
 #define KEEPER_VERSION (1)
 
-// The flags that are the user's settings (not the system's own: lock, update, format)
+// The flags that are the user's settings (not the system's own: lock, update, format). Debug is
+// not kept: it keeps the chip's clocks running in its deepest sleep (milliamps where it should
+// draw microamps), and is a developer's switch left on by accident more often than not
 static const FuriHalRtcFlag kept_flags[] = {
-    FuriHalRtcFlagDebug,
     FuriHalRtcFlagHandOrient,
     FuriHalRtcFlagLegacySleep,
     FuriHalRtcFlagStealthMode,
@@ -51,11 +52,6 @@ static void keeper_apply(const SystemSettingsKept* kept) {
         } else {
             furi_hal_rtc_reset_flag(kept_flags[i]);
         }
-    }
-    if(kept->flags & FuriHalRtcFlagDebug) {
-        furi_hal_debug_enable();
-    } else {
-        furi_hal_debug_disable();
     }
     furi_hal_rtc_set_log_level(kept->log_level);
     furi_log_set_level(kept->log_level);

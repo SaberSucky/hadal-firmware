@@ -31,8 +31,12 @@ static void item_build(HadalSettings* app, uint32_t selected) {
 }
 
 static void item_saved(HadalSettings* app) {
-    hadal_main_menu_save(&app->main_menu, app->storage);
-    app->main_menu.customised = true;
+    // a menu not saved is not the one the Flipper shows: say so
+    if(hadal_main_menu_save(&app->main_menu, app->storage)) {
+        app->main_menu.customised = true;
+    } else {
+        dialog_message_show_storage_error(app->dialogs, "Cannot save\nthe main menu");
+    }
 }
 
 void hadal_settings_scene_main_menu_item_on_enter(void* context) {

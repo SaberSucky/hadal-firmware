@@ -156,7 +156,7 @@ static void draw_list(Canvas* canvas, FindMyStuff* app) {
     const BleSeen* selected = device_at(app, app->selected);
     elements_hint_bar(
         canvas,
-        selected && selected->mine ? "ok=Find;ok=Hold: unmark;left=Yours" :
+        selected && selected->mine ? "ok=Find;ok=Hold: not mine;left=Yours" :
                                      "ok=Find;ok=Hold: mine;left=Yours");
 }
 
@@ -208,7 +208,7 @@ static void draw_yours(Canvas* canvas, FindMyStuff* app) {
                       (list_h - height) * (int)app->yours_top / (int)(app->mine.count - ROWS);
         canvas_draw_box(canvas, 126, y, 2, height);
     }
-    elements_hint_bar(canvas, "ok=Hold: forget;back=List");
+    elements_hint_bar(canvas, "ok=Hold: not mine;back=List");
 }
 
 // After a mark is forgotten: the devices heard are told again which are the user's
@@ -424,16 +424,22 @@ int32_t find_my_stuff_app(void* p) {
 
     ble_tools_mine_load(&app->mine);
     // active: devices are asked their names, which is how you tell your earbuds from others
-    app->supported = ble_tools_scan_start(&app->scan, true);
+    app->supported = ble_tools_scan_start(&app->scan, true, false);
 
     uint32_t last_tick = 0, last_sort = 0;
     bool running = true;
     while(running) {
         InputEvent event;
-        if(furi_message_queue_get(app->input, &event, 20) == FuriStatusOk) {
+        // locating: the radio listens nearly all the time, and the clicks keep their beat
+        const bool locating = app->mode == ModeLocate;
+        if(furi_message_queue_get(
+               app->input, &event, locating ? BLE_TOOLS_WAIT_FAST_MS : BLE_TOOLS_WAIT_MS) ==
+           FuriStatusOk) {
             furi_mutex_acquire(app->mutex, FuriWaitForever);
             running = handle_input(app, &event);
+            const bool fast = app->mode == ModeLocate;
             furi_mutex_release(app->mutex);
+            if(app->supported) ble_tools_scan_set_fast(&app->scan, fast);
             view_port_update(app->view_port);
         }
         const uint32_t now = furi_get_tick();

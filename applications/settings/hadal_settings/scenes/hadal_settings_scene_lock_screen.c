@@ -14,7 +14,6 @@ enum {
     ItemFailLimit,
 };
 
-static const char* const on_off[] = {"On", "Off"}; /* lock at start: 0 is on */
 static const char* const off_on[] = {"Off", "On"};
 static const char* const fail_actions[] = {"Nothing", "Power off", "Erase"};
 static const uint8_t fail_limits[] = {3, 5, 10, 20};
@@ -48,10 +47,12 @@ static void set_limit(DesktopSettings* s, uint8_t v) {
     s->pin_fail_limit = v;
 }
 
+// Off, then On, as every switch: Right turns it on (the setting is kept the other way round:
+// boot_unlocked)
 static void boot_changed(VariableItem* item) {
     const uint8_t index = variable_item_get_current_value_index(item);
-    variable_item_set_current_value_text(item, on_off[index]);
-    update(variable_item_get_context(item), set_boot, index);
+    variable_item_set_current_value_text(item, off_on[index]);
+    update(variable_item_get_context(item), set_boot, !index);
 }
 
 static void clock_changed(VariableItem* item) {
@@ -89,9 +90,10 @@ void hadal_settings_scene_lock_screen_on_enter(void* context) {
 
     VariableItem* item =
         variable_item_list_add(app->variable_list, "Lock at start", 2, boot_changed, app);
-    variable_item_set_current_value_index(item, settings->boot_unlocked ? 1 : 0);
-    variable_item_set_current_value_text(item, on_off[settings->boot_unlocked ? 1 : 0]);
-    variable_item_set_values_text(item, on_off);
+    const uint8_t boot_locked = settings->boot_unlocked ? 0 : 1;
+    variable_item_set_current_value_index(item, boot_locked);
+    variable_item_set_current_value_text(item, off_on[boot_locked]);
+    variable_item_set_values_text(item, off_on);
 
     item = variable_item_list_add(app->variable_list, "Clock", 2, clock_changed, app);
     variable_item_set_current_value_index(item, settings->lock_clock ? 1 : 0);

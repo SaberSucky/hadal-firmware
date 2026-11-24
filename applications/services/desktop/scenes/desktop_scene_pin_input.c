@@ -104,7 +104,7 @@ static void
             state->enter_pin_string,
             "%lu more and it %s",
             settings->pin_fail_limit - attempts,
-            settings->pin_fail_action == DesktopPinFailActionFactoryReset ? "resets" : "powers off");
+            settings->pin_fail_action == DesktopPinFailActionFactoryReset ? "erases" : "powers off");
         desktop_view_pin_input_set_label_tertiary(
             desktop->pin_input_view, 64, 60, furi_string_get_cstr(state->enter_pin_string));
     } else if(attempts > 0) {

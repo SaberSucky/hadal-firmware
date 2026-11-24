@@ -8,7 +8,8 @@
  *     ok hold: Infrared
  *     down hold: /ext/apps/Tools/battery_history.fap
  *
- * The action is a desktop action (Main Menu, Lock Menu, Lock, Archive, Power Off, Nothing), an
+ * The action is a desktop action (Main Menu, Lock Menu, Lock (with the PIN, if one is set),
+ * Lock Keypad (no PIN asked), Archive, Power Off, Nothing), an
  * app's name, an app on the SD card, or any file, opened in the app it belongs to. A button that
  * has no line does what it always did. "control 1" and "control 2" are the two app tiles of the
  * control centre (Up on the desktop), bound the same way.
@@ -50,6 +51,7 @@ typedef enum {
     DesktopKeybindActionArchive,
     DesktopKeybindActionPowerOff,
     DesktopKeybindActionNothing,
+    DesktopKeybindActionLockKeypad, /**< locked, no PIN asked to unlock (the control centre's) */
 } DesktopKeybindAction;
 
 /** "up press", "ok hold": the line's start for a binding */

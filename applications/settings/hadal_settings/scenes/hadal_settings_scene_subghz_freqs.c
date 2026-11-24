@@ -20,10 +20,13 @@ enum {
     EventEntered = 1000,
     EventRemove,
     EventToggleHop,
+    EventAskRemove,
+    EventCancel,
 };
 
 // the number input, the error or a frequency's choices are on screen, over the list
 static bool in_sub_view;
+static bool asking_remove; /**< the frequency's dialog asks whether to remove it */
 // the frequency whose choices are shown
 static uint32_t chosen_hz;
 
@@ -60,13 +63,22 @@ static void freqs_collect(const char* text, FreqsShown* shown) {
     }
 }
 
+/* As every Hadal dialog: the safe choice on the left, the one that changes things for good on
+ * the right, asked again before it is done (asking_remove, beside in_sub_view) */
+
 static void choice_callback(DialogExResult result, void* context) {
     HadalSettings* app = context;
-    if(result == DialogExResultLeft) {
-        view_dispatcher_send_custom_event(app->view_dispatcher, EventRemove);
-    } else if(result == DialogExResultRight) {
-        view_dispatcher_send_custom_event(app->view_dispatcher, EventToggleHop);
+    uint32_t event = 0;
+    if(asking_remove) {
+        event = result == DialogExResultRight ? EventRemove :
+                result == DialogExResultLeft  ? EventCancel :
+                                                0;
+    } else {
+        event = result == DialogExResultLeft  ? EventToggleHop :
+                result == DialogExResultRight ? EventAskRemove :
+                                                0;
     }
+    if(event) view_dispatcher_send_custom_event(app->view_dispatcher, event);
 }
 
 static char* freqs_read(Storage* storage) {
@@ -104,6 +116,7 @@ static void entered(void* context, int32_t number) {
 
 static void freqs_show(HadalSettings* app) {
     in_sub_view = false;
+    asking_remove = false;
     char* text = freqs_read(app->storage);
     submenu_reset(app->submenu);
     if(!text) {
@@ -190,7 +203,16 @@ bool hadal_settings_scene_subghz_freqs_on_event(void* context, SceneManagerEvent
             in_sub_view = true;
             view_dispatcher_switch_to_view(app->view_dispatcher, HadalViewDialog);
         }
+    } else if(event.event == EventAskRemove) {
+        asking_remove = true;
+        dialog_ex_set_text(app->dialog, "Remove it from the list?", 64, 24, AlignCenter, AlignTop);
+        dialog_ex_set_left_button_text(app->dialog, "Cancel");
+        dialog_ex_set_right_button_text(app->dialog, "Remove");
+    } else if(event.event == EventCancel) {
+        asking_remove = false;
+        freqs_show(app);
     } else if(event.event == EventRemove) {
+        asking_remove = false;
         // gone from both lists
         char* without = subghz_freqs_without(text, chosen_hz);
         if(without) {
@@ -232,8 +254,9 @@ bool hadal_settings_scene_subghz_freqs_on_event(void* context, SceneManagerEvent
                 24,
                 AlignCenter,
                 AlignTop);
-            dialog_ex_set_left_button_text(app->dialog, "Remove");
-            dialog_ex_set_right_button_text(app->dialog, shown->hops[index] ? "No hop" : "Hop");
+            asking_remove = false;
+            dialog_ex_set_left_button_text(app->dialog, shown->hops[index] ? "No hop" : "Hop");
+            dialog_ex_set_right_button_text(app->dialog, "Remove");
             dialog_ex_set_result_callback(app->dialog, choice_callback);
             dialog_ex_set_context(app->dialog, app);
             in_sub_view = true;

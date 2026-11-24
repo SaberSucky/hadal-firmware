@@ -340,13 +340,13 @@ int32_t tracker_detector_app(void* p) {
 
     app->started = furi_get_tick();
     ble_tools_mine_load(&app->mine);
-    app->supported = ble_tools_scan_start(&app->scan, false);
+    app->supported = ble_tools_scan_start(&app->scan, false, false);
 
     uint32_t last_tick = 0, last_sort = 0;
     bool running = true;
     while(running) {
         InputEvent event;
-        if(furi_message_queue_get(app->input, &event, 20) == FuriStatusOk) {
+        if(furi_message_queue_get(app->input, &event, BLE_TOOLS_WAIT_MS) == FuriStatusOk) {
             furi_mutex_acquire(app->mutex, FuriWaitForever);
             running = handle_input(app, &event);
             furi_mutex_release(app->mutex);

@@ -142,6 +142,7 @@ bool desktop_keybind_run(Desktop* desktop, DesktopKeybind bind) {
             [DesktopKeybindActionMainMenu] = DesktopMainEventOpenMenu,
             [DesktopKeybindActionLockMenu] = DesktopMainEventOpenLockMenu,
             [DesktopKeybindActionLock] = DesktopMainEventLock,
+            [DesktopKeybindActionLockKeypad] = DesktopMainEventLockKeypad,
             [DesktopKeybindActionArchive] = DesktopMainEventOpenArchive,
             [DesktopKeybindActionPowerOff] = DesktopMainEventOpenPowerOff,
         };
@@ -213,6 +214,14 @@ bool desktop_scene_main_on_event(void* context, SceneManagerEvent event) {
 
         case DesktopMainEventLock:
             scene_manager_set_scene_state(desktop->scene_manager, DesktopSceneControlCentre, 0);
+            desktop_lock(desktop);
+            consumed = true;
+            break;
+
+        case DesktopMainEventLockKeypad:
+            // as the control centre's tile: locked, no PIN asked to unlock
+            scene_manager_set_scene_state(desktop->scene_manager, DesktopSceneControlCentre, 0);
+            desktop->keypad_lock = true;
             desktop_lock(desktop);
             consumed = true;
             break;

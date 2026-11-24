@@ -9,6 +9,7 @@
 #include <gui/view.h>
 #include <gui/icon_i.h>
 #include <input/input.h>
+#include <notification/notification_app.h>
 #include <stdint.h>
 #include <core/dangerous_defines.h>
 
@@ -31,7 +32,19 @@ struct BubbleAnimationView {
     FuriTimer* timer;
     BubbleAnimationInteractCallback interact_callback;
     void* interact_callback_context;
+    NotificationApp* notification; /**< whether the backlight is on */
+    bool pause_in_dark;
 };
+
+/** The backlight off: a frame read from the card, decoded and sent to the screen nobody lights
+ * up is the desktop's largest use of the battery when it is left alone. The screen still shows
+ * the frame it paused on, and it moves on the moment the backlight comes on */
+static bool bubble_animation_paused(const BubbleAnimationView* view) {
+    if(!view->pause_in_dark || !view->notification) return false;
+    const NotificationLedLayer* display = &view->notification->display;
+    const NotificationLedLayerIndex layer = display->index < LayerMAX ? display->index : 0;
+    return display->value[layer] == 0;
+}
 
 static void bubble_animation_activate(BubbleAnimationView* view, bool force);
 static void bubble_animation_activate_right_now(BubbleAnimationView* view);
@@ -233,6 +246,8 @@ static void bubble_animation_timer_callback(void* context) {
     BubbleAnimationView* view = context;
     bool activate = false;
 
+    if(bubble_animation_paused(view)) return;
+
     BubbleAnimationViewModel* model = view_get_model(view->view);
 
     if(model->active_shift > 0) {
@@ -334,7 +349,14 @@ void bubble_animation_view_free(BubbleAnimationView* view) {
 
     view_free(view->view);
     view->view = NULL;
+    if(view->notification) furi_record_close(RECORD_NOTIFICATION);
     free(view);
+}
+
+void bubble_animation_view_set_pause_in_dark(BubbleAnimationView* view, bool pause) {
+    furi_assert(view);
+    if(pause && !view->notification) view->notification = furi_record_open(RECORD_NOTIFICATION);
+    view->pause_in_dark = pause;
 }
 
 void bubble_animation_view_set_interact_callback(

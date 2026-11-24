@@ -11,7 +11,7 @@ static void draw(Canvas* canvas, void* context) {
         for(int x = (y / 3) % 2; x < 128; x += 5) canvas_draw_dot(canvas, x, y);
     }
     canvas_draw_disc(canvas, 96, 40, 18);
-    desktop_lock_clock_draw(canvas, &when, hour_12);
+    desktop_lock_clock_draw(canvas, &when, hour_12, !hour_12);
 }
 
 int main(int argc, char** argv) {
@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
     Canvas* canvas = preview_canvas();
     for(unsigned v = 0; v < 256; v++) {
         DateTime odd = {.hour = v, .minute = v, .day = v, .month = v, .weekday = v, .year = 2026};
-        desktop_lock_clock_draw(canvas, &odd, v % 2);
+        desktop_lock_clock_draw(canvas, &odd, v % 2, v % 2);
     }
     return 0;
 }

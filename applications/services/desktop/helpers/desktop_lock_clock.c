@@ -15,19 +15,23 @@ void desktop_clock_format(char* out, size_t size, uint8_t hour, uint8_t minute, 
     }
 }
 
-void desktop_lock_clock_draw(Canvas* canvas, const DateTime* datetime, bool hour_12) {
+void desktop_lock_clock_draw(
+    Canvas* canvas,
+    const DateTime* datetime,
+    bool hour_12,
+    bool month_first) {
     char time[8];
     char date[20];
     const char* half = NULL;
     if(hour_12) half = datetime->hour < 12 ? "AM" : "PM";
     desktop_clock_format(time, sizeof(time), datetime->hour, datetime->minute, hour_12);
-    snprintf(
-        date,
-        sizeof(date),
-        "%s %u %s",
-        weekdays[(datetime->weekday + 6) % 7],
-        datetime->day % 100,
-        months[(datetime->month + 11) % 12]);
+    const char* weekday = weekdays[(datetime->weekday + 6) % 7];
+    const char* month = months[(datetime->month + 11) % 12];
+    if(month_first) {
+        snprintf(date, sizeof(date), "%s %s %u", weekday, month, datetime->day % 100);
+    } else {
+        snprintf(date, sizeof(date), "%s %u %s", weekday, datetime->day % 100, month);
+    }
 
     canvas_set_font(canvas, FontBigNumbers);
     const int32_t time_width = canvas_string_width(canvas, time);

@@ -16,5 +16,6 @@ bool hadal_keybinds_get(Storage* storage, DesktopKeybind bind, FuriString* actio
 /** Bind a button (action NULL: back to what it always did); other lines are kept */
 bool hadal_keybinds_set(Storage* storage, DesktopKeybind bind, const char* action);
 
-/** A short label for an action: an app's or file's name without its folders */
-void hadal_keybinds_label(const char* action, FuriString* label);
+/** A short label for an action: a desktop action as the lists call it, an app on the SD card by
+ * its manifest's name, a file by its name without its folders */
+void hadal_keybinds_label(Storage* storage, const char* action, FuriString* label);

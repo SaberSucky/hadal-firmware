@@ -2115,33 +2115,43 @@ class SettingsMigrationTests(TempDirCase):
         self.assertEqual(out["dark"], "0")
         self.assertEqual(out["file_version"], 20)
 
-    def test_v21_file_round_trips_dark_mode(self):
+    def test_v21_file_keeps_dark_mode_and_pauses_the_animation_in_the_dark(self):
         out = self.migrate(21)
         self.assertKept(out)
         self.assertEqual(out["lock"], "1 1 2 5")
         self.assertEqual(out["dark"], "1")
+        # the battery-saving default: the animation pauses while the backlight is off
+        self.assertEqual(out["animate"], "0")
         self.assertEqual(out["file_version"], 21)
         # any other value is read as on, never left as it is
         self.assertEqual(self.migrate(21, "baddark")["dark"], "1")
 
+    def test_v22_file_round_trips_the_animation_option(self):
+        out = self.migrate(22)
+        self.assertKept(out)
+        self.assertEqual((out["dark"], out["animate"]), ("1", "1"))
+        self.assertEqual(out["file_version"], 22)
+        self.assertEqual(self.migrate(22, "badanim")["animate"], "1")
+
     def test_older_files_load_without_dark_mode(self):
-        for version in (14, 17, 18, 19):
-            self.assertEqual(self.migrate(version)["dark"], "0", version)
+        for version in (14, 17, 18, 19, 20):
+            out = self.migrate(version)
+            self.assertEqual((out["dark"], out["animate"]), ("0", "0"), version)
 
     def test_an_unknown_wrong_pin_action_is_none(self):
-        out = self.migrate(21, "badaction")
+        out = self.migrate(22, "badaction")
         self.assertEqual(out["lock"], "1 1 0 5")
 
     def test_strings_without_a_terminator_are_cut_to_fit(self):
         out = self.migrate(19, "unterminated")
         self.assertEqual((out["menu_style_len"], out["pack_len"]), ("31", "31"))
 
-    def test_a_damaged_file_gives_defaults_and_is_rewritten_as_v21(self):
+    def test_a_damaged_file_gives_defaults_and_is_rewritten_as_v22(self):
         out = self.migrate(19, "badsum")
         self.assertEqual((out["auto_lock"], out["pack_len"], out["menu_style_len"]), ("0", "0", "0"))
         self.assertEqual(out["lock"], "0 0 0 0")
-        self.assertEqual(out["dark"], "0")
-        self.assertEqual(out["file_version"], 21)
+        self.assertEqual((out["dark"], out["animate"]), ("0", "0"))
+        self.assertEqual(out["file_version"], 22)
 
 
 class IconIndexTests(TempDirCase):

@@ -92,6 +92,8 @@ void hadal_main_menu_load(HadalMainMenu* menu, Storage* storage) {
 }
 
 bool hadal_main_menu_save(const HadalMainMenu* menu, Storage* storage) {
+    // the folders, each in turn: a missing /ext/apps_data made the save fail without a word
+    storage_simply_mkdir(storage, EXT_PATH("apps_data"));
     FuriString* folder = furi_string_alloc_set(LOADER_MAIN_MENU_PATH);
     path_extract_dirname(LOADER_MAIN_MENU_PATH, folder);
     storage_simply_mkdir(storage, furi_string_get_cstr(folder));

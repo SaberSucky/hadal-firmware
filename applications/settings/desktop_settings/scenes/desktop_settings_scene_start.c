@@ -5,6 +5,7 @@
 #include "desktop_settings_scene.h"
 #include "desktop_settings_scene_i.h"
 #include <power/power_service/power.h>
+#include <loader/loader.h>
 
 typedef enum {
     DesktopSettingsPinSetup = 0,
@@ -12,13 +13,10 @@ typedef enum {
     DesktopSettingsAutoPowerOff,
     DesktopSettingsBatteryDisplay,
     DesktopSettingsClockDisplay,
+    DesktopSettingsAnimateScreenOff,
     DesktopSettingsChangeName,
     DesktopSettingsHappyMode,
-    DesktopSettingsFavoriteLeftShort,
-    DesktopSettingsFavoriteLeftLong,
-    DesktopSettingsFavoriteRightShort,
-    DesktopSettingsFavoriteRightLong,
-    DesktopSettingsFavoriteOkLong,
+    DesktopSettingsButtons,
     DesktopSettingsDummyLeft,
     DesktopSettingsDummyLeftLong,
     DesktopSettingsDummyRight,
@@ -95,6 +93,18 @@ static void desktop_settings_scene_start_clock_enable_changed(VariableItem* item
 
     variable_item_set_current_value_text(item, clock_enable_text[index]);
     app->settings.display_clock = index;
+}
+
+// The idle animation plays only while the screen is lit (the default: it saves the battery), or
+// always
+static const char* const animate_screen_off_text[] = {"Screen on", "Always"};
+
+static void desktop_settings_scene_start_animate_screen_off_changed(VariableItem* item) {
+    DesktopSettingsApp* app = variable_item_get_context(item);
+    uint8_t index = variable_item_get_current_value_index(item);
+
+    variable_item_set_current_value_text(item, animate_screen_off_text[index]);
+    app->settings.animate_screen_off = index;
 }
 
 static void desktop_settings_scene_start_auto_lock_delay_changed(VariableItem* item) {
@@ -186,17 +196,25 @@ void desktop_settings_scene_start_on_enter(void* context) {
     variable_item_set_current_value_text(item, clock_enable_text[value_index]);
     variable_item_set_values_text(item, clock_enable_text);
 
+    item = variable_item_list_add(
+        variable_item_list,
+        "Animation",
+        COUNT_OF(animate_screen_off_text),
+        desktop_settings_scene_start_animate_screen_off_changed,
+        app);
+    value_index = app->settings.animate_screen_off ? 1 : 0;
+    variable_item_set_current_value_index(item, value_index);
+    variable_item_set_current_value_text(item, animate_screen_off_text[value_index]);
+    variable_item_set_values_text(item, animate_screen_off_text);
+
     // the menu style and the asset pack are set in Settings > Hadal > Interface
 
     variable_item_list_add(variable_item_list, "Change Flipper Name", 0, NULL, app);
 
     variable_item_list_add(variable_item_list, "Happy Mode", 1, NULL, NULL);
 
-    variable_item_list_add(variable_item_list, "Left press opens", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "Left hold opens", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "Right press opens", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "Right hold opens", 1, NULL, NULL);
-    variable_item_list_add(variable_item_list, "OK hold opens", 1, NULL, NULL);
+    // what each button does is set in one place, Hadal > Desktop Keys: this opens it
+    variable_item_list_add(variable_item_list, "Buttons...", 1, NULL, NULL);
 
     variable_item_list_add(variable_item_list, "Dummy: Left", 1, NULL, NULL);
     variable_item_list_add(variable_item_list, "Dummy: Left hold", 1, NULL, NULL);
@@ -233,41 +251,16 @@ bool desktop_settings_scene_start_on_event(void* context, SceneManagerEvent even
             scene_manager_next_scene(app->scene_manager, DesktopSettingsAppSceneChangeName);
             break;
 
-        case DesktopSettingsFavoriteLeftShort:
-            scene_manager_set_scene_state(
-                app->scene_manager,
-                DesktopSettingsAppSceneFavorite,
-                SCENE_STATE_SET_FAVORITE_APP | FavoriteAppLeftShort);
-            scene_manager_next_scene(app->scene_manager, DesktopSettingsAppSceneFavorite);
+        case DesktopSettingsButtons: {
+            // set where every button and tile is set; the Desktop page closes for it
+            Loader* loader = furi_record_open(RECORD_LOADER);
+            loader_enqueue_launch(
+                loader, "Hadal", "desktop_keys", LoaderDeferredLaunchFlagGui);
+            furi_record_close(RECORD_LOADER);
+            scene_manager_stop(app->scene_manager);
+            view_dispatcher_stop(app->view_dispatcher);
             break;
-        case DesktopSettingsFavoriteLeftLong:
-            scene_manager_set_scene_state(
-                app->scene_manager,
-                DesktopSettingsAppSceneFavorite,
-                SCENE_STATE_SET_FAVORITE_APP | FavoriteAppLeftLong);
-            scene_manager_next_scene(app->scene_manager, DesktopSettingsAppSceneFavorite);
-            break;
-        case DesktopSettingsFavoriteRightShort:
-            scene_manager_set_scene_state(
-                app->scene_manager,
-                DesktopSettingsAppSceneFavorite,
-                SCENE_STATE_SET_FAVORITE_APP | FavoriteAppRightShort);
-            scene_manager_next_scene(app->scene_manager, DesktopSettingsAppSceneFavorite);
-            break;
-        case DesktopSettingsFavoriteRightLong:
-            scene_manager_set_scene_state(
-                app->scene_manager,
-                DesktopSettingsAppSceneFavorite,
-                SCENE_STATE_SET_FAVORITE_APP | FavoriteAppRightLong);
-            scene_manager_next_scene(app->scene_manager, DesktopSettingsAppSceneFavorite);
-            break;
-        case DesktopSettingsFavoriteOkLong:
-            scene_manager_set_scene_state(
-                app->scene_manager,
-                DesktopSettingsAppSceneFavorite,
-                SCENE_STATE_SET_FAVORITE_APP | FavoriteAppOkLong);
-            scene_manager_next_scene(app->scene_manager, DesktopSettingsAppSceneFavorite);
-            break;
+        }
 
         case DesktopSettingsDummyLeft:
             scene_manager_set_scene_state(

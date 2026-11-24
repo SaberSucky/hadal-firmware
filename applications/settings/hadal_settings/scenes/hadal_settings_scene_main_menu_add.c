@@ -19,8 +19,12 @@ static bool add_item_loader(FuriString* path, void* context, uint8_t** icon, Fur
 
 static void added(HadalSettings* app, const char* entry) {
     if(hadal_main_menu_add(&app->main_menu, app->storage, entry)) {
-        hadal_main_menu_save(&app->main_menu, app->storage);
-        app->main_menu.customised = true;
+        // a menu not saved is not the one the Flipper shows: say so
+        if(hadal_main_menu_save(&app->main_menu, app->storage)) {
+            app->main_menu.customised = true;
+        } else {
+            dialog_message_show_storage_error(app->dialogs, "Cannot save\nthe main menu");
+        }
         // back on the list, on the new entry
         for(size_t i = 0; i < app->main_menu.count; i++) {
             if(furi_string_equal_str(app->main_menu.items[i].entry, entry)) {

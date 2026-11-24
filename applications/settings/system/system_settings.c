@@ -185,9 +185,10 @@ static void date_format_changed(VariableItem* item) {
     locale_set_date_format(date_format_value[index]);
 }
 
+// as the control centre's tile: left-handed or not
 const char* const hand_mode[] = {
-    "Righty",
-    "Lefty",
+    "Off",
+    "On",
 };
 
 static void hand_orient_changed(VariableItem* item) {
@@ -251,7 +252,7 @@ SystemSettings* system_settings_alloc(void) {
     app->var_item_list = variable_item_list_alloc();
 
     item = variable_item_list_add(
-        app->var_item_list, "Hand Orient", COUNT_OF(hand_mode), hand_orient_changed, app);
+        app->var_item_list, "Left-handed", COUNT_OF(hand_mode), hand_orient_changed, app);
     value_index = furi_hal_rtc_is_flag_set(FuriHalRtcFlagHandOrient) ? 1 : 0;
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, hand_mode[value_index]);

@@ -97,6 +97,11 @@ void animation_manager_set_interact_callback(
     animation_manager->interact_callback = callback;
 }
 
+void animation_manager_set_pause_in_dark(AnimationManager* animation_manager, bool pause) {
+    furi_assert(animation_manager);
+    bubble_animation_view_set_pause_in_dark(animation_manager->animation_view, pause);
+}
+
 void animation_manager_set_dummy_mode_state(AnimationManager* animation_manager, bool enabled) {
     furi_assert(animation_manager);
     // Prevent change of animations if mode is the same

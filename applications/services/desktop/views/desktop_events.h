@@ -2,6 +2,7 @@
 
 typedef enum {
     DesktopMainEventLock,
+    DesktopMainEventLockKeypad,
     DesktopMainEventOpenLockMenu,
     DesktopMainEventOpenArchive,
     DesktopMainEventOpenFavoriteLeftShort,

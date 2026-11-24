@@ -346,9 +346,12 @@ static void draw_list(Canvas* canvas, ArchiveBrowserViewModel* model) {
             furi_string_set(str_buf, "---");
         }
 
-        size_t scroll_counter = model->scroll_counter;
+        size_t scroll_counter = elements_scroll_position(model->scroll_counter);
+        const size_t text_width = (scrollbar ? MAX_LEN_PX - 6 : MAX_LEN_PX) - x_offset;
 
         if(model->item_idx == idx) {
+            model->selected_scrolls =
+                canvas_string_width(canvas, furi_string_get_cstr(str_buf)) > text_width;
             archive_draw_frame(canvas, i, scrollbar, model->move_fav);
             if(scroll_counter < SCROLL_DELAY) {
                 scroll_counter = 0;
@@ -372,7 +375,7 @@ static void draw_list(Canvas* canvas, ArchiveBrowserViewModel* model) {
             canvas,
             15 + x_offset,
             24 + i * FRAME_HEIGHT,
-            ((scrollbar ? MAX_LEN_PX - 6 : MAX_LEN_PX) - x_offset),
+            text_width,
             str_buf,
             scroll_counter,
             (model->item_idx != idx));
@@ -700,8 +703,13 @@ static bool archive_view_input(InputEvent* event, void* context) {
 static void browser_scroll_timer(void* context) {
     furi_assert(context);
     ArchiveBrowserView* browser = context;
+    // drawn again only while the selected name scrolls, and not once it has come to rest
+    bool redraw = false;
     with_view_model(
-        browser->view, ArchiveBrowserViewModel * model, { model->scroll_counter++; }, true);
+        browser->view,
+        ArchiveBrowserViewModel * model,
+        { redraw = elements_scroll_step(&model->scroll_counter) && model->selected_scrolls; },
+        redraw);
 }
 
 static void browser_view_enter(void* context) {

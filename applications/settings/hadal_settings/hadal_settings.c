@@ -94,9 +94,13 @@ static void hadal_settings_free(HadalSettings* app) {
 }
 
 int32_t hadal_settings_app(void* p) {
-    UNUSED(p);
     HadalSettings* app = hadal_settings_alloc();
     scene_manager_next_scene(app->scene_manager, HadalSettingsSceneStart);
+    // "desktop_keys" (Settings > Desktop > Buttons): straight to Desktop Keys, Back as from there
+    if(p && strcmp(p, "desktop_keys") == 0) {
+        scene_manager_next_scene(app->scene_manager, HadalSettingsSceneInterface);
+        scene_manager_next_scene(app->scene_manager, HadalSettingsSceneDesktopKeys);
+    }
     view_dispatcher_run(app->view_dispatcher);
     hadal_settings_free(app);
     return 0;

@@ -11,7 +11,8 @@
 #define DESKTOP_SETTINGS_VER_18 (18)
 #define DESKTOP_SETTINGS_VER_19 (19)
 #define DESKTOP_SETTINGS_VER_20 (20)
-#define DESKTOP_SETTINGS_VER    (21)
+#define DESKTOP_SETTINGS_VER_21 (21)
+#define DESKTOP_SETTINGS_VER    (22)
 
 #define DESKTOP_SETTINGS_PATH  INT_PATH(DESKTOP_SETTINGS_FILE_NAME)
 #define DESKTOP_SETTINGS_MAGIC (0x17)
@@ -43,9 +44,20 @@ _Static_assert(
     offsetof(DesktopSettings, dark_mode) == offsetof(DesktopSettings, boot_unlocked) + 4,
     "DesktopSettings before dark_mode must still be the v20 layout");
 
-// The fields v21 added: zero is the behaviour before them
+// v21 files hold everything up to the animation option, which v22 appended
+_Static_assert(
+    offsetof(DesktopSettings, animate_screen_off) == offsetof(DesktopSettings, dark_mode) + 1,
+    "DesktopSettings before animate_screen_off must still be the v21 layout");
+
+// The field v22 added: zero, the animation pausing in the dark, saves the battery
+static void desktop_settings_clear_v22_options(DesktopSettings* settings) {
+    settings->animate_screen_off = 0;
+}
+
+// The fields v21 added (and v22's): zero is the behaviour before them
 static void desktop_settings_clear_v21_options(DesktopSettings* settings) {
     settings->dark_mode = 0;
+    desktop_settings_clear_v22_options(settings);
 }
 
 // The fields v20 added (and after them, v21's): zero is the behaviour before them
@@ -79,6 +91,7 @@ static void desktop_settings_terminate_strings(DesktopSettings* settings) {
         settings->pin_fail_action = DesktopPinFailActionNone;
     }
     settings->dark_mode = settings->dark_mode ? 1 : 0;
+    settings->animate_screen_off = settings->animate_screen_off ? 1 : 0;
 }
 
 void desktop_settings_load(DesktopSettings* settings) {
@@ -97,6 +110,17 @@ void desktop_settings_load(DesktopSettings* settings) {
                 sizeof(DesktopSettings),
                 DESKTOP_SETTINGS_MAGIC,
                 DESKTOP_SETTINGS_VER);
+
+        } else if(version == DESKTOP_SETTINGS_VER_21) {
+            // v22 appended the animation option; everything before it is unchanged
+            success = saved_struct_load(
+                DESKTOP_SETTINGS_PATH,
+                settings,
+                offsetof(DesktopSettings, animate_screen_off),
+                DESKTOP_SETTINGS_MAGIC,
+                DESKTOP_SETTINGS_VER_21);
+
+            if(success) desktop_settings_clear_v22_options(settings);
 
         } else if(version == DESKTOP_SETTINGS_VER_20) {
             // v21 appended dark mode; everything before it is unchanged

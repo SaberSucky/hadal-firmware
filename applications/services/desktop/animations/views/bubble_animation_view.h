@@ -81,6 +81,9 @@ View* bubble_animation_get_view(BubbleAnimationView* view);
  */
 void bubble_animation_freeze(BubbleAnimationView* view);
 
+/** Whether the animation pauses while the backlight is off (it resumes when it comes on) */
+void bubble_animation_view_set_pause_in_dark(BubbleAnimationView* view, bool pause);
+
 /**
  * Starts bubble animation after freezing.
  *

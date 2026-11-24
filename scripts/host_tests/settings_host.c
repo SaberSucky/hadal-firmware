@@ -3,7 +3,7 @@
  * scripts/asset_packer_test.py: the real load/migrate code and the real saved_struct, on host
  * storage. Files of every older version are written from the layouts those versions had.
  *
- *   migrate ROOT VERSION [CASE]   write /int/.desktop.settings as VERSION (14, 17, 18, 19, 20, 21), load
+ *   migrate ROOT VERSION [CASE]   write /int/.desktop.settings as VERSION (14, 17-22), load
  *                                 it with the current code and print what came out
  *
  * CASE: "" (normal), "unterminated" (string fields full of 0xFF), "badsum" (checksum wrong),
@@ -84,7 +84,7 @@ int main(int argc, char** argv) {
         SettingsV18 v18 = {.v17 = v17};
         strcpy(v18.menu_style, "Test.fal");
         ok = saved_struct_save(PATH, &v18, sizeof(v18), MAGIC, 18);
-    } else if(version == 19 || version == 20 || version == 21) {
+    } else if(version >= 19 && version <= 22) {
         DesktopSettings current;
         memset(&current, 0, sizeof(current));
         memcpy(&current, &v17, sizeof(v17)); // the same leading layout
@@ -107,9 +107,15 @@ int main(int argc, char** argv) {
                 // v20 ended where dark mode begins
                 ok = saved_struct_save(
                     PATH, &current, offsetof(DesktopSettings, dark_mode), MAGIC, 20);
+            } else if(version == 21) {
+                // v21 ended where the animation option begins
+                current.dark_mode = !strcmp(variant, "baddark") ? 9 : 1;
+                ok = saved_struct_save(
+                    PATH, &current, offsetof(DesktopSettings, animate_screen_off), MAGIC, 21);
             } else {
                 current.dark_mode = !strcmp(variant, "baddark") ? 9 : 1;
-                ok = saved_struct_save(PATH, &current, sizeof(current), MAGIC, 21);
+                current.animate_screen_off = !strcmp(variant, "badanim") ? 9 : 1;
+                ok = saved_struct_save(PATH, &current, sizeof(current), MAGIC, 22);
             }
         }
     }
@@ -147,5 +153,6 @@ int main(int argc, char** argv) {
         loaded.pin_fail_action,
         loaded.pin_fail_limit);
     printf("dark %u\n", loaded.dark_mode);
+    printf("animate %u\n", loaded.animate_screen_off);
     return 0;
 }

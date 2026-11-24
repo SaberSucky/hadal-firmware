@@ -38,7 +38,11 @@ static void menu_draw_callback(Canvas* canvas, void* _model) {
         canvas_draw_str(canvas, 2, 32, "Empty");
         elements_scrollbar(canvas, 0, 0);
     } else if(model->style) {
+        // a style reads the counter itself: at rest it sees the start
+        const size_t counter = model->scroll_counter;
+        model->scroll_counter = elements_scroll_position(counter);
         model->style->draw(canvas, model);
+        model->scroll_counter = counter;
     } else {
         for(size_t i = 0; i < 3; i++) {
             const MenuItem* item =
@@ -139,15 +143,12 @@ static bool menu_input_callback(InputEvent* event, void* context) {
 
 static void menu_scroll_timer_callback(void* context) {
     Menu* menu = context;
+    bool redraw = false;
     with_view_model(
         menu->view,
         MenuModel * model,
-        {
-            if(model->style) {
-                model->scroll_counter++;
-            }
-        },
-        model->style != NULL);
+        { redraw = model->style && elements_scroll_step(&model->scroll_counter); },
+        redraw);
 }
 
 static void menu_enter(void* context) {

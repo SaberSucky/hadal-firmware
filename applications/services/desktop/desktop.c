@@ -10,6 +10,8 @@
 #include <namechanger/namechanger.h>
 
 #include <gui/gui_i.h>
+#include <gui/canvas_i.h>
+#include <u8g2_glue.h>
 
 #include <locale/locale.h>
 #include <storage/storage.h>
@@ -41,6 +43,7 @@ static void desktop_auto_lock_arm(Desktop*);
 static void desktop_auto_lock_inhibit(Desktop*);
 static void desktop_start_auto_lock_timer(Desktop*);
 static void desktop_apply_settings(Desktop*);
+static void desktop_favorites_to_keybinds(Desktop* desktop);
 static void desktop_apply_asset_pack(Desktop*);
 
 static void desktop_loader_callback(const void* message, void* context) {
@@ -86,6 +89,8 @@ static void desktop_storage_callback(const void* message, void* context) {
 
     if(event->type == StorageEventTypeCardMount) {
         view_dispatcher_send_custom_event(desktop->view_dispatcher, DesktopGlobalReloadSettings);
+        // a crash report still waiting for the card is saved now that there is one
+        view_dispatcher_send_custom_event(desktop->view_dispatcher, DesktopGlobalSaveCrashReport);
     }
 }
 
@@ -117,13 +122,21 @@ static void desktop_clock_update(Desktop* desktop) {
     }
 }
 
+/** Ticks to just past the next minute: the status bar shows minutes, and was woken for every
+ * second */
+static uint32_t desktop_clock_ticks_to_next_minute(void) {
+    DateTime now;
+    furi_hal_rtc_get_datetime(&now);
+    return furi_ms_to_ticks((60U - now.second % 60U) * 1000U + 50U);
+}
+
 static void desktop_clock_reconfigure(Desktop* desktop) {
     furi_assert(desktop);
 
     desktop_clock_update(desktop);
 
     if(desktop->settings.display_clock) {
-        furi_timer_start(desktop->update_clock_timer, furi_ms_to_ticks(1000));
+        furi_timer_start(desktop->update_clock_timer, desktop_clock_ticks_to_next_minute());
     } else {
         furi_timer_stop(desktop->update_clock_timer);
     }
@@ -195,6 +208,7 @@ static bool desktop_custom_event_callback(void* context, uint32_t event) {
         desktop->pack_reload_after = furi_get_tick() + furi_ms_to_ticks(DESKTOP_PACK_RELOAD_MS);
         desktop_auto_lock_arm(desktop);
         desktop->app_running = false;
+        desktop_tick_update(desktop);
 
     } else if(event == DesktopGlobalAutoLock) {
         if(!desktop->app_running && !desktop->locked) {
@@ -211,6 +225,7 @@ static bool desktop_custom_event_callback(void* context, uint32_t event) {
 
     } else if(event == DesktopGlobalReloadSettings) {
         desktop_settings_load(&desktop->settings);
+        desktop_favorites_to_keybinds(desktop);
         desktop_apply_settings(desktop);
 
     } else if(event == DesktopGlobalAssetPacksChanged) {
@@ -225,7 +240,11 @@ static bool desktop_custom_event_callback(void* context, uint32_t event) {
         asset_packs_mark_stable();
 
     } else if(event == DesktopGlobalSaveCrashReport) {
-        if(crash_report_save(desktop->storage)) furi_timer_stop(desktop->crash_report_timer);
+        // tried for the first seconds after start, while the card mounts, then left to the
+        // card's mount: a Flipper without a card was woken twice a second for as long as it ran
+        if(crash_report_save(desktop->storage) || ++desktop->crash_report_tries >= 20) {
+            furi_timer_stop(desktop->crash_report_timer);
+        }
 
     } else if(event == DesktopGlobalBootStable) {
         // This firmware works: it becomes the one to roll back to
@@ -251,6 +270,7 @@ void desktop_animation_reload_if_pending(Desktop* desktop) {
     if(!desktop->animation_reload_pending || desktop->app_running) return;
     desktop->animation_reload_pending = false;
     animation_manager_load_and_continue_animation(desktop->animation_manager);
+    desktop_tick_update(desktop);
 }
 
 static void desktop_tick_event_callback(void* context) {
@@ -266,6 +286,21 @@ static void desktop_tick_event_callback(void* context) {
         asset_packs_reload_icons();
     }
     scene_manager_handle_tick_event(app->scene_manager);
+    desktop_tick_update(app);
+}
+
+void desktop_tick_update(Desktop* desktop) {
+    // Twice a second only while something waits for it: a reload after an app, or the control
+    // centre open. The desktop woke the chip twice a second for as long as it ran
+    const bool needed = desktop->animation_reload_pending || desktop->pack_reload_pending ||
+                        desktop->control_centre_open;
+    if(needed == desktop->tick_running) return;
+    desktop->tick_running = needed;
+    furi_event_loop_tick_set(
+        view_dispatcher_get_event_loop(desktop->view_dispatcher),
+        needed ? furi_ms_to_ticks(500) : 0,
+        needed ? desktop_tick_event_callback : NULL,
+        desktop);
 }
 
 static void desktop_input_event_callback(const void* value, void* context) {
@@ -322,6 +357,10 @@ static void desktop_clock_timer_callback(void* context) {
     }
 
     view_port_enabled_set(desktop->clock_viewport, clock_enabled);
+    // the next minute (the status bar's room is looked at then too)
+    if(desktop->settings.display_clock) {
+        furi_timer_start(desktop->update_clock_timer, desktop_clock_ticks_to_next_minute());
+    }
 }
 
 /** Where the active pack keeps its idle animations; false if it has none (no manifest). */
@@ -370,6 +409,40 @@ static void desktop_apply_asset_pack(Desktop* desktop) {
     animation_manager_new_idle_process(desktop->animation_manager);
 }
 
+/* The buttons are set in one place, Settings > Hadal > Desktop Keys (keybinds.txt). The
+ * favourites Settings > Desktop used to set (and which a keybind silently overrode) move there,
+ * once, where a button has no keybind yet: an app or file as it was, "none" as Nothing. Kept
+ * while the card is away, and moved when it is back */
+static void desktop_favorites_to_keybinds(Desktop* desktop) {
+    static const struct {
+        FavoriteAppShortcut favorite;
+        DesktopKeybind bind;
+    } moves[] = {
+        {FavoriteAppLeftShort, DesktopKeybindLeftPress},
+        {FavoriteAppLeftLong, DesktopKeybindLeftHold},
+        {FavoriteAppRightShort, DesktopKeybindRightPress},
+        {FavoriteAppRightLong, DesktopKeybindRightHold},
+        {FavoriteAppOkLong, DesktopKeybindOkHold},
+    };
+    if(storage_sd_status(desktop->storage) != FSE_OK) return;
+    bool moved = false;
+    FuriString* existing = furi_string_alloc();
+    for(size_t i = 0; i < COUNT_OF(moves); i++) {
+        char* app = desktop->settings.favorite_apps[moves[i].favorite].name_or_path;
+        if(!app[0]) continue; // as it always did: nothing to move
+        if(!desktop_keybinds_file_get(desktop->storage, moves[i].bind, existing)) {
+            const bool none = app[0] == '?' && app[1] == '\0';
+            if(!desktop_keybinds_file_set(desktop->storage, moves[i].bind, none ? "Nothing" : app)) {
+                continue; // tried again at the next start
+            }
+        }
+        app[0] = '\0';
+        moved = true;
+    }
+    furi_string_free(existing);
+    if(moved) desktop_settings_save(&desktop->settings);
+}
+
 static void desktop_apply_settings(Desktop* desktop) {
     desktop->in_transition = true;
 
@@ -379,10 +452,17 @@ static void desktop_apply_settings(Desktop* desktop) {
     desktop_main_set_dummy_mode_state(desktop->main_view, desktop->settings.dummy_mode);
     animation_manager_set_dummy_mode_state(
         desktop->animation_manager, desktop->settings.dummy_mode);
+    animation_manager_set_pause_in_dark(
+        desktop->animation_manager, !desktop->settings.animate_screen_off);
 
     loader_set_menu_style(desktop->loader, desktop->settings.menu_style);
 
-    desktop_set_dark_mode(desktop, desktop->settings.dark_mode);
+    // the desktop's own dark mode of before becomes the screen's, once
+    if(desktop->settings.dark_mode) {
+        desktop->settings.dark_mode = 0;
+        desktop_settings_save(&desktop->settings);
+        desktop_set_dark_mode(desktop, true);
+    }
 
     desktop_apply_asset_pack(desktop);
 
@@ -434,8 +514,7 @@ static Desktop* desktop_alloc(void) {
 
     view_dispatcher_attach_to_gui(
         desktop->view_dispatcher, desktop->gui, ViewDispatcherTypeDesktop);
-    view_dispatcher_set_tick_event_callback(
-        desktop->view_dispatcher, desktop_tick_event_callback, 500);
+    // no tick of its own: desktop_tick_update() sets one while something waits for it
 
     view_dispatcher_set_event_callback_context(desktop->view_dispatcher, desktop);
     view_dispatcher_set_custom_event_callback(
@@ -553,7 +632,7 @@ static Desktop* desktop_alloc(void) {
     asset_packs_set_changed_callback(desktop_asset_packs_changed_callback, desktop);
 
     desktop->update_clock_timer =
-        furi_timer_alloc(desktop_clock_timer_callback, FuriTimerTypePeriodic, desktop);
+        furi_timer_alloc(desktop_clock_timer_callback, FuriTimerTypeOnce, desktop);
 
     // whether an app already runs is asked once the desktop is up (desktop_run()): the loader
     // answers only after every start hook has run
@@ -633,8 +712,24 @@ void desktop_set_dummy_mode_state(Desktop* desktop, bool enabled) {
     desktop_settings_save(&desktop->settings);
 }
 
+/* Dark mode is one setting: the screen's own inversion, LCD & Notifications' (it is free: the
+ * screen inverts what it shows). The control centre's tile used to invert every frame itself, a
+ * second dark mode that, with the other on, turned the screen back to light */
+bool desktop_dark_mode(Desktop* desktop) {
+    UNUSED(desktop);
+    NotificationApp* notification = furi_record_open(RECORD_NOTIFICATION);
+    const bool dark = notification->settings.lcd_inversion;
+    furi_record_close(RECORD_NOTIFICATION);
+    return dark;
+}
+
 void desktop_set_dark_mode(Desktop* desktop, bool enabled) {
-    desktop->gui->inverted = enabled;
+    NotificationApp* notification = furi_record_open(RECORD_NOTIFICATION);
+    notification->settings.lcd_inversion = enabled;
+    u8x8_d_st756x_set_inversion(&desktop->gui->canvas->fb.u8x8, enabled);
+    notification_message_save_settings(notification);
+    furi_record_close(RECORD_NOTIFICATION);
+    desktop->gui->inverted = false;
     gui_update(desktop->gui);
 }
 

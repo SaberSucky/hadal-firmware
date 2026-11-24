@@ -18,10 +18,21 @@ typedef struct {
     FuriMessageQueue* reports; /**< GapScannerReport, filled on the BLE thread */
     uint32_t dropped;
     bool scanning;
+    bool active;
+    bool fast;
 } BleToolsScan;
 
-/** false when the radio stack cannot scan (the Light stack) or scanning would not start */
-bool ble_tools_scan_start(BleToolsScan* scan, bool active);
+/** How long a tool's loop waits for a key between looks at the reports: longer while the radio
+ * listens a quarter of the time, as short as the locate clicks need while it listens nearly all */
+#define BLE_TOOLS_WAIT_MS      100U
+#define BLE_TOOLS_WAIT_FAST_MS 20U
+
+/** false when the radio stack cannot scan (the Light stack) or scanning would not start.
+ * fast: the radio listens nearly all the time (finding one device); otherwise a quarter of it,
+ * which lists everything around within a second or two on a quarter of the battery */
+bool ble_tools_scan_start(BleToolsScan* scan, bool active, bool fast);
+/** Scanning on, fast or not: restarted only when that changes */
+void ble_tools_scan_set_fast(BleToolsScan* scan, bool fast);
 void ble_tools_scan_stop(BleToolsScan* scan);
 void ble_tools_scan_free(BleToolsScan* scan);
 /** Take one queued report, if any */

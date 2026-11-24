@@ -17,7 +17,7 @@ static void style_build(HadalSettings* app, uint32_t selected) {
     submenu_set_header(app->submenu, "Menu Style");
 
     const bool none = settings->menu_style[0] == '\0';
-    FuriString* label = furi_string_alloc_printf("%sList (built-in)", none ? "* " : "  ");
+    FuriString* label = furi_string_alloc_printf("%sBuilt-in", none ? "* " : "  ");
     submenu_add_item(
         app->submenu,
         furi_string_get_cstr(label),

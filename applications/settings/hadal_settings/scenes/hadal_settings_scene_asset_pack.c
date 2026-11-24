@@ -10,7 +10,7 @@ static void packs_build(HadalSettings* app, uint32_t selected) {
 
     submenu_reset(app->submenu);
     submenu_set_header(app->submenu, "Asset Pack");
-    FuriString* label = furi_string_alloc_printf("%sNone (built-in)", in_use[0] ? "  " : "* ");
+    FuriString* label = furi_string_alloc_printf("%sBuilt-in", in_use[0] ? "  " : "* ");
     submenu_add_item(
         app->submenu, furi_string_get_cstr(label), PACK_NONE, hadal_settings_submenu_callback, app);
     uint32_t current = PACK_NONE;

@@ -116,6 +116,7 @@ typedef struct {
     int32_t array_offset;
     int32_t list_offset;
     size_t scroll_counter;
+    bool selected_scrolls; /**< the selected name is too long and scrolls: the timer redraws */
 
     uint32_t button_held_for_ticks;
 } ArchiveBrowserViewModel;

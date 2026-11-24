@@ -201,13 +201,13 @@ int32_t crowd_meter_app(void* p) {
     app->started = furi_get_tick();
     app->range = RangeAll; // as it always counted; Up for nearer
     ble_tools_mine_load(&app->mine);
-    app->supported = ble_tools_scan_start(&app->scan, false);
+    app->supported = ble_tools_scan_start(&app->scan, false, false);
 
     uint32_t last_tick = 0, last_sample = app->started;
     bool running = true;
     while(running) {
         InputEvent event;
-        if(furi_message_queue_get(app->input, &event, 20) == FuriStatusOk &&
+        if(furi_message_queue_get(app->input, &event, BLE_TOOLS_WAIT_MS) == FuriStatusOk &&
            event.type == InputTypeShort) {
             furi_mutex_acquire(app->mutex, FuriWaitForever);
             if(event.key == InputKeyBack) running = false;

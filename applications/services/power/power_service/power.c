@@ -243,25 +243,37 @@ static ViewPort* power_battery_view_port_alloc(Power* power) {
     return battery_view_port;
 }
 
-static bool power_update_info(Power* power) {
-    const PowerInfo info = {
-        .is_charging = furi_hal_power_is_charging(),
-        .gauge_is_ok = furi_hal_power_gauge_is_ok(),
-        .is_shutdown_requested = furi_hal_power_is_shutdown_requested(),
-        .is_otg_enabled = furi_hal_power_is_otg_enabled(),
-        .charge = furi_hal_power_get_pct(),
-        .health = furi_hal_power_get_bat_health_pct(),
-        .capacity_remaining = furi_hal_power_get_battery_remaining_capacity(),
-        .capacity_full = furi_hal_power_get_battery_full_capacity(),
-        .current_charger = furi_hal_power_get_battery_current(FuriHalPowerICCharger),
-        .current_gauge = furi_hal_power_get_battery_current(FuriHalPowerICFuelGauge),
-        .voltage_battery_charge_limit = furi_hal_power_get_battery_charge_voltage_limit(),
-        .voltage_charger = furi_hal_power_get_battery_voltage(FuriHalPowerICCharger),
-        .voltage_gauge = furi_hal_power_get_battery_voltage(FuriHalPowerICFuelGauge),
-        .voltage_vbus = furi_hal_power_get_usb_voltage(),
-        .temperature_charger = furi_hal_power_get_battery_temperature(FuriHalPowerICCharger),
-        .temperature_gauge = furi_hal_power_get_battery_temperature(FuriHalPowerICFuelGauge),
-    };
+/* Every second on battery only what is watched that often: charging, the charge, a shutdown the
+ * gauge asks for, the USB power output. The rest (health, capacities, currents, voltages,
+ * temperatures) every POWER_FULL_READ_TICKS seconds, while charging (the cable pays), and
+ * whenever someone asks for them (power_get_info). Each value is a read of the gauge or the
+ * charger over I2C: sixteen a second, as it was, for a battery icon that changes by the minute */
+#define POWER_FULL_READ_TICKS (10U)
+
+static bool power_update_info(Power* power, bool full) {
+    PowerInfo info = power->info;
+    info.is_charging = furi_hal_power_is_charging();
+    info.gauge_is_ok = furi_hal_power_gauge_is_ok();
+    info.is_shutdown_requested = furi_hal_power_is_shutdown_requested();
+    info.is_otg_enabled = furi_hal_power_is_otg_enabled();
+    info.charge = furi_hal_power_get_pct();
+    if(power->is_otg_requested || info.is_otg_enabled) {
+        info.voltage_vbus = furi_hal_power_get_usb_voltage(); // the OTG logic below
+    }
+    if(full || info.is_charging || ++power->ticks_since_full_read >= POWER_FULL_READ_TICKS) {
+        power->ticks_since_full_read = 0;
+        info.health = furi_hal_power_get_bat_health_pct();
+        info.capacity_remaining = furi_hal_power_get_battery_remaining_capacity();
+        info.capacity_full = furi_hal_power_get_battery_full_capacity();
+        info.current_charger = furi_hal_power_get_battery_current(FuriHalPowerICCharger);
+        info.current_gauge = furi_hal_power_get_battery_current(FuriHalPowerICFuelGauge);
+        info.voltage_battery_charge_limit = furi_hal_power_get_battery_charge_voltage_limit();
+        info.voltage_charger = furi_hal_power_get_battery_voltage(FuriHalPowerICCharger);
+        info.voltage_gauge = furi_hal_power_get_battery_voltage(FuriHalPowerICFuelGauge);
+        info.voltage_vbus = furi_hal_power_get_usb_voltage();
+        info.temperature_charger = furi_hal_power_get_battery_temperature(FuriHalPowerICCharger);
+        info.temperature_gauge = furi_hal_power_get_battery_temperature(FuriHalPowerICFuelGauge);
+    }
 
     const bool need_refresh = (power->info.charge != info.charge) ||
                               (power->info.is_charging != info.is_charging);
@@ -524,6 +536,7 @@ static void power_message_callback(FuriEventLoopObject* object, void* context) {
         power_handle_reboot(msg.boot_mode);
         break;
     case PowerMessageTypeGetInfo:
+        power_update_info(power, true); // all of it, as it is now
         *msg.power_info = power->info;
         break;
     case PowerMessageTypeIsBatteryHealthy:
@@ -602,7 +615,7 @@ static void power_tick_callback(void* context) {
     Power* power = context;
 
     // Update data from gauge and charger
-    const bool need_refresh = power_update_info(power);
+    const bool need_refresh = power_update_info(power, false);
     // Check low battery level
     power_check_low_battery(power);
     // Check and notify about charging state
@@ -728,7 +741,7 @@ int32_t power_srv(void* p) {
     // power service settings initialization
     power_init_settings(power);
 
-    power_update_info(power);
+    power_update_info(power, true);
 
     furi_record_create(RECORD_POWER, power);
 

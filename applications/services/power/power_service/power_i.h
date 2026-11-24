@@ -36,6 +36,7 @@ struct Power {
     bool show_battery_low_warning;
     uint8_t displayBatteryPercentage;
     bool is_otg_requested;
+    uint8_t ticks_since_full_read; /**< power_update_info(): seconds since all was read */
     uint8_t battery_level;
     uint8_t power_off_timeout;
     PowerSettings settings;

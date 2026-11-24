@@ -645,7 +645,7 @@ static NotificationAppSettings* alloc_settings(void) {
     variable_item_set_values_text(item, contrast_text);
 
     item = variable_item_list_add(
-        app->variable_item_list, "LCD Backlight", BACKLIGHT_COUNT, backlight_changed, app);
+        app->variable_item_list, "Brightness", BACKLIGHT_COUNT, backlight_changed, app);
     value_index = value_index_float(
         app->notification->settings.display_brightness, backlight_value, BACKLIGHT_COUNT);
     variable_item_set_current_value_index(item, value_index);
@@ -709,7 +709,7 @@ static NotificationAppSettings* alloc_settings(void) {
         item = variable_item_list_add(app->variable_item_list, "Volume", 1, NULL, app);
         value_index = 0;
         variable_item_set_current_value_index(item, value_index);
-        variable_item_set_current_value_text(item, "Stealth");
+        variable_item_set_current_value_text(item, "Silent"); // the control centre's word
     } else {
         item = variable_item_list_add(
             app->variable_item_list, "Volume", VOLUME_COUNT, volume_changed, app);
@@ -721,13 +721,13 @@ static NotificationAppSettings* alloc_settings(void) {
     }
 
     if(furi_hal_rtc_is_flag_set(FuriHalRtcFlagStealthMode)) {
-        item = variable_item_list_add(app->variable_item_list, "Vibro", 1, NULL, app);
+        item = variable_item_list_add(app->variable_item_list, "Vibration", 1, NULL, app);
         value_index = 0;
         variable_item_set_current_value_index(item, value_index);
-        variable_item_set_current_value_text(item, "Stealth");
+        variable_item_set_current_value_text(item, "Silent"); // the control centre's word
     } else {
         item = variable_item_list_add(
-            app->variable_item_list, "Vibro", VIBRO_COUNT, vibro_changed, app);
+            app->variable_item_list, "Vibration", VIBRO_COUNT, vibro_changed, app);
         value_index =
             value_index_bool(app->notification->settings.vibro_on, vibro_value, VIBRO_COUNT);
         variable_item_set_current_value_index(item, value_index);
@@ -736,7 +736,7 @@ static NotificationAppSettings* alloc_settings(void) {
     }
 
     item = variable_item_list_add(
-        app->variable_item_list, "LCD Inversion", LCD_INVERSION_COUNT, lcd_inversion_changed, app);
+        app->variable_item_list, "Dark Mode", LCD_INVERSION_COUNT, lcd_inversion_changed, app);
     value_index = value_index_bool(
         app->notification->settings.lcd_inversion, lcd_inversion_value, LCD_INVERSION_COUNT);
     variable_item_set_current_value_index(item, value_index);

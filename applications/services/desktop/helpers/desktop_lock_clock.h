@@ -13,7 +13,13 @@
 extern "C" {
 #endif
 
-void desktop_lock_clock_draw(Canvas* canvas, const DateTime* datetime, bool hour_12);
+/** month_first: the system's date format puts the month before the day ("Mon Nov 23"), else
+ * "Mon 23 Nov" */
+void desktop_lock_clock_draw(
+    Canvas* canvas,
+    const DateTime* datetime,
+    bool hour_12,
+    bool month_first);
 
 /** The time as every desktop clock writes it (the status bar, the control centre, the lock
  * screen): "07:05" in 24 hours, "7:05" in 12 (AM/PM is the caller's to add, where there is room)

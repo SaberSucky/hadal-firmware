@@ -448,11 +448,15 @@ static int32_t furi_hal_usb_thread(void* context) {
     }
 
     while(true) {
-        uint32_t flags = furi_thread_flags_wait(USB_SRV_ALL_EVENTS, FuriFlagWaitAny, 500);
+        // Woken every half second only while a host's request is awaited (to reinit on none):
+        // otherwise only by an event, where it woke twice a second for as long as it ran
+        uint32_t flags = furi_thread_flags_wait(
+            USB_SRV_ALL_EVENTS, FuriFlagWaitAny, usb.request_pending ? 500 : FuriWaitForever);
 
         {
+            // every message waiting: two sent at once set the flag once
             UsbApiEventMessage message;
-            if(furi_message_queue_get(usb.queue, &message, 0) == FuriStatusOk) {
+            while(furi_message_queue_get(usb.queue, &message, 0) == FuriStatusOk) {
                 usb_process_message(&message);
             }
         }

@@ -262,6 +262,24 @@ void elements_scrollable_text_line_str(
     bool ellipsis,
     bool centered);
 
+/** Steps a list's long selected name scrolls for after the last key (about 20 s at the lists'
+ * three a second), before it comes to rest at its start: a list left open drew three times a
+ * second for as long as it stayed open, the screen dark or not */
+#define ELEMENTS_SCROLL_IDLE_STEPS (60U)
+
+/** The scroll counter to draw a list's selected name with: at rest, its start */
+static inline size_t elements_scroll_position(size_t counter) {
+    return counter >= ELEMENTS_SCROLL_IDLE_STEPS ? 0 : counter;
+}
+
+/** A list's scroll step, from its timer: false once at rest, when nothing needs drawing again
+ * (a key sets the counter back to 0, and it scrolls again) */
+static inline bool elements_scroll_step(size_t* counter) {
+    if(*counter >= ELEMENTS_SCROLL_IDLE_STEPS) return false;
+    (*counter)++;
+    return true;
+}
+
 /** Draw text box element
  *
  * @param       canvas          Canvas instance

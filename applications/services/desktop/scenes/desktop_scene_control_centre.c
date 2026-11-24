@@ -33,16 +33,19 @@ static void desktop_scene_control_centre_callback(DesktopEvent event, void* cont
     view_dispatcher_send_custom_event(desktop->view_dispatcher, event);
 }
 
+// Through the Bluetooth service's own calls: its settings are its thread's to read and change
 static bool desktop_scene_control_centre_bt_enabled(void) {
     Bt* bt = furi_record_open(RECORD_BT);
-    const bool enabled = bt->bt_settings.enabled;
+    BtSettings settings;
+    bt_get_settings(bt, &settings);
     furi_record_close(RECORD_BT);
-    return enabled;
+    return settings.enabled;
 }
 
 static void desktop_scene_control_centre_toggle_bt(void) {
     Bt* bt = furi_record_open(RECORD_BT);
-    BtSettings settings = bt->bt_settings;
+    BtSettings settings;
+    bt_get_settings(bt, &settings);
     settings.enabled = !settings.enabled;
     bt_set_settings(bt, &settings);
     furi_record_close(RECORD_BT);
@@ -93,7 +96,7 @@ static void desktop_scene_control_centre_refresh(Desktop* desktop, bool everythi
         memcpy(state.app_icon, apps.app_icon, sizeof(state.app_icon));
         state.on[ControlCentreTileBluetooth] = desktop_scene_control_centre_bt_enabled();
         state.on[ControlCentreTileStealth] = furi_hal_rtc_is_flag_set(FuriHalRtcFlagStealthMode);
-        state.on[ControlCentreTileDark] = desktop->settings.dark_mode;
+        state.on[ControlCentreTileDark] = desktop_dark_mode(desktop);
         state.on[ControlCentreTileLeftHanded] = furi_hal_rtc_is_flag_set(FuriHalRtcFlagHandOrient);
         state.on[ControlCentreTileDummy] = desktop->settings.dummy_mode;
         state.pin_set = desktop_pin_code_is_set();
@@ -126,6 +129,8 @@ static void desktop_scene_control_centre_save(Desktop* desktop) {
 
 void desktop_scene_control_centre_on_enter(void* context) {
     Desktop* desktop = context;
+    desktop->control_centre_open = true; // refreshed on the desktop's tick
+    desktop_tick_update(desktop);
 
     scene_manager_set_scene_state(
         desktop->scene_manager, DesktopSceneControlCentre, CONTROL_CENTRE_CLEAN);
@@ -216,9 +221,7 @@ static void desktop_scene_control_centre_tile(Desktop* desktop, ControlCentreTil
             desktop, !furi_hal_rtc_is_flag_set(FuriHalRtcFlagStealthMode));
         break;
     case ControlCentreTileDark:
-        desktop->settings.dark_mode = !desktop->settings.dark_mode;
-        desktop_settings_save(&desktop->settings);
-        desktop_set_dark_mode(desktop, desktop->settings.dark_mode);
+        desktop_set_dark_mode(desktop, !desktop_dark_mode(desktop));
         break;
     case ControlCentreTileLeftHanded:
         if(furi_hal_rtc_is_flag_set(FuriHalRtcFlagHandOrient)) {
@@ -287,6 +290,11 @@ bool desktop_scene_control_centre_on_event(void* context, SceneManagerEvent even
                 desktop->scene_manager, DesktopSceneControlCentre, CONTROL_CENTRE_DIRTY);
             break;
         case DesktopControlCentreEventVolume:
+            // Silent leaves the sound as it is, as LCD & Notifications does
+            if(furi_hal_rtc_is_flag_set(FuriHalRtcFlagStealthMode)) {
+                desktop_scene_control_centre_refresh(desktop, true);
+                break;
+            }
             settings->speaker_volume = state.volume;
             notification_message(desktop->notification, &sequence_volume_probe);
             scene_manager_set_scene_state(
@@ -303,6 +311,10 @@ bool desktop_scene_control_centre_on_event(void* context, SceneManagerEvent even
             desktop_scene_control_centre_close_picker(desktop);
             break;
         case DesktopControlCentreEventVibro:
+            if(furi_hal_rtc_is_flag_set(FuriHalRtcFlagStealthMode)) {
+                desktop_scene_control_centre_refresh(desktop, true);
+                break;
+            }
             settings->vibro_on = state.vibro;
             if(state.vibro) notification_message(desktop->notification, &sequence_single_vibro);
             scene_manager_set_scene_state(
@@ -318,6 +330,8 @@ bool desktop_scene_control_centre_on_event(void* context, SceneManagerEvent even
 
 void desktop_scene_control_centre_on_exit(void* context) {
     Desktop* desktop = context;
+    desktop->control_centre_open = false;
+    desktop_tick_update(desktop);
     desktop_scene_control_centre_close_picker(desktop);
     desktop_scene_control_centre_save(desktop);
     desktop->gui->status_bar_hidden = false;

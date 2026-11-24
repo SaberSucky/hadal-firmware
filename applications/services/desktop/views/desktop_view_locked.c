@@ -66,14 +66,23 @@ static void locked_view_timer_callback(void* context) {
     locked_view->callback(DesktopLockedEventUpdate, locked_view->context);
 }
 
-// Once a second while the clock shows, so that its minute turns over on time
+/** Ticks to just past the next minute: the clock shows minutes, and was drawn every second */
+static uint32_t locked_view_ticks_to_next_minute(void) {
+    DateTime now;
+    furi_hal_rtc_get_datetime(&now);
+    return furi_ms_to_ticks((60U - now.second % 60U) * 1000U + 50U);
+}
+
+// As each minute turns over while the clock shows, and again for the next
 static void locked_view_clock_timer_callback(void* context) {
     DesktopViewLocked* locked_view = context;
+    bool show = false;
     with_view_model(
         locked_view->view,
         DesktopViewLockedModel * model,
-        {},
+        { show = model->show_clock; },
         model->show_clock && model->view_state == DesktopViewLockedStateLocked);
+    if(show) furi_timer_start(locked_view->clock_timer, locked_view_ticks_to_next_minute());
 }
 
 void desktop_view_locked_set_clock(DesktopViewLocked* locked_view, bool show) {
@@ -81,7 +90,7 @@ void desktop_view_locked_set_clock(DesktopViewLocked* locked_view, bool show) {
     with_view_model(
         locked_view->view, DesktopViewLockedModel * model, { model->show_clock = show; }, true);
     if(show) {
-        furi_timer_start(locked_view->clock_timer, furi_ms_to_ticks(1000));
+        furi_timer_start(locked_view->clock_timer, locked_view_ticks_to_next_minute());
     } else {
         furi_timer_stop(locked_view->clock_timer);
     }
@@ -162,7 +171,11 @@ static void desktop_view_locked_draw(Canvas* canvas, void* model) {
     } else if(view_state == DesktopViewLockedStateLocked && m->show_clock) {
         DateTime now;
         furi_hal_rtc_get_datetime(&now);
-        desktop_lock_clock_draw(canvas, &now, locale_get_time_format() == LocaleTimeFormat12h);
+        desktop_lock_clock_draw(
+            canvas,
+            &now,
+            locale_get_time_format() == LocaleTimeFormat12h,
+            locale_get_date_format() != LocaleDateFormatDMY);
     }
 }
 
@@ -226,7 +239,7 @@ DesktopViewLocked* desktop_view_locked_alloc(void) {
     locked_view->timer =
         furi_timer_alloc(locked_view_timer_callback, FuriTimerTypePeriodic, locked_view);
     locked_view->clock_timer =
-        furi_timer_alloc(locked_view_clock_timer_callback, FuriTimerTypePeriodic, locked_view);
+        furi_timer_alloc(locked_view_clock_timer_callback, FuriTimerTypeOnce, locked_view);
 
     view_allocate_model(locked_view->view, ViewModelTypeLocking, sizeof(DesktopViewLockedModel));
     view_set_context(locked_view->view, locked_view);

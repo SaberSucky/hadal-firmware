@@ -243,12 +243,17 @@ static void rainbow_timer_callback(void* context) {
 
 // --- NIGHT SHIFT ---
 
+void night_shift_timer_callback(void* context);
+
 void night_shift_timer_start(NotificationApp* app) {
     if(app->settings.night_shift != 1) {
         if(furi_timer_is_running(app->night_shift_timer)) {
             furi_timer_stop(app->night_shift_timer);
         }
-        furi_timer_start(app->night_shift_timer, furi_ms_to_ticks(1000));
+        // its start and end are minutes: looked at once a minute (it woke the chip every second),
+        // and now, so that it is right from the start
+        night_shift_timer_callback(app);
+        furi_timer_start(app->night_shift_timer, furi_ms_to_ticks(60 * 1000));
     }
 }
 

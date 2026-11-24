@@ -173,4 +173,7 @@ void animation_manager_load_and_continue_animation(AnimationManager* animation_m
  * @animation_manager    instance
  * @enabled              bool
  */
+/** Whether the idle animation pauses while the backlight is off (DesktopSettings) */
+void animation_manager_set_pause_in_dark(AnimationManager* animation_manager, bool pause);
+
 void animation_manager_set_dummy_mode_state(AnimationManager* animation_manager, bool enabled);

@@ -69,6 +69,9 @@ typedef struct {
     uint8_t pin_fail_limit;
     /** light pixels on dark, the whole screen (v21) */
     uint8_t dark_mode;
+    /** 1: the idle animation keeps playing while the backlight is off; 0 (the default) pauses
+     * it then, the desktop's largest use of the battery while nobody looks (v22) */
+    uint8_t animate_screen_off;
 } DesktopSettings;
 
 void desktop_settings_load(DesktopSettings* settings);

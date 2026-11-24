@@ -84,6 +84,9 @@ struct Desktop {
     FuriTimer* boot_stable_timer;
     /** Writes the last crash's report once the SD card is ready (helpers/crash_report_save.h) */
     FuriTimer* crash_report_timer;
+    uint8_t crash_report_tries;
+    bool control_centre_open; /**< its scene shows: it is refreshed on the tick */
+    bool tick_running;
 
     AnimationManager* animation_manager;
     FuriSemaphore* animation_semaphore;
@@ -114,8 +117,9 @@ void desktop_lock(Desktop* desktop);
 void desktop_unlock(Desktop* desktop);
 void desktop_set_dummy_mode_state(Desktop* desktop, bool enabled);
 void desktop_set_stealth_mode_state(Desktop* desktop, bool enabled);
-/** Show the screen inverted or not (DesktopSettings.dark_mode is the caller's to keep) */
+/** Dark mode: the screen's inversion (LCD & Notifications' setting, kept there) */
 void desktop_set_dark_mode(Desktop* desktop, bool enabled);
+bool desktop_dark_mode(Desktop* desktop);
 /** Whether locking now asks for the PIN to unlock: one is set and this is not a keypad lock */
 bool desktop_lock_needs_pin(const Desktop* desktop);
 /** What a button or a control centre tile is bound to (desktop_keybinds.h); false if unbound */
@@ -124,3 +128,6 @@ bool desktop_keybind_read(Desktop* desktop, DesktopKeybind bind, FuriString* out
 bool desktop_keybind_run(Desktop* desktop, DesktopKeybind bind);
 /** Load the idle animation an app's run left unloaded, if it is still waiting */
 void desktop_animation_reload_if_pending(Desktop* desktop);
+/** The desktop's tick on or off, as what waits for it needs: call after changing a pending
+ * reload or control_centre_open (the desktop's thread only) */
+void desktop_tick_update(Desktop* desktop);
