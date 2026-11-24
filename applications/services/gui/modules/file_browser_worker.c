@@ -162,6 +162,13 @@ static bool browser_filter_by_name(BrowserWorker* browser, FuriString* name, boo
     return false;
 }
 
+/** The folder the browser was opened on is its top: an app's saved files offer no ".." out to the
+ * card's root (Sub-GHz's Saved led to /ext and its apps folders) */
+static bool browser_is_top(BrowserWorker* browser, FuriString* path, bool is_root) {
+    return is_root || (furi_string_size(browser->path_start) > 1 &&
+                       furi_string_cmp(browser->path_start, path) == 0);
+}
+
 static bool browser_folder_check_and_switch(FuriString* path) {
     FileInfo file_info;
     Storage* storage = furi_record_open(RECORD_STORAGE);
@@ -539,7 +546,7 @@ static int32_t browser_worker(void* context) {
                 items_cnt,
                 file_idx);
             folder_ok = opened;
-            browser_folder_report(browser, items_cnt, file_idx, is_root, opened);
+            browser_folder_report(browser, items_cnt, file_idx, browser_is_top(browser, path, is_root), opened);
             furi_string_reset(filename);
         }
 
@@ -561,7 +568,7 @@ static int32_t browser_worker(void* context) {
                 items_cnt,
                 file_idx);
             folder_ok = opened;
-            browser_folder_report(browser, items_cnt, file_idx, is_root, opened);
+            browser_folder_report(browser, items_cnt, file_idx, browser_is_top(browser, path, is_root), opened);
         }
 
         if(flags & WorkerEvtFolderRefresh) {
@@ -577,7 +584,7 @@ static int32_t browser_worker(void* context) {
                 items_cnt,
                 browser->item_sel_idx);
             folder_ok = opened;
-            browser_folder_report(browser, items_cnt, browser->item_sel_idx, is_root, opened);
+            browser_folder_report(browser, items_cnt, browser->item_sel_idx, browser_is_top(browser, path, is_root), opened);
         }
 
         if(flags & WorkerEvtLoad) {

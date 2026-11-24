@@ -8,6 +8,7 @@
 #include <toolbox/path.h>
 #include <toolbox/md5_calc.h>
 #include <toolbox/tar/tar_archive.h>
+#include <toolbox/dir_walk.h>
 #include <update_util/resources/manifest.h>
 
 #define TAG "UpdResources"
@@ -114,6 +115,61 @@ static uint32_t resources_remove_stale(UpdateTask* update_task, const UpdateReso
     } while(false);
     furi_string_free(path);
     resource_manifest_reader_free(reader);
+    return removed;
+}
+
+/* Hadal's own pack is the firmware's, unlike the other packs on the card: what of it the new
+ * resources do not hold goes. Fonts an older Hadal pack had stayed on the card through every update
+ * since (they were not in the Manifest any more for the stale check to find), and changed the
+ * look. Found first, then removed: a folder is not changed while it is read. The list is kept
+ * small and walked again while a pass filled it (an old pack held well over a hundred files) */
+#define OWN_PACK            "asset_packs/Hadal"
+#define OWN_PACK_LIST_MAX   (2U * 1024U)
+#define OWN_PACK_PASSES_MAX 32U
+
+static uint32_t resources_prune_own_pack(Storage* storage, const UpdateResourceIndex* index) {
+    // resources without the pack (a build that left it out) leave it as it is
+    if(!update_resource_index_find(index, OWN_PACK)) return 0;
+    const size_t prefix = strlen(STORAGE_EXT_PATH_PREFIX) + 1; // "/ext/"
+    FuriString* found = furi_string_alloc();
+    FuriString* path = furi_string_alloc();
+    FileInfo info;
+    uint32_t removed = 0;
+    bool full = true;
+    for(uint32_t pass = 0; full && pass < OWN_PACK_PASSES_MAX; pass++) {
+        full = false;
+        DirWalk* walk = dir_walk_alloc(storage);
+        dir_walk_set_recursive(walk, true);
+        if(dir_walk_open(walk, STORAGE_EXT_PATH_PREFIX "/" OWN_PACK)) {
+            while(dir_walk_read(walk, path, &info) == DirWalkOK) {
+                if(furi_string_size(path) <= prefix) continue;
+                if(update_resource_index_find(index, furi_string_get_cstr(path) + prefix))
+                    continue;
+                if(furi_string_size(found) + furi_string_size(path) + 1 > OWN_PACK_LIST_MAX) {
+                    full = true;
+                    break;
+                }
+                furi_string_cat(found, path);
+                furi_string_push_back(found, '|');
+            }
+        }
+        dir_walk_close(walk);
+        dir_walk_free(walk);
+
+        // last found first: a folder is listed before what is in it, so it is empty by its turn
+        const uint32_t before = removed;
+        while(furi_string_size(found)) {
+            furi_string_left(found, furi_string_size(found) - 1); // its '|'
+            const size_t cut = furi_string_search_rchar(found, '|');
+            const size_t from = cut == FURI_STRING_FAILURE ? 0 : cut + 1;
+            furi_string_set_n(path, found, from, furi_string_size(found) - from);
+            if(storage_common_remove(storage, furi_string_get_cstr(path)) == FSE_OK) removed++;
+            furi_string_left(found, from);
+        }
+        if(removed == before) break; // nothing would go: walking again finds the same
+    }
+    furi_string_free(path);
+    furi_string_free(found);
     return removed;
 }
 
@@ -371,6 +427,8 @@ bool update_task_resources_install(UpdateTask* update_task, const char* archive_
             unpacked ? "" : ", stopped part way");
 
         if(unpacked) {
+            const uint32_t pruned = resources_prune_own_pack(storage, &index);
+            if(pruned) update_log("resources: %lu old files of Hadal's pack removed", (unsigned long)pruned);
             // Last: the Manifest that describes what is now on the card, then the record of it
             storage_common_remove(storage, CARD_MANIFEST);
             installed = storage_common_copy(
