@@ -60,7 +60,7 @@ struct Args {
     #[arg(long)]
     no_wait: bool,
 
-    /// Keep files in the Flipper's package folder that this package doesn't have
+    /// Keep old package files on the Flipper that this package doesn't have
     #[arg(long)]
     keep_extra: bool,
 
@@ -280,7 +280,9 @@ fn compare<'a>(rpc: &mut Rpc, pkg: &'a Package, remote_dir: &str, force: bool) -
 
     let mut extras: Vec<String> = remote
         .values()
-        .filter(|r| !r.is_dir && !pkg.files.iter().any(|f| f.name == r.name))
+        .filter(|r| {
+            !r.is_dir && left_by_a_package(&r.name) && !pkg.files.iter().any(|f| f.name == r.name)
+        })
         .map(|r| r.name.clone())
         .collect();
     extras.sort();
@@ -289,6 +291,18 @@ fn compare<'a>(rpc: &mut Rpc, pkg: &'a Package, remote_dir: &str, force: bool) -
         extras,
         folder_exists,
     })
+}
+
+/// A file an older package could have left in the folder: one of the kinds packages are made of.
+/// Not what the updater writes there itself: `.installed` (what the last install unpacked, so the
+/// next one skips the archives that didn't change), `backup.tar` (/int's backup), any dotfile.
+fn left_by_a_package(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    !lower.starts_with('.')
+        && lower != "backup.tar"
+        && [".ths", ".dfu", ".bin", ".fuf"]
+            .iter()
+            .any(|ext| lower.ends_with(ext))
 }
 
 fn show_plan(plan: &Plan, remote_dir: &str, keep_extra: bool) {
@@ -671,6 +685,9 @@ Resources extra: res-a.ths
             c.files.insert(format!("{DIR}/res-a.ths"), b"resources".to_vec());
             c.files.insert(format!("{DIR}/firmware.dfu"), vec![0; 9000]);
             c.files.insert(format!("{DIR}/res-old.ths"), vec![1, 2, 3]);
+            // what the updater itself keeps there
+            c.files.insert(format!("{DIR}/.installed"), b"M 00\n".to_vec());
+            c.files.insert(format!("{DIR}/backup.tar"), vec![0; 512]);
         }
         let mut rpc = session(&card);
         assert_eq!(rpc.device_info().unwrap()["hardware_name"], "Fakey");
@@ -713,6 +730,16 @@ Resources extra: res-a.ths
         rpc.reboot_to_update().unwrap();
         assert!(card.borrow().rebooted);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn only_package_files_are_removed() {
+        for name in ["res-apps-GPIO-69b251.ths", "firmware.dfu", "radio.bin", "update.fuf"] {
+            assert!(left_by_a_package(name), "{name}");
+        }
+        for name in [".installed", ".fupdate", "backup.tar", "BACKUP.TAR", "notes.txt", ".x.ths"] {
+            assert!(!left_by_a_package(name), "{name}");
+        }
     }
 
     #[test]

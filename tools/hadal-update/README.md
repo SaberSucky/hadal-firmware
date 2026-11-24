@@ -37,7 +37,7 @@ package can be its folder, its `update.fuf`, or the `.tgz` beside it.
 | `-f`, `--force` | Send every file, even those already there. |
 | `--no-install` | Send, then stop without installing. |
 | `--no-wait` | Start the install and exit without waiting for the Flipper to come back. |
-| `--keep-extra` | Keep files in the Flipper's package folder that this package doesn't have (they're removed otherwise). |
+| `--keep-extra` | Keep old package files that this package doesn't have (they're removed otherwise). |
 | `--dir-name NAME` | The folder under `/ext/update/` (default: the package's name, as qFlipper and `selfupdate.py` use). |
 | `--chunk BYTES` | File data per write, 512 to 16384 (default 4096). |
 | `-v`, `--verbose` | Print every RPC message. |
@@ -54,7 +54,10 @@ the flow of `scripts/selfupdate.py` and `scripts/flipper/storage.py`:
 2. Sends the changed files in 4 KB pieces, `update.fuf` last, so the manifest on the card never names
    a file that hasn't arrived yet. After each file it checks the MD5 on the Flipper, and sends the file
    again if it differs.
-3. Removes files in that folder that this package doesn't have.
+3. Removes old package files in that folder (archives, images, manifests) that this package doesn't
+   have, such as a `res-*.ths` for a group that's no longer built. It leaves alone what the updater
+   keeps there: `.installed` (what the last install unpacked, so the next one skips unchanged
+   archives), `backup.tar` (the internal storage backup) and any other file.
 4. Waits while an app is open, as the firmware's own `update install` does. Then it has the Flipper
    check the package and restarts it into the updater.
 5. Follows the update from outside: it watches the USB port and asks `loader info` whether the
