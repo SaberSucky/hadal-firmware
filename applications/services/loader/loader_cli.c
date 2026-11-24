@@ -35,6 +35,8 @@ static void loader_cli_list(void) {
     }
 }
 
+extern uint16_t loader_last_open_ms[3];
+
 static void loader_cli_info(Loader* loader) {
     FuriString* app_name = furi_string_alloc();
 
@@ -42,6 +44,15 @@ static void loader_cli_info(Loader* loader) {
         printf("No application is running\r\n");
     } else {
         printf("Application \"%s\" is running\r\n", furi_string_get_cstr(app_name));
+    }
+    const uint16_t* ms = loader_last_open_ms;
+    if(ms[0] || ms[1] || ms[2]) {
+        printf(
+            "Last opened in %u ms: headers %u, icons %u, load %u\r\n",
+            ms[0] + ms[1] + ms[2],
+            ms[0],
+            ms[1],
+            ms[2]);
     }
 
     furi_string_free(app_name);

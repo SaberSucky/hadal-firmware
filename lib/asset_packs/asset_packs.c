@@ -935,6 +935,11 @@ void asset_packs_app_loaded(FlipperApplication* app) {
     furi_check(app);
     ensure_init();
     if(!atomic_load_explicit(&asset_packs.active, memory_order_relaxed)) return;
+    // no icons in memory (a larger pack gave them up for the app): nothing it could find
+    furi_mutex_acquire(asset_packs.mutex, FuriWaitForever);
+    const bool has_icons = asset_packs.icon_count > 0;
+    furi_mutex_release(asset_packs.mutex);
+    if(!has_icons) return;
 
     const uint32_t started = furi_get_tick();
     UNUSED(started); // in debug logs only

@@ -1075,7 +1075,22 @@ void elf_file_call_fini(ELFFile* elf) {
     elf->init_array_called = false;
 }
 
-#define ELF_SYMBOL_BLOCK 64 // symbols read at a time: 1 KB
+#define ELF_SYMBOL_BLOCK 128 // symbols read at a time: 2 KB
+#define ELF_NAME_WINDOW  1024U // the string table read at a time, from a sector's start
+
+/* The objects found, their names read afterwards in the order the string table holds them: one
+ * read of a window serves every name in it, where each name was a seek and a read of its own
+ * (the storage thread's round trip each time, most of an app's open time with an asset pack) */
+typedef struct {
+    uint32_t name;
+    const void* address;
+} ElfObject;
+
+static int elf_object_by_name(const void* a, const void* b) {
+    const uint32_t x = ((const ElfObject*)a)->name;
+    const uint32_t y = ((const ElfObject*)b)->name;
+    return (x > y) - (x < y);
+}
 
 void elf_file_for_each_object(
     ELFFile* elf,
@@ -1087,36 +1102,78 @@ void elf_file_for_each_object(
     // the file is closed once the sections are loaded (elf_file_load_sections())
     if(!elf->fd || !elf->symbol_table || !elf->symbol_count) return;
 
+    // the objects of that size: only among the global symbols, which an app's icons are (the
+    // locals before them are about half the table)
     Elf32_Sym* symbols = malloc(ELF_SYMBOL_BLOCK * sizeof(Elf32_Sym));
-    FuriString* name = furi_string_alloc();
-    // only the global symbols, which an app's icons are: the locals before them are about half
-    // the table
-    for(size_t first = elf->symbol_first_global; first < elf->symbol_count;
-        first += ELF_SYMBOL_BLOCK) {
-        const size_t count = MIN((size_t)ELF_SYMBOL_BLOCK, elf->symbol_count - first);
-        const size_t bytes = count * sizeof(Elf32_Sym);
-        if(!storage_file_seek(elf->fd, elf->symbol_table + first * sizeof(Elf32_Sym), true) ||
-           storage_file_read(elf->fd, symbols, bytes) != bytes) {
-            break;
-        }
-        for(size_t i = 0; i < count; i++) {
-            const Elf32_Sym* symbol = &symbols[i];
-            if(ELF32_ST_TYPE(symbol->st_info) != STT_OBJECT || symbol->st_size != object_size ||
-               symbol->st_shndx == SHN_UNDEF || !symbol->st_name) {
-                continue;
+    ElfObject* objects = NULL;
+    size_t count = 0, capacity = 0;
+    if(storage_file_seek(
+           elf->fd, elf->symbol_table + elf->symbol_first_global * sizeof(Elf32_Sym), true)) {
+        for(size_t first = elf->symbol_first_global; first < elf->symbol_count;
+            first += ELF_SYMBOL_BLOCK) {
+            const size_t block = MIN((size_t)ELF_SYMBOL_BLOCK, elf->symbol_count - first);
+            const size_t bytes = block * sizeof(Elf32_Sym);
+            if(storage_file_read(elf->fd, symbols, bytes) != bytes) break;
+            for(size_t i = 0; i < block; i++) {
+                const Elf32_Sym* symbol = &symbols[i];
+                if(ELF32_ST_TYPE(symbol->st_info) != STT_OBJECT ||
+                   symbol->st_size != object_size || symbol->st_shndx == SHN_UNDEF ||
+                   !symbol->st_name) {
+                    continue;
+                }
+                ELFSection* section = elf_section_of(elf, symbol->st_shndx);
+                if(!section || !section->data || symbol->st_value + object_size > section->size) {
+                    continue;
+                }
+                if(count == capacity) {
+                    capacity = capacity ? capacity * 2 : 32;
+                    objects = realloc(objects, capacity * sizeof(ElfObject)); //-V701
+                }
+                objects[count].name = symbol->st_name;
+                objects[count].address = (const uint8_t*)section->data + symbol->st_value;
+                count++;
             }
-            ELFSection* section = elf_section_of(elf, symbol->st_shndx);
-            if(!section || !section->data || symbol->st_value + object_size > section->size) {
-                continue;
-            }
-            furi_string_reset(name);
-            if(!elf_read_symbol_name(elf, symbol->st_name, name)) continue;
-            callback(
-                furi_string_get_cstr(name), (const uint8_t*)section->data + symbol->st_value, context);
         }
     }
-    furi_string_free(name);
     free(symbols);
+    if(!count) {
+        free(objects);
+        return;
+    }
+    qsort(objects, count, sizeof(ElfObject), elf_object_by_name);
+
+    // their names, the table read forward a window at a time
+    char* window = malloc(ELF_NAME_WINDOW + 1);
+    off_t window_start = 0;
+    size_t window_length = 0;
+    FuriString* name = furi_string_alloc();
+    for(size_t i = 0; i < count; i++) {
+        const off_t offset = elf->symbol_table_strings + objects[i].name;
+        const char* text = NULL;
+        for(uint8_t attempt = 0; attempt < 2 && !text; attempt++) {
+            if(offset >= window_start && offset < window_start + (off_t)window_length) {
+                const size_t at = offset - window_start;
+                // a name that runs past the window's end is read again, from a window it fits
+                if(memchr(window + at, 0, window_length - at)) text = window + at;
+            }
+            if(text || attempt) break;
+            window_start = offset & ~(off_t)511;
+            window_length = 0;
+            if(!storage_file_seek(elf->fd, window_start, true)) break;
+            window_length = storage_file_read(elf->fd, window, ELF_NAME_WINDOW);
+            window[window_length] = 0;
+        }
+        if(!text) {
+            // longer than a window (no icon's is): on its own
+            furi_string_reset(name);
+            if(!elf_read_symbol_name(elf, objects[i].name, name)) continue;
+            text = furi_string_get_cstr(name);
+        }
+        callback(text, objects[i].address, context);
+    }
+    furi_string_free(name);
+    free(window);
+    free(objects);
 }
 
 const ElfApiInterface* elf_file_get_api_interface(ELFFile* elf_file) {

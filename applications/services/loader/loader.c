@@ -578,6 +578,10 @@ static void loader_do_assets_progress(void* context, size_t done, size_t total) 
     loading_set_progress(loader->loading, (float)done / (float)total);
 }
 
+// How long the last app took to open, in parts: its headers read (preload), the asset pack's
+// icons for it looked up, the app loaded into memory. `loader info` prints them
+uint16_t loader_last_open_ms[3];
+
 static LoaderMessageLoaderStatusResult loader_start_external_app(
     Loader* loader,
     Storage* storage,
@@ -592,7 +596,7 @@ static LoaderMessageLoaderStatusResult loader_start_external_app(
     do {
         loader->app.fap = flipper_application_alloc(storage, firmware_api_interface);
         size_t start = furi_get_tick();
-        UNUSED(start); // in debug logs only
+        memset(loader_last_open_ms, 0, sizeof(loader_last_open_ms));
 
         FURI_LOG_D(TAG, "Loading %s", path);
 
@@ -656,7 +660,11 @@ static LoaderMessageLoaderStatusResult loader_start_external_app(
 
         // the active asset pack's icons for the app's own copies of them, by name: read from its
         // symbol table now, while its file is open (mapping it closes the file)
+        const size_t preloaded = furi_get_tick();
+        loader_last_open_ms[0] = preloaded - start;
         asset_packs_app_loaded(loader->app.fap);
+        const size_t icons = furi_get_tick();
+        loader_last_open_ms[1] = icons - preloaded;
 
         FlipperApplicationLoadStatus load_status =
             flipper_application_map_to_memory(loader->app.fap);
@@ -668,6 +676,7 @@ static LoaderMessageLoaderStatusResult loader_start_external_app(
             break;
         }
 
+        loader_last_open_ms[2] = furi_get_tick() - icons;
         FURI_LOG_D(TAG, "Loaded in %zums", (size_t)(furi_get_tick() - start));
 
         if(flipper_application_is_plugin(loader->app.fap)) {

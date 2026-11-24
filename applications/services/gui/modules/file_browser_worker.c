@@ -57,7 +57,58 @@ struct BrowserWorker {
     BrowserWorkerListItemCallback list_item_cb;
     BrowserWorkerLongLoadCallback long_load_cb;
     FileInfo item_info; /**< the entry being passed to list_item_cb, as the folder listed it */
+
+    /* The entries the count found, kept for the load that follows: a folder was read twice
+     * (counted, then loaded), each entry a round trip to the storage thread both times */
+    FuriString* seen_path; /**< the folder they are of; empty when none are kept */
+    char* seen_names; /**< their names, each ended by a 0 */
+    size_t seen_names_size;
+    size_t seen_names_capacity;
+    FileInfo* seen_infos;
+    uint32_t seen_count;
+    uint32_t seen_capacity;
 };
+
+#define BROWSER_SEEN_NAMES_MAX (6U * 1024U)
+
+static void browser_seen_clear(BrowserWorker* browser) {
+    free(browser->seen_names);
+    free(browser->seen_infos);
+    browser->seen_names = NULL;
+    browser->seen_infos = NULL;
+    browser->seen_names_size = 0;
+    browser->seen_names_capacity = 0;
+    browser->seen_count = 0;
+    browser->seen_capacity = 0;
+    furi_string_reset(browser->seen_path);
+}
+
+/* One more entry kept; false (and none kept) once the folder is too big to keep */
+static bool browser_seen_add(BrowserWorker* browser, const char* name, const FileInfo* info) {
+    const size_t length = strlen(name) + 1;
+    if(browser->seen_count >= BROWSER_SORT_THRESHOLD ||
+       browser->seen_names_size + length > BROWSER_SEEN_NAMES_MAX) {
+        browser_seen_clear(browser);
+        return false;
+    }
+    // grown in steps, not each entry: 16 entries, 512 bytes of names
+    if(browser->seen_count == browser->seen_capacity) {
+        browser->seen_capacity += 16;
+        browser->seen_infos = realloc( //-V701
+            browser->seen_infos,
+            browser->seen_capacity * sizeof(FileInfo));
+    }
+    if(browser->seen_names_size + length > browser->seen_names_capacity) {
+        browser->seen_names_capacity = (browser->seen_names_size + length + 511U) & ~511U;
+        browser->seen_names = realloc( //-V701
+            browser->seen_names,
+            browser->seen_names_capacity);
+    }
+    memcpy(browser->seen_names + browser->seen_names_size, name, length);
+    browser->seen_names_size += length;
+    browser->seen_infos[browser->seen_count++] = *info;
+    return true;
+}
 
 /* A folder of up to BROWSER_SORT_THRESHOLD entries is loaded whole, to be sorted: an entry
  * takes about this much (its record in the list, which grows by doubling, and its name; an app's
@@ -243,6 +294,10 @@ static bool browser_folder_init(
     *item_cnt = 0;
     *file_idx = -1;
 
+    // kept for the load only with RAM to spare (an app short of it loads as before)
+    browser_seen_clear(browser);
+    bool keep = memmgr_get_free_heap() > BROWSER_RAM_RESERVE + 2 * BROWSER_SEEN_NAMES_MAX;
+
     do {
         if(!storage_dir_open(directory, furi_string_get_cstr(path))) {
             browser_log_error(directory, path, "open");
@@ -263,6 +318,7 @@ static bool browser_folder_init(
                         }
                     }
                     (*item_cnt)++;
+                    if(keep) keep = browser_seen_add(browser, name_temp, &file_info);
                 }
                 if(total_files_cnt == LONG_LOAD_THRESHOLD) {
                     // There are too many files in folder and counting them will take some time - send callback to app
@@ -278,6 +334,12 @@ static bool browser_folder_init(
             state = false;
         }
     } while(0);
+
+    if(state && keep && browser->seen_count == *item_cnt) {
+        furi_string_set(browser->seen_path, path);
+    } else {
+        browser_seen_clear(browser);
+    }
 
     furi_string_free(name_str);
 
@@ -497,6 +559,36 @@ static bool browser_folder_load_full(BrowserWorker* browser, FuriString* path, u
     return ret;
 }
 
+/* The whole folder from what its count kept: no second read. False when it gave way (short of
+ * RAM) for a window to be loaded instead, as a whole load does */
+static bool browser_folder_load_seen(BrowserWorker* browser, FuriString* path) {
+    FuriString* name_str = furi_string_alloc();
+    if(browser->list_load_cb) {
+        browser->list_load_cb(browser->cb_ctx, 0);
+    }
+    bool ret = true;
+    const char* name = browser->seen_names;
+    for(uint32_t i = 0; i < browser->seen_count; i++) {
+        if(memmgr_get_free_heap() < BROWSER_LOAD_FLOOR) {
+            FURI_LOG_W(TAG, "Load of %s gave way at %lu entries", furi_string_get_cstr(path), i);
+            ret = false;
+            break;
+        }
+        furi_string_printf(name_str, "%s/%s", furi_string_get_cstr(path), name);
+        browser->item_info = browser->seen_infos[i];
+        if(browser->list_item_cb) {
+            browser->list_item_cb(
+                browser->cb_ctx, name_str, i, file_info_is_dir(&browser->seen_infos[i]), false);
+        }
+        name += strlen(name) + 1;
+    }
+    if(ret && browser->list_item_cb) {
+        browser->list_item_cb(browser->cb_ctx, NULL, 0, false, true);
+    }
+    furi_string_free(name_str);
+    return ret;
+}
+
 static int32_t browser_worker(void* context) {
     BrowserWorker* browser = (BrowserWorker*)context;
     furi_check(browser);
@@ -590,15 +682,20 @@ static int32_t browser_worker(void* context) {
         if(flags & WorkerEvtLoad) {
             FURI_LOG_D(
                 TAG, "Load offset: %lu cnt: %lu", browser->load_offset, browser->load_count);
+            const bool seen = browser->seen_count == items_cnt &&
+                              furi_string_equal(browser->seen_path, path);
             if(!folder_ok) {
                 // Already reported, and opening it again would only fail again
                 browser_load_aborted(browser, 0);
             } else if(
                 !browser_can_load_whole(items_cnt) ||
-                !browser_folder_load_full(browser, path, items_cnt)) {
+                !(seen ? browser_folder_load_seen(browser, path) :
+                         browser_folder_load_full(browser, path, items_cnt))) {
                 browser_folder_load_chunked(
                     browser, path, browser->load_offset, browser->load_count);
             }
+            // a later load (the folder changed, say) reads it afresh
+            browser_seen_clear(browser);
         }
 
         if(flags & WorkerEvtStop) {
@@ -635,6 +732,11 @@ BrowserWorker* file_browser_worker_alloc(
     if(base_path) {
         furi_string_set_str(browser->path_start, base_path);
     }
+    browser->seen_path = furi_string_alloc();
+    browser->seen_names = NULL;
+    browser->seen_infos = NULL;
+    browser->seen_names_size = browser->seen_names_capacity = 0;
+    browser->seen_count = browser->seen_capacity = 0;
 
     browser->thread = furi_thread_alloc_ex("BrowserWorker", 2048, browser_worker, browser);
     furi_thread_start(browser->thread);
@@ -652,6 +754,8 @@ void file_browser_worker_free(BrowserWorker* browser) {
     furi_string_free(browser->path_next);
     furi_string_free(browser->path_current);
     furi_string_free(browser->path_start);
+    browser_seen_clear(browser);
+    furi_string_free(browser->seen_path);
 
     IdxLastArray_clear(browser->idx_last);
     ExtFilterArray_clear(browser->ext_filter);
