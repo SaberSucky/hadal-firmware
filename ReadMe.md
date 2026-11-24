@@ -7,7 +7,7 @@
 </p>
 
 <h3 align="center">
-  <a href="#highlights">Highlights</a> · <a href="#install">Install</a> · <a href="#build-it-yourself">Build</a> · <a href="#credits">Credits</a>
+  <a href="#highlights">Highlights</a> · <a href="#install">Install</a> · <a href="#build">Build</a> · <a href="#credits">Credits</a>
 </h3>
 
 <p align="center">
@@ -19,11 +19,11 @@
 
 <br>
 
-**Hadal is custom firmware for the [Flipper Zero](https://flipperzero.one) that goes deeper.** It is built on [Unleashed](https://github.com/DarkFlippers/unleashed-firmware), itself built on the [official firmware](https://github.com/flipperdevices/flipperzero-firmware), and keeps everything they offer. On top of that it hears Bluetooth with nothing but the Flipper's own radio, wears a look of its own, and is tuned for speed and battery life. Its mascot is Abyss, an anglerfish that lights its own way.
+**Hadal is custom firmware for the [Flipper Zero](https://flipperzero.one) that goes deeper.** Built on [Unleashed](https://github.com/DarkFlippers/unleashed-firmware) and the [official firmware](https://github.com/flipperdevices/flipperzero-firmware), it keeps everything they offer and adds Bluetooth scanning with the Flipper's own radio, a look of its own, and more speed and battery life. Its mascot is Abyss, an anglerfish that lights its own way.
 
 <p align="center">
-  <img src=".github/assets/desktop.png" width="384" alt="The desktop with Hadal's pack: a jellyfish drifting in the deep">
-  <img src=".github/assets/sonar.png" width="384" alt="The Sonar main menu: the chosen app in a ring, the others on an orbit">
+  <img src=".github/assets/desktop-jellyfish.gif" width="384" alt="The desktop with Hadal's pack: jellyfish drifting in the deep">
+  <img src=".github/assets/desktop-bathyscaphe.gif" width="384" alt="The desktop with Hadal's pack: a bathyscaphe lighting the seabed">
 </p>
 
 > [!WARNING]
@@ -31,20 +31,19 @@
 
 <br>
 
-<h2 align="center">Highlights</h2>
-
-Hadal keeps all of Unleashed. Below is what it adds.
+<a name="highlights"></a>
+<h2 align="center">✨ Highlights</h2>
 
 <h3 align="center">Bluetooth LE, heard by the Flipper itself</h3>
 
-The Flipper's stock radio stack can only advertise. Hadal runs ST's **Full** stack, so the Flipper can listen too, with no ESP32 or add-on board. These apps are in **Apps → Bluetooth**:
+Hadal runs ST's **Full** radio stack, so the Flipper can listen as well as advertise, with no ESP32 or add-on board. In **Apps → Bluetooth**:
 
 | App | What it does |
 |---|---|
-| **BLE&nbsp;Scanner** | Every Bluetooth LE device nearby, strongest first. Picks out AirTags and other Find My accessories, AirPods, SmartTags, Tiles and Find My Device tags |
-| **Tracker&nbsp;Detector** | Warns you (vibration, light and a message) when a tracker away from its owner has moved with you for 10 minutes. Trackers you mark as yours never warn |
-| **Find&nbsp;My&nbsp;Stuff** | Pick your earbuds, watch or tag, and a hotter / colder meter walks you to it |
-| **Crowd&nbsp;Meter** | How busy a place is, from the phones and watches heard, with a graph of the last 20 minutes |
+| **BLE&nbsp;Scanner** | Every device nearby, strongest first. Recognises AirTags, AirPods, SmartTags, Tiles and Find My Device tags |
+| **Tracker&nbsp;Detector** | Warns you when someone else's tracker has moved with you for 10 minutes |
+| **Find&nbsp;My&nbsp;Stuff** | A hotter / colder meter that walks you to your earbuds, watch or tag |
+| **Crowd&nbsp;Meter** | How busy a place is, with a graph of the last 20 minutes |
 
 <h3 align="center">Make it yours</h3>
 
@@ -52,12 +51,14 @@ The Flipper's stock radio stack can only advertise. Hadal runs ST's **Full** sta
   <img src=".github/assets/control-centre.png" width="384" alt="The control centre: tiles, the time and battery, brightness and volume sliders">
 </p>
 
-- **Control centre** on Up from the desktop: lock, Bluetooth, silent, dark mode, two apps of your choice, and brightness and volume as sliders.
-- **Menu Style**: the main menu as the built-in list or one of eleven styles, among them **Sonar** (above) and **PS4**.
-- **Header Style**: the line beside the title of every menu and settings page: Fade, Rule, Dots or Plain (below).
-- **Main Menu** in your own order, with any app from the SD card. **Desktop Keys** sets what all ten desktop buttons do, pressed or held. The **Lock Screen** can lock at start, show the time, and decide what too many wrong PINs do.
+- **Control centre**: Up on the desktop. Quick toggles, two apps of your choice, brightness and volume.
+- **Menu Style**: the built-in list or one of eleven styles, PS4 and Sonar among them.
+- **Header Style**: Fade, Rule, Dots or Plain (below).
+- **Main Menu**: your order, with any app from the SD card.
+- **Desktop Keys**: each of the ten buttons, pressed or held, opens an action, an app or a file.
+- **Lock Screen**: lock at start, a clock, and what too many wrong PINs do.
 
-All of it is in **Settings → Hadal → Interface**.
+All in **Settings → Hadal → Interface**.
 
 <p align="center">
   <img src=".github/assets/header-styles.png" width="780" alt="The four Header Styles: Fade, Rule, Dots and Plain">
@@ -66,10 +67,11 @@ All of it is in **Settings → Hadal → Interface**.
 <h3 align="center">Asset packs, previewed live</h3>
 
 <p align="center">
-  <img src=".github/assets/asset-pack.png" width="384" alt="Asset Packs playing the Hadal pack's anglerfish, Abyss, full screen">
+  <img src=".github/assets/asset-pack.gif" width="384" alt="Asset Packs playing the Hadal pack's anglerfish, Abyss, full screen">
+  <img src=".github/assets/desktop-vent.gif" width="384" alt="The desktop with Hadal's pack: a black smoker with tube worms and a crab">
 </p>
 
-**Asset Packs** plays each pack's own animation, full screen, before you choose it. Hadal's deep-sea pack comes with the firmware: Abyss lit by his own lure, a jellyfish, a bathyscaphe and a black smoker, with a sonar ping for the loading spinner. Packs made for Momentum load whole. [How packs are laid out](documentation/AssetPacks.md).
+**Asset Packs** plays each pack's animation before you choose it. Hadal's deep-sea pack ships with the firmware, and packs made for Momentum load whole. [How packs are laid out](documentation/AssetPacks.md).
 
 <h3 align="center">An alarm worth waking up to</h3>
 
@@ -79,55 +81,43 @@ All of it is in **Settings → Hadal → Interface**.
   <img src=".github/assets/alarm-ringing.png" width="256" alt="The alarm ringing, with Stop and Snooze 9 min">
 </p>
 
-The Clock app's alarm repeats once, every day, on weekdays, on weekends or on the days you pick. It snoozes for 1–30 min and rings for as long as you choose. It can start gently, vibrate and flash the screen. A bell in the status bar shows it is on.
+The Clock app's alarm repeats once, daily, on weekdays, on weekends or on the days you pick. Snooze and ring length go from 1 to 30 min, with a gentle start, vibration and a flashing screen.
 
 <h3 align="center">Fast, frugal and safe</h3>
 
-- **Apps open up to 37% sooner.** Infrared opens in 107 ms (it took 170).
-- **Updates are light.** An update sends about 1 MB instead of 2.7 MB, and installs only what changed.
-- **Easy on the battery.** Settings, Archive, the Clock and the Bluetooth tools let the chip sleep deeply between key presses.
-- **Checked before it installs.** If the battery, the images or the radio stack are not right, the updater stops before it changes anything. A firmware that fails to start four times in a row is rolled back.
-- **Crash reports.** After a crash, `/ext/crash/` on the SD card says what crashed and where. `python3 scripts/crash_report.py <report>` names the functions.
-- **Development mode.** Turned on in Settings → Hadal → Interface → Lock Screen, a crash, reboot or update while unlocked and on USB comes back without the PIN.
+<table>
+  <tr><td><b>Apps&nbsp;open&nbsp;sooner</b></td><td>Up to 37%: Infrared opens in 107 ms, down from 170</td></tr>
+  <tr><td><b>Lighter&nbsp;updates</b></td><td>About 1 MB to send instead of 2.7 MB, and only what changed is installed</td></tr>
+  <tr><td><b>Deeper&nbsp;sleep</b></td><td>Settings, Archive, the Clock and the Bluetooth tools let the chip sleep between key presses</td></tr>
+  <tr><td><b>Checked&nbsp;first</b></td><td>The updater stops before changing anything if the battery, images or radio stack aren't right</td></tr>
+  <tr><td><b>Rollback</b></td><td>A firmware that fails to start four times running is replaced by the last one that ran</td></tr>
+  <tr><td><b>Crash&nbsp;reports</b></td><td><code>/ext/crash/</code> says what crashed and where; <code>scripts/crash_report.py</code> names the functions</td></tr>
+  <tr><td><b>Development&nbsp;mode</b></td><td>Under Interface → Lock Screen: a crash, reboot or update while unlocked on USB comes back without the PIN</td></tr>
+</table>
 
 <details>
 <summary><b>Everything else</b></summary>
 <br>
 
-**Sub-GHz**
-- Ignore a signal for good, skip duplicates anywhere in the list, and autosave every signal
-- Save where each signal was received, from the Flipper app on your phone (no GPS module)
-- Add your own frequencies and choose which ones the hopper visits, on the Flipper
-- Extended range, switched on in Settings → Hadal → Protocols
+**Sub-GHz**: ignore a signal for good, skip duplicates, autosave, save where each signal was received (from your phone), your own and hopper frequencies, extended range.
 
-**Infrared**
-- Universal remotes send the codes most devices use first, never the same one twice, at Normal, Fast or Turbo speed
-- They learn: a code that worked for you goes first next time
+**Infrared**: universal remotes send the most-used codes first, never twice, at Normal, Fast or Turbo speed, and learn the codes that work for you.
 
-**Desktop and system**
-- Levels up to 30
-- Battery History: two weeks of charge, and how long it will last
-- Spoofing: the Bluetooth address and the serial
-- Start-up timeline in `/ext/apps_data/boot/timeline.txt`
+**System**: levels up to 30, Battery History, Bluetooth address and serial spoofing, a start-up timeline.
 
-**Files and text**
-- File browser: sort orders, hidden files, and search in Archive
-- Archive opens disk images in Mass Storage, and shows logs, CSV, JSON, INI, XML and YAML as text
-- The keyboard has a symbols page
-- Long text pages with Left and Right
+**Files**: sort orders, hidden files and search in Archive; disk images open in Mass Storage; logs, CSV, JSON, INI, XML and YAML show as text; a symbols page on the keyboard.
 
-**Updates**
-- A bathyscaphe sinks towards the Challenger Deep as the update goes on
-- `update/hadal_update.log` on the SD card records every update
+**Updates**: a bathyscaphe sinks towards the Challenger Deep as the update goes on; `update/hadal_update.log` records every update.
 
 </details>
 
 <br>
 
-<h2 align="center">Install</h2>
+<a name="install"></a>
+<h2 align="center">📦 Install</h2>
 
 > [!NOTE]
-> There are no release builds yet. [Build the update package](#build-it-yourself) first, then install it one of these ways.
+> There are no release builds yet. [Build the update package](#build) first, then install it one of these ways.
 
 > <details><summary><code>qFlipper (.tgz)</code></summary><ul>
 >   <li>Open <a href="https://flipperzero.one/update">qFlipper</a> and connect the Flipper</li>
@@ -136,22 +126,23 @@ The Clock app's alarm repeats once, every day, on weekdays, on weekends or on th
 > </ul></details>
 
 > <details><summary><code>SD card (update folder)</code></summary><ul>
->   <li>Copy the folder <code>dist/f7-C/f7-update-local</code> to <code>SD/update/</code>, with qFlipper's file manager or a card reader</li>
->   <li>On the Flipper, press <code>Down</code> to open Archive, go to <code>update/f7-update-local</code></li>
+>   <li>Copy the folder <code>dist/f7-C/f7-update-local</code> to <code>SD/update/</code></li>
+>   <li>On the Flipper, press <code>Down</code> to open Archive and go to <code>update/f7-update-local</code></li>
 >   <li>Select <code>update</code>, choose <code>Run</code> and wait for the update to finish</li>
 > </ul></details>
 
 > <details><summary><code>Over USB, straight from the build</code></summary><ul>
 >   <li>Close qFlipper and connect the Flipper</li>
->   <li>Run <code>./fbt COMPACT=1 DEBUG=0 flash_usb_full</code>: it builds the package and installs it</li>
+>   <li>Run <code>./fbt COMPACT=1 DEBUG=0 flash_usb_full</code></li>
 > </ul></details>
 
 > [!IMPORTANT]
-> Coming from another firmware, the first install moves the Flipper's radio from the Light stack to the Full one. The Flipper restarts several times over a few minutes, and you may need to pair your phone again. If an install stalls, repair the Flipper through qFlipper (DFU key combinations: [KeyCombo.md](documentation/KeyCombo.md)). `update/hadal_update.log` on the SD card says how far it got. Installing official or Unleashed firmware through qFlipper takes you back.
+> Coming from another firmware, the first install moves the radio to the Full stack. The Flipper restarts several times over a few minutes, and you may need to pair your phone again. If it stalls, repair the Flipper through qFlipper ([DFU key combinations](documentation/KeyCombo.md)); `update/hadal_update.log` on the SD card says how far it got. Installing official or Unleashed firmware through qFlipper takes you back.
 
 <br>
 
-<h2 align="center">Build it yourself</h2>
+<a name="build"></a>
+<h2 align="center">🛠️ Build it yourself</h2>
 
 ```bash
 git clone --recursive https://github.com/SaberSucky/hadal-firmware.git
@@ -161,7 +152,7 @@ cd hadal-firmware
 ./fbt COMPACT=1 DEBUG=0 flash_usb_full     # or build and install it over USB
 ```
 
-On Windows, use `fbt.cmd` for `./fbt`. Build with `COMPACT=1 DEBUG=0`: a debug build may not fit beside the Full radio stack. Setup is as for the official firmware: see [How to build](documentation/HowToBuild.md).
+On Windows, use `fbt.cmd`. Build with `COMPACT=1 DEBUG=0`: a debug build may not fit beside the Full radio stack. Setup is as for the official firmware: see [How to build](documentation/HowToBuild.md).
 
 <details>
 <summary><b>More build options</b></summary>
@@ -173,13 +164,13 @@ On Windows, use `fbt.cmd` for `./fbt`. Build with `COMPACT=1 DEBUG=0`: a debug b
 python3 scripts/update_package_check.py dist/f7-C/flipper-z-f7-update-local.tgz --expect full
 ```
 
-**The standard radio stack**, for a package whose radio matches every other firmware's (BLE Scanner then reports that scanning is unsupported; everything else works):
+**The standard radio stack**, for a package whose radio matches every other firmware's (BLE Scanner then reports that scanning is unsupported):
 
 ```bash
 ./fbt COMPACT=1 DEBUG=0 updater_package COPRO_OB_DATA=scripts/ob.data COPRO_STACK_BIN=stm32wb5x_BLE_Stack_light_fw.bin COPRO_STACK_TYPE=ble_light
 ```
 
-**Community apps**, fetched at a pinned commit and left unmodified, go into the package when you run this before building:
+**Community apps**, fetched at a pinned commit and left unmodified, go into the package if you run this first:
 
 ```bash
 python3 scripts/bundle_apps.py fetch
@@ -191,15 +182,14 @@ Their authors and licences are in [THIRD_PARTY_APPS.md](THIRD_PARTY_APPS.md). So
 
 <br>
 
-<h2 align="center">Credits</h2>
-
-Hadal would not exist without the work it is built on:
+<a name="credits"></a>
+<h2 align="center">❤️ Credits</h2>
 
 - **[Unleashed Firmware](https://github.com/DarkFlippers/unleashed-firmware)** by @xMasterX, the Unleashed team and contributors. Nearly everything in Hadal beyond the official firmware is their work: please [support them](https://github.com/DarkFlippers/unleashed-firmware#%EF%B8%8F-please-support-development-of-the-project).
 - **[Official Flipper Zero firmware](https://github.com/flipperdevices/flipperzero-firmware)** by Flipper Devices.
 - **STMicroelectronics** for the STM32WB wireless coprocessor stacks.
 - **[Flipper IRDB](https://github.com/Lucaslhm/Flipper-IRDB)** (CC0) by Lucaslhm and contributors, which sets the order universal remotes send codes in.
 
-<h2 align="center">Licence</h2>
+<h2 align="center">📜 Licence</h2>
 
 Hadal is free software under the [GNU General Public License v3.0](LICENSE), as Unleashed and the official firmware are, and keeps their copyright notices. Third-party parts, such as the STM32WB coprocessor binaries, come with their own licences.
