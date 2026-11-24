@@ -792,6 +792,58 @@ static FuriStatus
     return FuriStatusOk;
 }
 
+/* Several blocks in one command (CMD25), the card programming them as they come, instead of a
+ * command and a wait for the card to program each 512 bytes on their own (CMD24): uploads and
+ * updates write runs of sectors (FatFS writes a run at once for the larger writes). A card that
+ * fails it once writes block by block from then until the next start, and that write is done
+ * again that way (every block of it, so a run cut short is written whole). */
+static bool sd_multi_block_write = true;
+
+static FuriStatus sd_spi_cmd_write_multi_blocks(
+    const uint32_t* data,
+    uint32_t block_address,
+    uint32_t blocks,
+    uint32_t timeout_ms) {
+    const SdSpiCmdAnswer response =
+        sd_spi_send_cmd(SD_CMD25_WRITE_MULT_BLOCK, block_address, 0xFF, SdSpiCmdAnswerTypeR1);
+    if(response.r1 != SdSpi_R1_NO_ERROR) {
+        sd_spi_deselect_card_and_purge();
+        return FuriStatusError;
+    }
+    // a byte's gap (NWR) between the command's answer and the first block
+    sd_spi_write_byte(SD_DUMMY_BYTE);
+
+    FuriStatus status = FuriStatusOk;
+    for(uint32_t i = 0; i < blocks; i++) {
+        sd_spi_write_byte(SD_TOKEN_START_DATA_MULTIPLE_BLOCK_WRITE);
+        sd_spi_write_bytes_dma((uint8_t*)data + i * SD_BLOCK_SIZE, SD_BLOCK_SIZE);
+        sd_spi_purge_crc();
+
+        // the data response (xxx0 0101 when the block is taken) comes in the next byte or so
+        uint8_t data_response = SD_DUMMY_BYTE;
+        for(uint8_t tries = 0; tries < 8 && data_response == SD_DUMMY_BYTE; tries++) {
+            data_response = sd_spi_read_byte();
+        }
+        if((data_response & 0x1F) != SdSpiDataResponceOK) {
+            status = FuriStatusError;
+            break;
+        }
+        // then the card holds the line low while it programs the block
+        if(sd_spi_wait_for_data(SD_DUMMY_BYTE, timeout_ms) != FuriStatusOk) {
+            status = FuriStatusError;
+            break;
+        }
+    }
+
+    // Stop Tran token, after an error too, a byte, then the card busy until all is programmed
+    sd_spi_write_byte(SD_TOKEN_STOP_DATA_MULTIPLE_BLOCK_WRITE);
+    sd_spi_read_byte();
+    if(sd_spi_wait_for_data(SD_DUMMY_BYTE, timeout_ms) != FuriStatusOk) status = FuriStatusError;
+
+    sd_spi_deselect_card_and_purge();
+    return status;
+}
+
 static FuriStatus sd_spi_cmd_write_blocks(
     const uint32_t* data,
     uint32_t address,
@@ -811,6 +863,15 @@ static FuriStatus sd_spi_cmd_write_blocks(
 
     if(!sd_high_capacity) {
         block_address = address * SD_BLOCK_SIZE;
+    }
+
+    if(blocks > 1 && sd_multi_block_write) {
+        if(sd_spi_cmd_write_multi_blocks(data, block_address, blocks, timeout_ms) ==
+           FuriStatusOk) {
+            return FuriStatusOk;
+        }
+        FURI_LOG_W(TAG, "Multi-block write failed, writing block by block from now");
+        sd_multi_block_write = false; // this card: block by block, starting with this write
     }
 
     while(blocks--) {
@@ -965,8 +1026,9 @@ uint8_t furi_hal_sd_max_mount_retry_count(void) {
 }
 
 FuriStatus furi_hal_sd_init(bool power_reset) {
-    // a card (re)started gets to read several blocks at once again
+    // a card (re)started gets to read and write several blocks at once again
     sd_multi_block_read = true;
+    sd_multi_block_write = true;
 
     // Slow speed init
     furi_hal_spi_acquire(&furi_hal_spi_bus_handle_sd_slow);

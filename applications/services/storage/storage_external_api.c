@@ -642,6 +642,50 @@ static FS_Error
     return error;
 }
 
+/* A file copied in large pieces: it went through a stream 512 bytes at a time, each its own write
+ * of one sector, the card's whole access time paid per 512 bytes (an update's 1 MB rollback copy
+ * took 4 s). Pieces of 16 KB, or 4 KB short of RAM, reach the card as runs of sectors */
+#define STORAGE_COPY_BUFFER_LARGE (16U * 1024U)
+
+static FS_Error storage_copy_file(Storage* storage, const char* old_path, const char* new_path) {
+    FS_Error error = FSE_OK;
+    File* from = storage_file_alloc(storage);
+    File* to = storage_file_alloc(storage);
+    do {
+        if(!storage_file_open(from, old_path, FSAM_READ, FSOM_OPEN_EXISTING)) {
+            error = storage_file_get_error(from);
+            break;
+        }
+        if(!storage_file_open(to, new_path, FSAM_WRITE, FSOM_CREATE_NEW)) {
+            error = storage_file_get_error(to);
+            break;
+        }
+        const size_t chunk = memmgr_heap_get_max_free_block() > STORAGE_COPY_BUFFER_LARGE * 4 ?
+                                 STORAGE_COPY_BUFFER_LARGE :
+                                 FILE_BUFFER_SIZE;
+        uint8_t* buffer = malloc(chunk);
+        uint64_t left = storage_file_size(from);
+        while(left) {
+            const size_t count = (size_t)MIN(left, (uint64_t)chunk);
+            if(storage_file_read(from, buffer, count) != count) {
+                error = storage_file_get_error(from);
+                break;
+            }
+            if(storage_file_write(to, buffer, count) != count) {
+                error = storage_file_get_error(to);
+                break;
+            }
+            left -= count;
+        }
+        // a short read or write that left no error of its own is still a failed copy
+        if(left && error == FSE_OK) error = FSE_INTERNAL;
+        free(buffer);
+    } while(false);
+    storage_file_free(from);
+    storage_file_free(to);
+    return error;
+}
+
 FS_Error storage_common_copy(Storage* storage, const char* old_path, const char* new_path) {
     furi_check(storage);
 
@@ -654,22 +698,7 @@ FS_Error storage_common_copy(Storage* storage, const char* old_path, const char*
         if(file_info_is_dir(&fileinfo)) {
             error = storage_copy_recursive(storage, old_path, new_path);
         } else {
-            Stream* stream_from = file_stream_alloc(storage);
-            Stream* stream_to = file_stream_alloc(storage);
-
-            do {
-                if(!file_stream_open(stream_from, old_path, FSAM_READ, FSOM_OPEN_EXISTING)) break;
-                if(!file_stream_open(stream_to, new_path, FSAM_WRITE, FSOM_CREATE_NEW)) break;
-                stream_copy_full(stream_from, stream_to);
-            } while(false);
-
-            error = file_stream_get_error(stream_from);
-            if(error == FSE_OK) {
-                error = file_stream_get_error(stream_to);
-            }
-
-            stream_free(stream_from);
-            stream_free(stream_to);
+            error = storage_copy_file(storage, old_path, new_path);
         }
     }
 
@@ -783,22 +812,7 @@ FS_Error storage_common_merge(Storage* storage, const char* old_path, const char
             } else {
                 new_path_tmp = new_path;
             }
-            Stream* stream_from = file_stream_alloc(storage);
-            Stream* stream_to = file_stream_alloc(storage);
-
-            do {
-                if(!file_stream_open(stream_from, old_path, FSAM_READ, FSOM_OPEN_EXISTING)) break;
-                if(!file_stream_open(stream_to, new_path_tmp, FSAM_WRITE, FSOM_CREATE_NEW)) break;
-                stream_copy_full(stream_from, stream_to);
-            } while(false);
-
-            error = file_stream_get_error(stream_from);
-            if(error == FSE_OK) {
-                error = file_stream_get_error(stream_to);
-            }
-
-            stream_free(stream_from);
-            stream_free(stream_to);
+            error = storage_copy_file(storage, old_path, new_path_tmp);
         }
     }
 
