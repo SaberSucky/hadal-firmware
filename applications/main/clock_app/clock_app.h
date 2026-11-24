@@ -3,6 +3,7 @@
 #include <gui/view.h>
 #include <gui/view_dispatcher.h>
 #include <gui/modules/variable_item_list.h>
+#include <gui/modules/popup.h>
 #include <input/input.h>
 #include <locale/locale.h>
 #include <datetime/datetime.h>
@@ -36,12 +37,15 @@ typedef enum {
     NsViewClock,
     NsViewAlarmMenu,
     NsViewAlarmTime,
+    NsViewAlarmDays, // the days a custom repeat rings on
+    NsViewAlarmSet, // "Alarm set, in 7 h 12 min", for a moment
 } NsViewId;
 
 // The periodic timer runs on its own task; it only pokes the dispatcher with
 // this custom event so all the state work happens on the GUI thread.
 typedef enum {
     NsCustomTick = 100,
+    NsCustomAlarmSetDone, // the moment of "Alarm set" is over
 } NsCustomEvent;
 
 typedef struct {
@@ -61,6 +65,12 @@ typedef struct {
     View* alarm_time_view; // custom HH:MM picker (time only, no date)
     VariableItem* alarm_toggle_item;
     VariableItem* alarm_time_item;
+    VariableItem* alarm_days_item;
+    View* alarm_days_view; // the seven days a custom repeat rings on
+    Popup* alarm_set_popup; // "Alarm set, in 7 h 12 min"
+    char alarm_set_text[32];
+    uint32_t alarm_options; // the alarm's options (furi_hal_rtc.h), as the clock chip keeps them
+    uint8_t days_cursor; // the day the days page is on, Monday 0
     FuriTimer* timer;
     NsViewId current_view;
 

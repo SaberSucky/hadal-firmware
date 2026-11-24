@@ -33,6 +33,40 @@ typedef enum {
  * reset (Left+Back), which run no code first; the desktop clears it as it starts */
 #define FURI_HAL_RTC_DEVELOPMENT_OWN_RESTART (1UL << 1)
 
+/* The alarm's options, FuriHalRtcRegisterAlarm: shared by the alarm that rings (from anywhere)
+ * and the Clock app that sets them. Zero, a register never set, is the alarm as it always was:
+ * every day, a 9 minute snooze, ringing for 10 minutes, with sound, vibration and light */
+#define FURI_HAL_RTC_ALARM_SKIP_DAYS    0x7FUL /**< bit d (Monday 0 .. Sunday 6): not that day */
+#define FURI_HAL_RTC_ALARM_SNOOZE_SHIFT 8 /**< 5 bits: minutes, 0 is 9 */
+#define FURI_HAL_RTC_ALARM_RING_SHIFT   13 /**< 5 bits: minutes it rings, 0 is 10 */
+#define FURI_HAL_RTC_ALARM_SILENT       (1UL << 18) /**< no sound */
+#define FURI_HAL_RTC_ALARM_NO_VIBRO     (1UL << 19) /**< no vibration */
+#define FURI_HAL_RTC_ALARM_NO_LIGHT     (1UL << 20) /**< the screen does not flash */
+#define FURI_HAL_RTC_ALARM_GENTLE       (1UL << 21) /**< the sound starts soft and grows */
+
+/** Snooze minutes of the options */
+static inline uint8_t furi_hal_rtc_alarm_snooze_minutes(uint32_t options) {
+    const uint8_t minutes = (options >> FURI_HAL_RTC_ALARM_SNOOZE_SHIFT) & 0x1F;
+    return minutes ? minutes : 9;
+}
+
+/** Minutes the alarm rings before it gives up */
+static inline uint8_t furi_hal_rtc_alarm_ring_minutes(uint32_t options) {
+    const uint8_t minutes = (options >> FURI_HAL_RTC_ALARM_RING_SHIFT) & 0x1F;
+    return minutes ? minutes : 10;
+}
+
+/** Every day skipped: it rings once, at its next time, and turns itself off */
+static inline bool furi_hal_rtc_alarm_once(uint32_t options) {
+    return (options & FURI_HAL_RTC_ALARM_SKIP_DAYS) == FURI_HAL_RTC_ALARM_SKIP_DAYS;
+}
+
+/** Whether it rings on a weekday (DateTime's: 1 Monday .. 7 Sunday) */
+static inline bool furi_hal_rtc_alarm_rings_on(uint32_t options, uint8_t weekday) {
+    if(furi_hal_rtc_alarm_once(options)) return true;
+    return weekday < 1 || weekday > 7 || !(options & (1UL << (weekday - 1)));
+}
+
 typedef enum {
     FuriHalRtcBootModeNormal = 0, /**< Normal boot mode, default value */
     FuriHalRtcBootModeDfu, /**< Boot to DFU (MCU bootloader by ST) */
@@ -70,6 +104,8 @@ typedef enum {
     /** Development mode (FURI_HAL_RTC_DEVELOPMENT_*): whether it is on, and whether the last
      * restart was the firmware's own */
     FuriHalRtcRegisterDevelopment,
+    /** The alarm's options (FURI_HAL_RTC_ALARM_*): its days, snooze, how long it rings, how */
+    FuriHalRtcRegisterAlarm,
 
     FuriHalRtcRegisterMAX, /**< Service value, do not use */
 } FuriHalRtcRegister;

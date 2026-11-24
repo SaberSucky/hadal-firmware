@@ -12,7 +12,7 @@
 #define PREVIEW_ORDER_MAX 32U // frames of the animation played, at most (it loops)
 #define FRAME_BYTES_MAX   (128 * 64 / 8)
 #define FRAME_FILE_MAX    (FRAME_BYTES_MAX + 8)
-#define BAR_TOP           52 // the bar along the bottom, as a hint bar: a dotted rule over it
+#define BAR_TOP           49 // the bar along the bottom: a dotted rule, two clear rows, the name
 #define PAGE_DOTS_MAX     12
 #define FRAMES_BIN_MAX    64U // frames a frames.bin may hold for the preview to read it
 #define FRAMES_BIN_MAGIC  0x31464448U // "HDF1", as animation_storage.c

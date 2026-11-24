@@ -177,7 +177,21 @@ def main_msg(cmd_id, field, payload=b""):
     return varint(len(body)) + body
 
 
+def frame_from_cli(dev):
+    """The screen from the `screen` command (1 KB, no RPC session); None on firmware without it"""
+    out = dev.cli("screen", 5)
+    rows = [line.strip() for line in out.split("\n") if len(line.strip()) == 256]
+    if len(rows) != 8:
+        return None
+    return b"".join(bytes.fromhex(r) for r in rows)
+
+
 def screenshot(dev, path, scale=3):
+    # the `screen` command first: it needs 1 KB where a session needs ~13
+    frame = frame_from_cli(dev)
+    if frame:
+        write_png(frame, path, scale)
+        return
     dev.write(b"start_rpc_session\r")
     got = dev.read_until(b"start_rpc_session\r\n", 2)
     time.sleep(0.05)
@@ -210,6 +224,10 @@ def screenshot(dev, path, scale=3):
     if not frame:
         print("   no frame")
         return
+    write_png(frame, path, scale)
+
+
+def write_png(frame, path, scale=3):
     w, h = 128, 64
     on_c, off_c = b"\x1e\x1e\x1e", b"\xff\x8c\x29"
     raw = b""
@@ -315,7 +333,7 @@ def run(steps):
                     time.sleep(0.12)
             elif t in ("s", "S"):
                 f, blk = dev.free()
-                if t == "s" and blk is not None and blk < 16000:
+                if t == "s" and blk is not None and blk < 2000:
                     print(f"{tag}: skipped, low RAM ({f} free, largest block {blk})")
                 else:
                     print(tag)

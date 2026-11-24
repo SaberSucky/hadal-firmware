@@ -91,3 +91,12 @@ App(
     requires=["loader"],
     sources=["three_d.c"],
 )
+
+App(
+    appid="menu_style_sonar",
+    name="Sonar",
+    apptype=FlipperAppType.PLUGIN,
+    entry_point="menu_style_sonar_ep",
+    requires=["loader"],
+    sources=["sonar.c"],
+)

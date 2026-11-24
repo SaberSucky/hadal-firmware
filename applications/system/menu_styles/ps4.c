@@ -65,15 +65,17 @@ static void menu_style_ps4_draw(Canvas* canvas, MenuModel* model) {
             if(pill > room) pill = room;
             canvas_draw_rbox(canvas, left, top, pill, PS4_PILL_HEIGHT, 2);
             canvas_set_color(canvas, ColorWhite);
+            // a short name sits in the middle of a pill as wide as the tile
+            const bool centred = pill == width;
             elements_scrollable_text_line_str(
                 canvas,
-                left + PS4_PILL_PAD,
+                centred ? x : left + PS4_PILL_PAD,
                 top + PS4_PILL_HEIGHT - 2,
                 pill - PS4_PILL_PAD * 2,
                 label,
                 menu_style_scroll(model, true),
                 false,
-                false);
+                centred);
             canvas_set_color(canvas, ColorBlack);
         } else {
             x += (width + 1) * i + (i < 0 ? -6 : 6);

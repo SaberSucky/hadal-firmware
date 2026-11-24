@@ -67,6 +67,7 @@ struct Desktop {
     ViewPort* dummy_mode_icon_viewport;
     ViewPort* clock_viewport;
     ViewPort* stealth_mode_icon_viewport;
+    ViewPort* alarm_icon_viewport; // a bell while the alarm is on
 
     Loader* loader;
     Storage* storage;

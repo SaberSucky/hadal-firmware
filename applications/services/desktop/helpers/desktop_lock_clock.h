@@ -15,11 +15,14 @@ extern "C" {
 
 /** month_first: the system's date format puts the month before the day ("Mon Nov 23"), else
  * "Mon 23 Nov" */
+/** The lock screen's clock: the time, the date, and the alarm's time after a bell when one is
+ * set (`alarm` NULL for none) */
 void desktop_lock_clock_draw(
     Canvas* canvas,
     const DateTime* datetime,
     bool hour_12,
-    bool month_first);
+    bool month_first,
+    const DateTime* alarm);
 
 /** The time as every desktop clock writes it (the status bar, the control centre, the lock
  * screen): "07:05" in 24 hours, "7:05" in 12 (AM/PM is the caller's to add, where there is room)

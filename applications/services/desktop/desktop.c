@@ -11,6 +11,7 @@
 
 #include <gui/gui_i.h>
 #include <gui/canvas_i.h>
+#include <gui/elements.h>
 #include <u8g2_glue.h>
 
 #include <locale/locale.h>
@@ -184,6 +185,27 @@ static void desktop_stealth_mode_icon_draw_callback(Canvas* canvas, void* contex
     canvas_draw_icon(canvas, 0, 0, &I_Muted_8x8);
 }
 
+/* A bell in the status bar while the alarm is on, drawn in place: 7 x 8 */
+static void desktop_alarm_icon_draw_callback(Canvas* canvas, void* context) {
+    UNUSED(context);
+    static const uint8_t bell[8] = {0x08, 0x1C, 0x3E, 0x3E, 0x3E, 0x7F, 0x00, 0x08};
+    for(uint8_t y = 0; y < 8; y++) {
+        for(uint8_t x = 0; x < 7; x++) {
+            if(bell[y] & (0x40 >> x)) canvas_draw_dot(canvas, x, y);
+        }
+    }
+}
+
+/** The bell shown while the clock chip's alarm is on (looked at each minute, and as apps close:
+ * the Clock app and Settings turn it on and off) */
+static void desktop_alarm_icon_update(Desktop* desktop) {
+    DateTime alarm;
+    const bool on = furi_hal_rtc_get_alarm(&alarm);
+    if(view_port_is_enabled(desktop->alarm_icon_viewport) != on) {
+        view_port_enabled_set(desktop->alarm_icon_viewport, on);
+    }
+}
+
 static bool desktop_custom_event_callback(void* context, uint32_t event) {
     furi_assert(context);
     Desktop* desktop = (Desktop*)context;
@@ -204,6 +226,7 @@ static bool desktop_custom_event_callback(void* context, uint32_t event) {
         furi_semaphore_release(desktop->animation_semaphore);
 
     } else if(event == DesktopGlobalAfterAppFinished) {
+        desktop_alarm_icon_update(desktop);
         // Back to the menu, as a rule, which covers the desktop: the animation loads once the
         // desktop is in sight (the tick, or a key on the desktop), not while it cannot be seen,
         // taking the card from the next app to start
@@ -367,6 +390,7 @@ static void desktop_clock_timer_callback(void* context) {
     }
 
     view_port_enabled_set(desktop->clock_viewport, clock_enabled);
+    desktop_alarm_icon_update(desktop);
     // the next minute (the status bar's room is looked at then too)
     if(desktop->settings.display_clock) {
         furi_timer_start(desktop->update_clock_timer, desktop_clock_ticks_to_next_minute());
@@ -467,6 +491,7 @@ static void desktop_apply_settings(Desktop* desktop) {
         desktop->animation_manager, !desktop->settings.animate_screen_off);
 
     loader_set_menu_style(desktop->loader, desktop->settings.menu_style);
+    elements_set_header_style(desktop->settings.header_style);
 
     // the desktop's own dark mode of before becomes the screen's, once
     if(desktop->settings.dark_mode) {
@@ -643,6 +668,14 @@ static Desktop* desktop_alloc(void) {
         view_port_enabled_set(desktop->stealth_mode_icon_viewport, false);
     }
     gui_add_view_port(desktop->gui, desktop->stealth_mode_icon_viewport, GuiLayerStatusBarLeft);
+
+    desktop->alarm_icon_viewport = view_port_alloc();
+    view_port_set_width(desktop->alarm_icon_viewport, 7);
+    view_port_draw_callback_set(
+        desktop->alarm_icon_viewport, desktop_alarm_icon_draw_callback, desktop);
+    view_port_enabled_set(desktop->alarm_icon_viewport, false);
+    gui_add_view_port(desktop->gui, desktop->alarm_icon_viewport, GuiLayerStatusBarLeft);
+    desktop_alarm_icon_update(desktop);
 
     // Unload animations before starting an application
     desktop->loader = furi_record_open(RECORD_LOADER);

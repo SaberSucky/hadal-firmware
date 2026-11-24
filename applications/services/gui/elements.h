@@ -336,6 +336,21 @@ uint16_t elements_hints(Canvas* canvas, int32_t x, int32_t y, Align horizontal, 
  */
 void elements_hint_bar(Canvas* canvas, const char* hints);
 
+/** How every page's header is drawn, as Settings > Hadal > Interface > Header Style sets it */
+typedef enum {
+    ElementsHeaderStyleFade, /**< a solid line after the title, fading out to the right */
+    ElementsHeaderStyleRule, /**< a fine rule under the title, the width of the page */
+    ElementsHeaderStyleDots, /**< a dotted line after the title, its gaps widening */
+    ElementsHeaderStylePlain, /**< the title alone */
+    ElementsHeaderStyleCount,
+} ElementsHeaderStyle;
+
+/** Set how elements_header() draws (the desktop applies the setting; a page may preview one)
+ *
+ * @param      style  the style; one out of range is the fading line
+ */
+void elements_set_header_style(ElementsHeaderStyle style);
+
 /** Height of the header elements_header() draws: the rows of a page start under it */
 #define ELEMENTS_HEADER_HEIGHT 16
 

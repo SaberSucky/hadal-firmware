@@ -1150,16 +1150,24 @@ void elements_hint_bar(Canvas* canvas, const char* hints) {
 #define ELEMENTS_HEADER_BASELINE 11 // the title's: a clear row over its capitals at the top
 #define ELEMENTS_HEADER_LINE_END 122 // the line's end: clear of the scrollbar's column
 
+static ElementsHeaderStyle elements_header_style = ElementsHeaderStyleFade;
+
+void elements_set_header_style(ElementsHeaderStyle style) {
+    elements_header_style = style < ElementsHeaderStyleCount ? style : ElementsHeaderStyleFade;
+}
+
 void elements_header(Canvas* canvas, const char* title) {
     furi_check(canvas);
     furi_check(title);
     const int32_t baseline = ELEMENTS_HEADER_BASELINE;
     const int32_t line_y = baseline - 4; // through the middle of the capitals
+    const int32_t end = ELEMENTS_HEADER_LINE_END;
+    const ElementsHeaderStyle style = elements_header_style;
 
     canvas_set_color(canvas, ColorBlack);
     canvas_set_font(canvas, FontPrimary);
     FuriString* text = furi_string_alloc_set_str(title);
-    elements_string_fit_width(canvas, text, ELEMENTS_HEADER_LINE_END - 3 - 12);
+    elements_string_fit_width(canvas, text, end - 3 - 12);
     // bold whatever the font: an asset pack may give the bold slot a light font of its own, which
     // is drawn twice a pixel apart; the stock one is bold already
     const bool thicken = canvas_font_from_pack(FontPrimary);
@@ -1169,11 +1177,28 @@ void elements_header(Canvas* canvas, const char* title) {
         3 + thicken + canvas_string_width(canvas, furi_string_get_cstr(text)) + 5;
     furi_string_free(text);
 
-    // a dotted line that fades into the deep: its gaps widen from two pixels to six
-    const int32_t length = ELEMENTS_HEADER_LINE_END - line_x;
-    for(int32_t x = line_x; length > 0 && x <= ELEMENTS_HEADER_LINE_END;) {
-        canvas_draw_dot(canvas, x, line_y);
-        x += 2 + 4 * (x - line_x) / length;
+    const int32_t length = end - line_x;
+    if(style == ElementsHeaderStyleRule) {
+        // a fine rule under it all, a clear row over the rows
+        canvas_draw_line(canvas, 3, ELEMENTS_HEADER_HEIGHT - 3, end, ELEMENTS_HEADER_HEIGHT - 3);
+    } else if(style == ElementsHeaderStyleDots) {
+        // dots, their gaps widening from two pixels to six
+        for(int32_t x = line_x; length > 0 && x <= end;) {
+            canvas_draw_dot(canvas, x, line_y);
+            x += 2 + 4 * (x - line_x) / length;
+        }
+    } else if(style == ElementsHeaderStyleFade && length > 1) {
+        // solid for its first half, then dashes that shorten while their gaps widen, to a dot
+        const int32_t solid = length / 2;
+        const int32_t half = length - solid;
+        canvas_draw_line(canvas, line_x, line_y, line_x + solid - 1, line_y);
+        for(int32_t x = line_x + solid; x <= end;) {
+            const int32_t along = x - line_x - solid; // 0 .. the fading half
+            const int32_t dash = MAX(1, 4 - 4 * along / half);
+            const int32_t gap = 1 + 4 * along / half;
+            canvas_draw_line(canvas, x, line_y, MIN(x + dash - 1, end), line_y);
+            x += dash + gap;
+        }
     }
     canvas_set_font(canvas, FontSecondary);
 }

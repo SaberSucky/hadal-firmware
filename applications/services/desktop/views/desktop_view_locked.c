@@ -169,13 +169,15 @@ static void desktop_view_locked_draw(Canvas* canvas, void* model) {
         canvas_set_font(canvas, FontPrimary);
         elements_multiline_text_framed(canvas, 42, 30 + STATUS_BAR_Y_SHIFT, "Unlocked");
     } else if(view_state == DesktopViewLockedStateLocked && m->show_clock) {
-        DateTime now;
+        DateTime now, alarm;
         furi_hal_rtc_get_datetime(&now);
+        const bool alarm_on = furi_hal_rtc_get_alarm(&alarm);
         desktop_lock_clock_draw(
             canvas,
             &now,
             locale_get_time_format() == LocaleTimeFormat12h,
-            locale_get_date_format() != LocaleDateFormatDMY);
+            locale_get_date_format() != LocaleDateFormatDMY,
+            alarm_on ? &alarm : NULL);
     }
 }
 

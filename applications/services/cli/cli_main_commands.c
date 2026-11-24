@@ -9,6 +9,7 @@
 #include <notification/notification_messages.h>
 #include <notification/notification_app.h>
 #include <loader/loader.h>
+#include <gui/gui_i.h>
 #include <lib/toolbox/args.h>
 #include <lib/toolbox/strint.h>
 #include <toolbox/boot_profile.h>
@@ -67,7 +68,8 @@ void cli_command_boot_profile(PipeSide* pipe, FuriString* args, void* context) {
     UNUSED(pipe);
     UNUSED(args);
     UNUSED(context);
-    printf("Start-up timeline, ms since the kernel started (the hardware set-up before it is not counted):\r\n");
+    printf(
+        "Start-up timeline, ms since the kernel started (the hardware set-up before it is not counted):\r\n");
     uint32_t previous = 0, tick = 0;
     const char* name = NULL;
     for(size_t i = 0; boot_profile_get(i, &tick, &name); i++) {
@@ -369,6 +371,51 @@ void cli_command_free(PipeSide* pipe, FuriString* args, void* context) {
     printf("Maximum pool block: %zu\r\n", memmgr_pool_get_max_block());
 }
 
+/* One frame of the screen, as hex rows: what the screen stream shows, without an RPC session's
+ * ~10 KB, so it can be read inside an app that leaves little RAM (Sub-GHz). 1 KB, freed after */
+typedef struct {
+    uint8_t* frame;
+    FuriSemaphore* done;
+} CliScreenGrab;
+
+static void cli_command_screen_frame(
+    uint8_t* data,
+    size_t size,
+    CanvasOrientation orientation,
+    void* context) {
+    UNUSED(orientation);
+    CliScreenGrab* grab = context;
+    if(size == 1024 && furi_semaphore_get_count(grab->done) == 0) {
+        memcpy(grab->frame, data, size);
+        furi_semaphore_release(grab->done);
+    }
+}
+
+static void cli_command_screen(PipeSide* pipe, FuriString* args, void* context) {
+    UNUSED(pipe);
+    UNUSED(args);
+    UNUSED(context);
+    CliScreenGrab grab = {.frame = malloc(1024), .done = furi_semaphore_alloc(1, 0)};
+    Gui* gui = furi_record_open(RECORD_GUI);
+    gui_add_framebuffer_callback(gui, cli_command_screen_frame, &grab);
+    gui_update(gui); // a frame now, not at the next change
+    const bool got = furi_semaphore_acquire(grab.done, 1000) == FuriStatusOk;
+    gui_remove_framebuffer_callback(gui, cli_command_screen_frame, &grab);
+    furi_record_close(RECORD_GUI);
+    if(got) {
+        for(size_t row = 0; row < 8; row++) {
+            for(size_t i = 0; i < 128; i++) {
+                printf("%02X", grab.frame[row * 128 + i]);
+            }
+            printf("\r\n");
+        }
+    } else {
+        printf("no frame\r\n");
+    }
+    furi_semaphore_free(grab.done);
+    free(grab.frame);
+}
+
 void cli_command_free_blocks(PipeSide* pipe, FuriString* args, void* context) {
     UNUSED(pipe);
     UNUSED(args);
@@ -445,6 +492,8 @@ void cli_main_commands_init(CliRegistry* registry) {
     cli_registry_add_command(registry, "sysctl", CliCommandFlagDefault, cli_command_sysctl, NULL);
     cli_registry_add_command(registry, "top", CliCommandFlagParallelSafe, cli_command_top, NULL);
     cli_registry_add_command(registry, "free", CliCommandFlagParallelSafe, cli_command_free, NULL);
+    cli_registry_add_command(
+        registry, "screen", CliCommandFlagParallelSafe, cli_command_screen, NULL);
     cli_registry_add_command(
         registry, "free_blocks", CliCommandFlagParallelSafe, cli_command_free_blocks, NULL);
     cli_registry_add_command(registry, "echo", CliCommandFlagParallelSafe, cli_command_echo, NULL);

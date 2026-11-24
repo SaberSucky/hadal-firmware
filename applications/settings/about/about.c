@@ -1,10 +1,8 @@
 #include <furi.h>
 
 #include <gui/gui.h>
-#include <gui/view_holder.h>
-#include <gui/modules/empty_screen.h>
-
-#include <dialogs/dialogs.h>
+#include <gui/elements.h>
+#include <gui/view_port.h>
 #include <assets_icons.h>
 
 #include <furi_hal_version.h>
@@ -15,270 +13,193 @@
 
 #include "about_icons.h"
 
-typedef DialogMessageButton (*AboutDialogScreen)(DialogsApp* dialogs, DialogMessage* message);
+/* About, as every Hadal page: a header, up to three lines between it and the hint bar, and Left
+ * and Right going through the pages ("1 of 9"). The first page is Abyss and which Hadal this is */
 
-static DialogMessageButton product_screen(DialogsApp* dialogs, DialogMessage* message) {
-    DialogMessageButton result;
+#define ABOUT_LINES       3
+#define ABOUT_LINE_HEIGHT 10
+#define ABOUT_FIRST_LINE  26 // the first line's baseline: under the header, a clear row over it
 
-    FuriString* screen_header = furi_string_alloc_printf(
-        "Product: %s\n"
-        "Model: %s",
-        furi_hal_version_get_model_name(),
-        furi_hal_version_get_model_code());
+typedef struct {
+    const char* title;
+    FuriString* lines[ABOUT_LINES];
+} AboutPage;
 
-    FuriString* screen_text = furi_string_alloc_printf(
-        "FCC ID: %s\n"
-        "IC: %s",
-        furi_hal_version_get_fcc_id(),
-        furi_hal_version_get_ic_id());
+typedef struct {
+    AboutPage pages[9];
+    size_t count;
+    size_t page;
+    FuriString* hello; // the first page's lines, beside Abyss
+} About;
 
-    dialog_message_set_header(
-        message, furi_string_get_cstr(screen_header), 0, 0, AlignLeft, AlignTop);
-    dialog_message_set_text(
-        message, furi_string_get_cstr(screen_text), 0, 26, AlignLeft, AlignTop);
-    result = dialog_message_show(dialogs, message);
-    dialog_message_set_header(message, NULL, 0, 0, AlignLeft, AlignTop);
-    dialog_message_set_text(message, NULL, 0, 0, AlignLeft, AlignTop);
-
-    furi_string_free(screen_header);
-    furi_string_free(screen_text);
-
-    return result;
+static AboutPage* about_add(About* about, const char* title) {
+    AboutPage* page = &about->pages[about->count++];
+    page->title = title;
+    for(size_t i = 0; i < ABOUT_LINES; i++) {
+        page->lines[i] = furi_string_alloc();
+    }
+    return page;
 }
 
-static DialogMessageButton address_screen(DialogsApp* dialogs, DialogMessage* message) {
-    DialogMessageButton result;
-
-    const char* screen_text = "Flipper Devices Inc.\n"
-                              "Suite B #551, 2803\n"
-                              "Philadelphia Pike, Claymont\n"
-                              "DE, USA 19703\n";
-
-    dialog_message_set_text(message, screen_text, 0, 0, AlignLeft, AlignTop);
-    result = dialog_message_show(dialogs, message);
-    dialog_message_set_text(message, NULL, 0, 0, AlignLeft, AlignTop);
-
-    return result;
-}
-
-static DialogMessageButton compliance_screen(DialogsApp* dialogs, DialogMessage* message) {
-    DialogMessageButton result;
-
-    const char* screen_text = "For all compliance\n"
-                              "certificates, please visit:\n"
-                              "www.flipp.dev/compliance";
-
-    dialog_message_set_text(message, screen_text, 0, 0, AlignLeft, AlignTop);
-    result = dialog_message_show(dialogs, message);
-    dialog_message_set_text(message, NULL, 0, 0, AlignLeft, AlignTop);
-
-    return result;
-}
-
-/* The first page: Abyss, and which Hadal this is */
-static DialogMessageButton hadal_hello_screen(DialogsApp* dialogs, DialogMessage* message) {
-    DialogMessageButton result;
+static void about_build(About* about) {
     const Version* version = version_get();
-    // the date as every screen writes it (dots), the build's own way being dashes
+
+    // 1: Abyss, and which Hadal this is (the date as every screen writes it, with dots)
+    AboutPage* page = about_add(about, "About");
     FuriString* date = furi_string_alloc_set_str(version_get_builddate(version));
     furi_string_replace_all(date, "-", ".");
-    FuriString* text = furi_string_alloc_printf(
-        "%s\n%s\nfrom the deep", version_get_githash(version), furi_string_get_cstr(date));
+    furi_string_set_str(page->lines[0], "Hadal");
+    furi_string_printf(
+        page->lines[1],
+        "%s%s",
+        version_get_dirty_flag(version) ? "! " : "",
+        version_get_githash(version));
+    furi_string_set(page->lines[2], date);
     furi_string_free(date);
 
-    // clear of the Next button under it
-    dialog_message_set_icon(message, &I_Abyss_32x32, 4, 10);
-    dialog_message_set_header(message, "Hadal", 42, 6, AlignLeft, AlignTop);
-    dialog_message_set_text(message, furi_string_get_cstr(text), 42, 17, AlignLeft, AlignTop);
-    result = dialog_message_show(dialogs, message);
-    dialog_message_set_icon(message, NULL, 0, 0);
-    dialog_message_set_header(message, NULL, 0, 0, AlignLeft, AlignTop);
-    dialog_message_set_text(message, NULL, 0, 0, AlignLeft, AlignTop);
+    page = about_add(about, "Hadal");
+    furi_string_set_str(page->lines[0], "For experimental use only.");
+    furi_string_set_str(page->lines[1], "Not for illegal use: we");
+    furi_string_set_str(page->lines[2], "do not condone any of it.");
 
-    furi_string_free(text);
-    return result;
-}
+    page = about_add(about, "License");
+    furi_string_set_str(page->lines[0], "Free and open source,");
+    furi_string_set_str(page->lines[1], "under the GPLv3. If you");
+    furi_string_set_str(page->lines[2], "paid for it, you were had.");
 
-static DialogMessageButton hadal_info_screen(DialogsApp* dialogs, DialogMessage* message) {
-    DialogMessageButton result;
+    page = about_add(about, "Credits");
+    furi_string_set_str(page->lines[0], "Built on Unleashed and");
+    furi_string_set_str(page->lines[1], "Flipper's own firmware.");
+    furi_string_set_str(page->lines[2], "github.com/SaberSucky");
 
-    const char* screen_header = "Hadal Firmware\n";
+    page = about_add(about, "Firmware");
+    uint16_t api_major, api_minor;
+    furi_hal_info_get_api_version(&api_major, &api_minor);
+    const BleGlueC2Info* c2 = ble_glue_get_c2_info();
+    furi_string_printf(
+        page->lines[0], "%s, %s", version_get_version(version), version_get_gitbranch(version));
+    furi_string_printf(
+        page->lines[1], "%s, API %u.%u", version_get_githash(version), api_major, api_minor);
+    furi_string_printf(
+        page->lines[2],
+        "Radio %s, target %d",
+        c2 ? c2->StackTypeString : "none",
+        version_get_target(version));
 
-    const char* screen_text = "For experimental use only.\n"
-                              "Not meant for illegal use.\n"
-                              "We do not condone any\n"
-                              "illegal activity.";
-
-    dialog_message_set_header(message, screen_header, 0, 0, AlignLeft, AlignTop);
-    dialog_message_set_text(message, screen_text, 0, 11, AlignLeft, AlignTop);
-    result = dialog_message_show(dialogs, message);
-    dialog_message_set_header(message, NULL, 0, 0, AlignLeft, AlignTop);
-    dialog_message_set_text(message, NULL, 0, 0, AlignLeft, AlignTop);
-
-    return result;
-}
-
-static DialogMessageButton hadal_license_screen(DialogsApp* dialogs, DialogMessage* message) {
-    DialogMessageButton result;
-
-    const char* screen_text = "Free and open source,\n"
-                              "licensed under GPLv3.\n"
-                              "If you paid any money\n"
-                              "for it, you got scammed.";
-
-    dialog_message_set_text(message, screen_text, 0, 0, AlignLeft, AlignTop);
-    result = dialog_message_show(dialogs, message);
-    dialog_message_set_text(message, NULL, 0, 0, AlignLeft, AlignTop);
-
-    return result;
-}
-
-static DialogMessageButton hadal_credits_screen(DialogsApp* dialogs, DialogMessage* message) {
-    DialogMessageButton result;
-
-    const char* screen_text = "Built on Unleashed and\n"
-                              "official Flipper firmware.\n"
-                              "Source and updates:\n"
-                              "github.com/SaberSucky";
-
-    dialog_message_set_text(message, screen_text, 0, 0, AlignLeft, AlignTop);
-    result = dialog_message_show(dialogs, message);
-    dialog_message_set_text(message, NULL, 0, 0, AlignLeft, AlignTop);
-
-    return result;
-}
-
-static DialogMessageButton hw_version_screen(DialogsApp* dialogs, DialogMessage* message) {
-    DialogMessageButton result;
-    FuriString* buffer;
-    buffer = furi_string_alloc();
-    const char* my_name = furi_hal_version_get_name_ptr();
-
-    furi_string_cat_printf(
-        buffer,
-        "%d.F%dB%dC%d %s %s\n",
+    page = about_add(about, "Hardware");
+    const char* name = furi_hal_version_get_name_ptr();
+    furi_string_printf(
+        page->lines[0],
+        "%s, %d.F%dB%dC%d %s",
+        name ? name : "Unknown",
         furi_hal_version_get_hw_version(),
         furi_hal_version_get_hw_target(),
         furi_hal_version_get_hw_body(),
         furi_hal_version_get_hw_connect(),
-        furi_hal_version_get_hw_region_name_otp(),
-        my_name ? my_name : "Unknown");
-
-    furi_string_cat_printf(buffer, "Serial Number:\n");
+        furi_hal_version_get_hw_region_name_otp());
+    furi_string_set_str(page->lines[1], "Serial number:");
     const uint8_t* uid = furi_hal_version_uid();
     for(size_t i = 0; i < furi_hal_version_uid_size(); i++) {
-        furi_string_cat_printf(buffer, "%02X", uid[i]);
+        furi_string_cat_printf(page->lines[2], "%02X", uid[i]);
     }
 
-    dialog_message_set_header(message, "HW Version Info:", 0, 0, AlignLeft, AlignTop);
-    dialog_message_set_text(message, furi_string_get_cstr(buffer), 0, 13, AlignLeft, AlignTop);
-    result = dialog_message_show(dialogs, message);
-    dialog_message_set_text(message, NULL, 0, 0, AlignLeft, AlignTop);
-    dialog_message_set_header(message, NULL, 0, 0, AlignLeft, AlignTop);
-    furi_string_free(buffer);
+    page = about_add(about, "Product");
+    furi_string_printf(
+        page->lines[0],
+        "%s, %s",
+        furi_hal_version_get_model_name(),
+        furi_hal_version_get_model_code());
+    furi_string_printf(page->lines[1], "FCC ID: %s", furi_hal_version_get_fcc_id());
+    furi_string_printf(page->lines[2], "IC: %s", furi_hal_version_get_ic_id());
 
-    return result;
+    page = about_add(about, "Compliance");
+    furi_string_set_str(page->lines[0], "Every certificate is at");
+    furi_string_set_str(page->lines[1], "flipp.dev/compliance");
+
+    page = about_add(about, "Made by");
+    furi_string_set_str(page->lines[0], "Flipper Devices Inc., Suite B");
+    furi_string_set_str(page->lines[1], "#551, 2803 Philadelphia Pike");
+    furi_string_set_str(page->lines[2], "Claymont, DE 19703, USA");
 }
 
-static DialogMessageButton fw_version_screen(DialogsApp* dialogs, DialogMessage* message) {
-    DialogMessageButton result;
-    FuriString* buffer;
-    buffer = furi_string_alloc();
-    const Version* ver = furi_hal_version_get_firmware_version();
-    const BleGlueC2Info* c2_ver = NULL;
-    //#ifdef SRV_BT
-    c2_ver = ble_glue_get_c2_info();
-    //#endif
+static void about_draw(Canvas* canvas, void* context) {
+    About* about = context;
+    const AboutPage* page = &about->pages[about->page];
+    canvas_clear(canvas);
+    elements_header(canvas, page->title);
 
-    if(!ver) { //-V1051
-        furi_string_cat_printf(buffer, "No info\n");
+    if(about->page == 0) {
+        // Abyss beside the name, the commit and the date
+        canvas_draw_icon(canvas, 4, 17, &I_Abyss_32x32);
+        canvas_set_font(canvas, FontPrimary);
+        canvas_draw_str(canvas, 42, ABOUT_FIRST_LINE, furi_string_get_cstr(page->lines[0]));
+        canvas_set_font(canvas, FontSecondary);
+        for(size_t i = 1; i < ABOUT_LINES; i++) {
+            canvas_draw_str(
+                canvas,
+                42,
+                ABOUT_FIRST_LINE + i * ABOUT_LINE_HEIGHT,
+                furi_string_get_cstr(page->lines[i]));
+        }
     } else {
-        uint16_t api_major, api_minor;
-        furi_hal_info_get_api_version(&api_major, &api_minor);
-        furi_string_cat_printf(
-            buffer,
-            "%s [%s]\n%s%s [%d.%d] %s\n[%d] %s",
-            version_get_version(ver),
-            version_get_builddate(ver),
-            version_get_dirty_flag(ver) ? "[!] " : "",
-            version_get_githash(ver),
-            api_major,
-            api_minor,
-            c2_ver ? c2_ver->StackTypeString : "<none>",
-            version_get_target(ver),
-            version_get_gitbranch(ver));
+        canvas_set_font(canvas, FontSecondary);
+        for(size_t i = 0; i < ABOUT_LINES; i++) {
+            FuriString* line = furi_string_alloc_set(page->lines[i]);
+            elements_string_fit_width(canvas, line, 122);
+            canvas_draw_str(
+                canvas, 3, ABOUT_FIRST_LINE + i * ABOUT_LINE_HEIGHT, furi_string_get_cstr(line));
+            furi_string_free(line);
+        }
     }
 
-    dialog_message_set_header(message, "FW Version Info:", 0, 0, AlignLeft, AlignTop);
-    dialog_message_set_text(message, furi_string_get_cstr(buffer), 0, 13, AlignLeft, AlignTop);
-    result = dialog_message_show(dialogs, message);
-    dialog_message_set_text(message, NULL, 0, 0, AlignLeft, AlignTop);
-    dialog_message_set_header(message, NULL, 0, 0, AlignLeft, AlignTop);
-    furi_string_free(buffer);
-
-    return result;
+    char hints[24];
+    snprintf(hints, sizeof(hints), "lr=%u of %u", about->page + 1, about->count);
+    elements_hint_bar(canvas, hints);
 }
 
-const AboutDialogScreen about_screens[] = {
-    hadal_hello_screen,
-    hadal_info_screen,
-    hadal_license_screen,
-    hadal_credits_screen,
-    product_screen,
-    compliance_screen,
-    address_screen,
-    hw_version_screen,
-    fw_version_screen};
+static void about_input(InputEvent* event, void* context) {
+    FuriMessageQueue* queue = context;
+    furi_message_queue_put(queue, event, FuriWaitForever);
+}
 
 int32_t about_settings_app(void* p) {
     UNUSED(p);
-    DialogsApp* dialogs = furi_record_open(RECORD_DIALOGS);
-    DialogMessage* message = dialog_message_alloc();
+    About* about = malloc(sizeof(About));
+    about_build(about);
 
+    FuriMessageQueue* queue = furi_message_queue_alloc(8, sizeof(InputEvent));
+    ViewPort* view_port = view_port_alloc();
+    view_port_draw_callback_set(view_port, about_draw, about);
+    view_port_input_callback_set(view_port, about_input, queue);
     Gui* gui = furi_record_open(RECORD_GUI);
-    ViewHolder* view_holder = view_holder_alloc();
-    EmptyScreen* empty_screen = empty_screen_alloc();
+    gui_add_view_port(gui, view_port, GuiLayerFullscreen);
 
-    size_t screen_index = 0;
-    DialogMessageButton screen_result;
-
-    // draw empty screen to prevent menu flickering
-    view_holder_attach_to_gui(view_holder, gui);
-    view_holder_set_view(view_holder, empty_screen_get_view(empty_screen));
-
-    while(1) {
-        if(screen_index >= COUNT_OF(about_screens) - 1) {
-            dialog_message_set_buttons(message, "Prev.", NULL, NULL);
-        } else if(screen_index == 0) {
-            dialog_message_set_buttons(message, NULL, NULL, "Next");
-        } else {
-            dialog_message_set_buttons(message, "Prev.", NULL, "Next");
-        }
-
-        screen_result = about_screens[screen_index](dialogs, message);
-
-        if(screen_result == DialogMessageButtonLeft) {
-            if(screen_index <= 0) {
-                break;
-            } else {
-                screen_index--;
-            }
-        } else if(screen_result == DialogMessageButtonRight) {
-            if(screen_index < COUNT_OF(about_screens) - 1) {
-                screen_index++;
-            }
-        } else if(screen_result == DialogMessageButtonBack) {
-            break;
+    InputEvent event;
+    bool running = true;
+    while(running && furi_message_queue_get(queue, &event, FuriWaitForever) == FuriStatusOk) {
+        if(event.type != InputTypeShort && event.type != InputTypeRepeat) continue;
+        if(event.key == InputKeyBack) {
+            running = false;
+        } else if(event.key == InputKeyRight || event.key == InputKeyOk) {
+            // OK goes on, as Next did; round from the last page to the first
+            about->page = (about->page + 1) % about->count;
+            view_port_update(view_port);
+        } else if(event.key == InputKeyLeft) {
+            about->page = about->page ? about->page - 1 : about->count - 1;
+            view_port_update(view_port);
         }
     }
 
-    dialog_message_free(message);
-    furi_record_close(RECORD_DIALOGS);
-
-    view_holder_set_view(view_holder, NULL);
-    view_holder_free(view_holder);
-    empty_screen_free(empty_screen);
+    view_port_enabled_set(view_port, false);
+    gui_remove_view_port(gui, view_port);
+    view_port_free(view_port);
     furi_record_close(RECORD_GUI);
-
+    furi_message_queue_free(queue);
+    for(size_t i = 0; i < about->count; i++) {
+        for(size_t j = 0; j < ABOUT_LINES; j++) {
+            furi_string_free(about->pages[i].lines[j]);
+        }
+    }
+    free(about);
     return 0;
 }

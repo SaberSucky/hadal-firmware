@@ -72,6 +72,8 @@ typedef struct {
     /** 1: the idle animation keeps playing while the backlight is off; 0 (the default) pauses
      * it then, the desktop's largest use of the battery while nobody looks (v22) */
     uint8_t animate_screen_off;
+    /** ElementsHeaderStyle: how every page's header is drawn (v23; 0, the fading line) */
+    uint8_t header_style;
 } DesktopSettings;
 
 void desktop_settings_load(DesktopSettings* settings);

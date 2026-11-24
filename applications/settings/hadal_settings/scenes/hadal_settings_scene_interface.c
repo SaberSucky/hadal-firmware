@@ -3,6 +3,7 @@
 enum {
     InterfaceMainMenu,
     InterfaceMenuStyle,
+    InterfaceHeaderStyle,
     InterfaceAssetPack,
     InterfaceDesktopKeys,
     InterfaceLockScreen,
@@ -18,7 +19,9 @@ void hadal_settings_scene_interface_on_enter(void* context) {
     submenu_add_item(
         app->submenu, "Menu Style", InterfaceMenuStyle, hadal_settings_submenu_callback, app);
     submenu_add_item(
-        app->submenu, "Asset Pack", InterfaceAssetPack, hadal_settings_submenu_callback, app);
+        app->submenu, "Header Style", InterfaceHeaderStyle, hadal_settings_submenu_callback, app);
+    submenu_add_item(
+        app->submenu, "Asset Packs", InterfaceAssetPack, hadal_settings_submenu_callback, app);
     submenu_add_item(
         app->submenu, "Desktop Keys", InterfaceDesktopKeys, hadal_settings_submenu_callback, app);
     submenu_add_item(
@@ -42,6 +45,9 @@ bool hadal_settings_scene_interface_on_event(void* context, SceneManagerEvent ev
         break;
     case InterfaceMenuStyle:
         scene_manager_next_scene(app->scene_manager, HadalSettingsSceneMenuStyle);
+        break;
+    case InterfaceHeaderStyle:
+        scene_manager_next_scene(app->scene_manager, HadalSettingsSceneHeaderStyle);
         break;
     case InterfaceAssetPack:
         scene_manager_next_scene(app->scene_manager, HadalSettingsSceneAssetPack);

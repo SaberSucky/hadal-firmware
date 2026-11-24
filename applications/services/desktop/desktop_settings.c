@@ -2,6 +2,7 @@
 #include "desktop_settings_filename.h"
 
 #include <saved_struct.h>
+#include <gui/elements.h>
 #include <storage/storage.h>
 
 #define TAG "DesktopSettings"
@@ -12,7 +13,8 @@
 #define DESKTOP_SETTINGS_VER_19 (19)
 #define DESKTOP_SETTINGS_VER_20 (20)
 #define DESKTOP_SETTINGS_VER_21 (21)
-#define DESKTOP_SETTINGS_VER    (22)
+#define DESKTOP_SETTINGS_VER_22 (22)
+#define DESKTOP_SETTINGS_VER    (23)
 
 #define DESKTOP_SETTINGS_PATH  INT_PATH(DESKTOP_SETTINGS_FILE_NAME)
 #define DESKTOP_SETTINGS_MAGIC (0x17)
@@ -35,8 +37,7 @@ _Static_assert(
 
 // v19 files hold everything up to the lock options, which v20 appended
 _Static_assert(
-    offsetof(DesktopSettings, boot_unlocked) ==
-        offsetof(DesktopSettings, active_asset_pack) + 32,
+    offsetof(DesktopSettings, boot_unlocked) == offsetof(DesktopSettings, active_asset_pack) + 32,
     "DesktopSettings before boot_unlocked must still be the v19 layout");
 
 // v20 files hold everything up to dark mode, which v21 appended
@@ -49,9 +50,20 @@ _Static_assert(
     offsetof(DesktopSettings, animate_screen_off) == offsetof(DesktopSettings, dark_mode) + 1,
     "DesktopSettings before animate_screen_off must still be the v21 layout");
 
-// The field v22 added: zero, the animation pausing in the dark, saves the battery
+// v22 files hold everything up to the header style, which v23 appended
+_Static_assert(
+    offsetof(DesktopSettings, header_style) == offsetof(DesktopSettings, animate_screen_off) + 1,
+    "DesktopSettings before header_style must still be the v22 layout");
+
+// The field v23 added: zero, the fading line
+static void desktop_settings_clear_v23_options(DesktopSettings* settings) {
+    settings->header_style = 0;
+}
+
+// The field v22 added (and v23's): zero, the animation pausing in the dark, saves the battery
 static void desktop_settings_clear_v22_options(DesktopSettings* settings) {
     settings->animate_screen_off = 0;
+    desktop_settings_clear_v23_options(settings);
 }
 
 // The fields v21 added (and v22's): zero is the behaviour before them
@@ -92,6 +104,7 @@ static void desktop_settings_terminate_strings(DesktopSettings* settings) {
     }
     settings->dark_mode = settings->dark_mode ? 1 : 0;
     settings->animate_screen_off = settings->animate_screen_off ? 1 : 0;
+    if(settings->header_style >= ElementsHeaderStyleCount) settings->header_style = 0;
 }
 
 void desktop_settings_load(DesktopSettings* settings) {
@@ -110,6 +123,17 @@ void desktop_settings_load(DesktopSettings* settings) {
                 sizeof(DesktopSettings),
                 DESKTOP_SETTINGS_MAGIC,
                 DESKTOP_SETTINGS_VER);
+
+        } else if(version == DESKTOP_SETTINGS_VER_22) {
+            // v23 appended the header style; everything before it is unchanged
+            success = saved_struct_load(
+                DESKTOP_SETTINGS_PATH,
+                settings,
+                offsetof(DesktopSettings, header_style),
+                DESKTOP_SETTINGS_MAGIC,
+                DESKTOP_SETTINGS_VER_22);
+
+            if(success) desktop_settings_clear_v23_options(settings);
 
         } else if(version == DESKTOP_SETTINGS_VER_21) {
             // v22 appended the animation option; everything before it is unchanged

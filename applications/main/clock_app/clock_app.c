@@ -13,6 +13,9 @@
 
 #include "clock_app.h"
 
+static uint32_t alarm_minutes_until(AppState* app);
+static void alarm_until_text(uint32_t minutes, char* out, size_t size, bool compact);
+
 /*
     A modified clock app for use overnight.
     Up / Down controls the display brightness. Down at brightness 0 toggles the
@@ -280,7 +283,11 @@ static void clock_render_callback(Canvas* const canvas, void* ctx) {
             }
         }
         canvas_set_font(canvas, FontSecondary);
-        canvas_draw_str_aligned(canvas, 11, 62, AlignLeft, AlignBottom, alarm_time);
+        char until[16];
+        alarm_until_text(alarm_minutes_until(state), until, sizeof(until), true);
+        char line[40];
+        snprintf(line, sizeof(line), "%s  in %s", alarm_time, until);
+        canvas_draw_str_aligned(canvas, 11, 62, AlignLeft, AlignBottom, line);
     }
     if(timer_start_timestamp == 0) {
         // Right: where the alarm is set
@@ -379,11 +386,296 @@ static void ns_alarm_write(AppState* app) {
 
 static const char* const alarm_toggle_text[] = {"Off", "On"}; // as Settings > Clock & Alarm
 
+// The page's rows, in order
+enum {
+    AlarmRowOn,
+    AlarmRowTime,
+    AlarmRowRepeat,
+    AlarmRowDays,
+    AlarmRowSnooze,
+    AlarmRowRings,
+    AlarmRowSound,
+    AlarmRowGentle,
+    AlarmRowVibro,
+    AlarmRowLight,
+};
+
+// Repeat: the days it skips (furi_hal_rtc.h), Custom being any other set
+static const char* const repeat_text[] = {"Once", "Every day", "Weekdays", "Weekends", "Custom"};
+static const uint32_t repeat_skip[] = {0x7F, 0x00, 0x60, 0x1F};
+#define REPEAT_CUSTOM 4
+
+static const char* const snooze_text[] =
+    {"1 min", "3 min", "5 min", "9 min", "10 min", "15 min", "20 min", "30 min"};
+static const uint8_t snooze_minutes[] = {1, 3, 5, 9, 10, 15, 20, 30};
+static const char* const rings_text[] =
+    {"1 min", "3 min", "5 min", "10 min", "15 min", "20 min", "30 min"};
+static const uint8_t rings_minutes[] = {1, 3, 5, 10, 15, 20, 30};
+static const char day_letters[] = "MTWTFSS";
+
+static void alarm_options_save(AppState* app) {
+    furi_hal_rtc_set_register(FuriHalRtcRegisterAlarm, app->alarm_options);
+}
+
+static uint8_t repeat_index(uint32_t options) {
+    const uint32_t skip = options & FURI_HAL_RTC_ALARM_SKIP_DAYS;
+    for(uint8_t i = 0; i < COUNT_OF(repeat_skip); i++) {
+        if(repeat_skip[i] == skip) return i;
+    }
+    return REPEAT_CUSTOM;
+}
+
+static uint8_t nearest_index(const uint8_t* values, size_t count, uint8_t value) {
+    for(size_t i = 0; i < count; i++) {
+        if(values[i] >= value) return i;
+    }
+    return count - 1;
+}
+
+/** The days it rings on, as letters, a dot for the others: "MTWTF.." */
+static void days_text(uint32_t options, char* out) {
+    for(uint8_t day = 0; day < 7; day++) {
+        out[day] = (options & (1UL << day)) ? '.' : day_letters[day];
+    }
+    out[7] = '\0';
+}
+
+/** Minutes until it next rings, from now, with its days; 0 if never */
+static uint32_t alarm_minutes_until(AppState* app) {
+    DateTime now;
+    furi_hal_rtc_get_datetime(&now);
+    const int32_t from = now.hour * 60 + now.minute;
+    const int32_t at = app->settings.alarm_hour * 60 + app->settings.alarm_minute;
+    for(int32_t day = 0; day <= 7; day++) {
+        const int32_t minutes = day * 24 * 60 + at - from;
+        if(minutes <= 0) continue;
+        const uint8_t weekday = ((now.weekday + 6 + day) % 7) + 1; // 1 Monday .. 7 Sunday
+        if(furi_hal_rtc_alarm_rings_on(app->alarm_options, weekday)) return minutes;
+    }
+    return 0;
+}
+
+/** "7 h 12 min", "45 min", "2 d 3 h": how long until it rings ("7h 12m" where room is short) */
+static void alarm_until_text(uint32_t minutes, char* out, size_t size, bool compact) {
+    if(minutes >= 24 * 60) {
+        snprintf(
+            out,
+            size,
+            compact ? "%lud %luh" : "%lu d %lu h",
+            minutes / (24 * 60),
+            (minutes / 60) % 24);
+    } else if(minutes >= 60) {
+        snprintf(out, size, compact ? "%luh %lum" : "%lu h %lu min", minutes / 60, minutes % 60);
+    } else {
+        snprintf(out, size, compact ? "%lum" : "%lu min", minutes);
+    }
+}
+
+/** For a moment: "Alarm set, in 7 h 12 min", then back to the page */
+static void alarm_set_show(AppState* app) {
+    if(!app->settings.alarm_enabled) return;
+    char until[16];
+    alarm_until_text(alarm_minutes_until(app), until, sizeof(until), false);
+    snprintf(app->alarm_set_text, sizeof(app->alarm_set_text), "Rings in %s", until);
+    popup_set_text(app->alarm_set_popup, app->alarm_set_text, 64, 36, AlignCenter, AlignCenter);
+    ns_switch(app, NsViewAlarmSet);
+}
+
 static void alarm_toggle_changed(VariableItem* item) {
     AppState* app = variable_item_get_context(item);
     app->settings.alarm_enabled = variable_item_get_current_value_index(item) == 1;
     variable_item_set_current_value_text(item, alarm_toggle_text[app->settings.alarm_enabled]);
     ns_alarm_write(app);
+    alarm_set_show(app);
+}
+
+static void refresh_days_item(AppState* app) {
+    char text[8];
+    days_text(app->alarm_options, text);
+    variable_item_set_current_value_text(app->alarm_days_item, text);
+}
+
+static void repeat_changed(VariableItem* item) {
+    AppState* app = variable_item_get_context(item);
+    const uint8_t index = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, repeat_text[index]);
+    if(index < COUNT_OF(repeat_skip)) {
+        app->alarm_options = (app->alarm_options & ~FURI_HAL_RTC_ALARM_SKIP_DAYS) |
+                             repeat_skip[index];
+    } else if(repeat_index(app->alarm_options) != REPEAT_CUSTOM) {
+        // Custom starts from the weekdays, which its days page changes
+        app->alarm_options = (app->alarm_options & ~FURI_HAL_RTC_ALARM_SKIP_DAYS) | 0x60;
+    }
+    alarm_options_save(app);
+    refresh_days_item(app);
+    // its days slide in only for Custom
+    variable_item_set_hidden(app->alarm_days_item, index != REPEAT_CUSTOM);
+}
+
+static void snooze_changed(VariableItem* item) {
+    AppState* app = variable_item_get_context(item);
+    const uint8_t index = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, snooze_text[index]);
+    app->alarm_options = (app->alarm_options & ~(0x1FUL << FURI_HAL_RTC_ALARM_SNOOZE_SHIFT)) |
+                         ((uint32_t)snooze_minutes[index] << FURI_HAL_RTC_ALARM_SNOOZE_SHIFT);
+    alarm_options_save(app);
+}
+
+static void rings_changed(VariableItem* item) {
+    AppState* app = variable_item_get_context(item);
+    const uint8_t index = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, rings_text[index]);
+    app->alarm_options = (app->alarm_options & ~(0x1FUL << FURI_HAL_RTC_ALARM_RING_SHIFT)) |
+                         ((uint32_t)rings_minutes[index] << FURI_HAL_RTC_ALARM_RING_SHIFT);
+    alarm_options_save(app);
+}
+
+/** A switch whose option bit means "off" (no sound, no vibration...) or "on" (gentle) */
+static void option_switch_changed(VariableItem* item, uint32_t bit, bool bit_means_on) {
+    AppState* app = variable_item_get_context(item);
+    const bool on = variable_item_get_current_value_index(item) == 1;
+    variable_item_set_current_value_text(item, alarm_toggle_text[on]);
+    if(on == bit_means_on) {
+        app->alarm_options |= bit;
+    } else {
+        app->alarm_options &= ~bit;
+    }
+    alarm_options_save(app);
+}
+
+static void sound_changed(VariableItem* item) {
+    option_switch_changed(item, FURI_HAL_RTC_ALARM_SILENT, false);
+    AppState* app = variable_item_get_context(item);
+    // a gentle start means nothing without sound: it slides away
+    variable_item_set_hidden(
+        variable_item_list_get(app->alarm_menu, AlarmRowGentle),
+        app->alarm_options & FURI_HAL_RTC_ALARM_SILENT);
+}
+
+static void gentle_changed(VariableItem* item) {
+    option_switch_changed(item, FURI_HAL_RTC_ALARM_GENTLE, true);
+}
+
+static void vibro_changed(VariableItem* item) {
+    option_switch_changed(item, FURI_HAL_RTC_ALARM_NO_VIBRO, false);
+}
+
+static void light_changed(VariableItem* item) {
+    option_switch_changed(item, FURI_HAL_RTC_ALARM_NO_LIGHT, false);
+}
+
+static VariableItem*
+    add_switch(AppState* app, const char* label, VariableItemChangeCallback callback, bool on) {
+    VariableItem* item = variable_item_list_add(app->alarm_menu, label, 2, callback, app);
+    variable_item_set_values_text(item, alarm_toggle_text);
+    variable_item_set_current_value_index(item, on);
+    variable_item_set_current_value_text(item, alarm_toggle_text[on]);
+    return item;
+}
+
+static VariableItem* add_choice(
+    AppState* app,
+    const char* label,
+    const char* const* texts,
+    uint8_t count,
+    uint8_t index,
+    VariableItemChangeCallback callback) {
+    VariableItem* item = variable_item_list_add(app->alarm_menu, label, count, callback, app);
+    variable_item_set_values_text(item, texts);
+    variable_item_set_current_value_index(item, index);
+    variable_item_set_current_value_text(item, texts[index]);
+    return item;
+}
+
+/** The alarm page's rows, from the options the chip keeps */
+static void alarm_menu_build(AppState* app) {
+    const uint32_t options = app->alarm_options;
+    app->alarm_toggle_item =
+        add_switch(app, "Alarm", alarm_toggle_changed, app->settings.alarm_enabled);
+    app->alarm_time_item = variable_item_list_add(app->alarm_menu, "Time", 1, NULL, app);
+    variable_item_set_opens(app->alarm_time_item, true);
+    const uint8_t repeat = repeat_index(options);
+    add_choice(app, "Repeat", repeat_text, COUNT_OF(repeat_text), repeat, repeat_changed);
+    app->alarm_days_item = variable_item_list_add(app->alarm_menu, "Days", 1, NULL, app);
+    variable_item_set_opens(app->alarm_days_item, true);
+    variable_item_set_indent(app->alarm_days_item, 1);
+    variable_item_set_hidden(app->alarm_days_item, repeat != REPEAT_CUSTOM);
+    refresh_days_item(app);
+    add_choice(
+        app,
+        "Snooze",
+        snooze_text,
+        COUNT_OF(snooze_text),
+        nearest_index(
+            snooze_minutes, COUNT_OF(snooze_minutes), furi_hal_rtc_alarm_snooze_minutes(options)),
+        snooze_changed);
+    add_choice(
+        app,
+        "Rings for",
+        rings_text,
+        COUNT_OF(rings_text),
+        nearest_index(
+            rings_minutes, COUNT_OF(rings_minutes), furi_hal_rtc_alarm_ring_minutes(options)),
+        rings_changed);
+    const bool sound = !(options & FURI_HAL_RTC_ALARM_SILENT);
+    add_switch(app, "Sound", sound_changed, sound);
+    VariableItem* gentle =
+        add_switch(app, "Gentle start", gentle_changed, options & FURI_HAL_RTC_ALARM_GENTLE);
+    variable_item_set_indent(gentle, 1);
+    variable_item_set_hidden(gentle, !sound);
+    add_switch(app, "Vibration", vibro_changed, !(options & FURI_HAL_RTC_ALARM_NO_VIBRO));
+    add_switch(app, "Light", light_changed, !(options & FURI_HAL_RTC_ALARM_NO_LIGHT));
+}
+
+// ---------------- the days a custom repeat rings on ----------------
+
+static void alarm_days_draw(Canvas* canvas, void* ctx) {
+    ClockModel* model = ctx;
+    AppState* app = model->app;
+    canvas_clear(canvas);
+    elements_header(canvas, "Repeat");
+    // seven boxes, the days it rings filled, the one under the cursor framed twice
+    for(uint8_t day = 0; day < 7; day++) {
+        const int32_t x = 4 + day * 17;
+        const int32_t y = 22;
+        const bool rings = !(app->alarm_options & (1UL << day));
+        char letter[2] = {day_letters[day], '\0'};
+        canvas_set_font(canvas, FontPrimary);
+        if(rings) {
+            canvas_draw_rbox(canvas, x, y, 15, 15, 3);
+            canvas_set_color(canvas, ColorWhite);
+        } else {
+            canvas_draw_rframe(canvas, x, y, 15, 15, 3);
+        }
+        canvas_draw_str_aligned(canvas, x + 8, y + 8, AlignCenter, AlignCenter, letter);
+        canvas_set_color(canvas, ColorBlack);
+        if(day == app->days_cursor) {
+            // a mark under the day the cursor is on
+            canvas_draw_box(canvas, x + 4, y + 18, 7, 2);
+        }
+    }
+    elements_hint_bar(canvas, "lr=Day;ok=On/off;back=Done");
+}
+
+static bool alarm_days_input(InputEvent* event, void* context) {
+    AppState* app = context;
+    if(event->type != InputTypeShort && event->type != InputTypeRepeat) return false;
+    if(event->key == InputKeyLeft) {
+        app->days_cursor = (app->days_cursor + 6) % 7;
+    } else if(event->key == InputKeyRight) {
+        app->days_cursor = (app->days_cursor + 1) % 7;
+    } else if(event->key == InputKeyOk && event->type == InputTypeShort) {
+        app->alarm_options ^= 1UL << app->days_cursor;
+        // never no day at all: that would be Once, which the Repeat row says
+        if((app->alarm_options & FURI_HAL_RTC_ALARM_SKIP_DAYS) == FURI_HAL_RTC_ALARM_SKIP_DAYS) {
+            app->alarm_options ^= 1UL << app->days_cursor;
+        }
+        alarm_options_save(app);
+    } else {
+        return false;
+    }
+    with_view_model(app->alarm_days_view, ClockModel * m, { UNUSED(m); }, true);
+    return true;
 }
 
 static void refresh_time_menu_item(AppState* app) {
@@ -396,7 +688,11 @@ static void refresh_time_menu_item(AppState* app) {
 
 static void alarm_menu_enter(void* context, uint32_t index) {
     AppState* app = context;
-    if(index != 1) return; // only the "Set time" row opens the picker
+    if(index == AlarmRowDays) {
+        ns_switch(app, NsViewAlarmDays);
+        return;
+    }
+    if(index != AlarmRowTime) return; // the others are switches and choices
 
     app->edit_hour = app->settings.alarm_hour;
     app->edit_minute = app->settings.alarm_minute;
@@ -502,12 +798,18 @@ static bool alarm_time_input(InputEvent* event, void* context) {
         ns_alarm_write(app);
         refresh_time_menu_item(app);
         ns_switch(app, NsViewAlarmMenu);
+        alarm_set_show(app);
         return true;
     default:
         return false;
     }
     with_view_model(app->alarm_time_view, ClockModel * m, { UNUSED(m); }, true);
     return true;
+}
+
+static void alarm_set_popup_done(void* context) {
+    AppState* app = context;
+    view_dispatcher_send_custom_event(app->view_dispatcher, NsCustomAlarmSetDone);
 }
 
 // ---------------- periodic tick ----------------
@@ -534,6 +836,10 @@ static bool ns_custom_event_callback(void* context, uint32_t event) {
         ns_tick(app);
         return true;
     }
+    if(event == NsCustomAlarmSetDone) {
+        if(app->current_view == NsViewAlarmSet) ns_switch(app, NsViewAlarmMenu);
+        return true;
+    }
     return false;
 }
 
@@ -544,6 +850,9 @@ static bool ns_navigation_callback(void* context) {
         ns_switch(app, NsViewClock);
         return true;
     case NsViewAlarmTime:
+    case NsViewAlarmDays:
+    case NsViewAlarmSet:
+        if(app->current_view == NsViewAlarmDays) refresh_days_item(app);
         ns_switch(app, NsViewAlarmMenu);
         return true;
     case NsViewClock:
@@ -624,15 +933,8 @@ int32_t clock_app(void* p) {
     // Alarm menu
     app->alarm_menu = variable_item_list_alloc();
     variable_item_list_set_header(app->alarm_menu, "Alarm");
-    // it rings every day at its time: the switch says so, the time opens its picker
-    app->alarm_toggle_item =
-        variable_item_list_add(app->alarm_menu, "Every day", 2, alarm_toggle_changed, app);
-    variable_item_set_values_text(app->alarm_toggle_item, alarm_toggle_text);
-    variable_item_set_current_value_index(app->alarm_toggle_item, app->settings.alarm_enabled);
-    variable_item_set_current_value_text(
-        app->alarm_toggle_item, alarm_toggle_text[app->settings.alarm_enabled]);
-    app->alarm_time_item = variable_item_list_add(app->alarm_menu, "Time", 1, NULL, app);
-    variable_item_set_opens(app->alarm_time_item, true);
+    app->alarm_options = furi_hal_rtc_get_register(FuriHalRtcRegisterAlarm);
+    alarm_menu_build(app);
     refresh_time_menu_item(app);
     variable_item_list_set_enter_callback(app->alarm_menu, alarm_menu_enter, app);
     view_dispatcher_add_view(
@@ -646,6 +948,25 @@ int32_t clock_app(void* p) {
     view_set_draw_callback(app->alarm_time_view, alarm_time_draw);
     view_set_input_callback(app->alarm_time_view, alarm_time_input);
     view_dispatcher_add_view(app->view_dispatcher, NsViewAlarmTime, app->alarm_time_view);
+
+    // The days of a custom repeat
+    app->alarm_days_view = view_alloc();
+    view_allocate_model(app->alarm_days_view, ViewModelTypeLocking, sizeof(ClockModel));
+    with_view_model(app->alarm_days_view, ClockModel * m, { m->app = app; }, false);
+    view_set_context(app->alarm_days_view, app);
+    view_set_draw_callback(app->alarm_days_view, alarm_days_draw);
+    view_set_input_callback(app->alarm_days_view, alarm_days_input);
+    view_dispatcher_add_view(app->view_dispatcher, NsViewAlarmDays, app->alarm_days_view);
+
+    // "Alarm set, rings in 7 h 12 min", a moment after it is set
+    app->alarm_set_popup = popup_alloc();
+    popup_set_header(app->alarm_set_popup, "Alarm set", 64, 20, AlignCenter, AlignCenter);
+    popup_set_timeout(app->alarm_set_popup, 1500);
+    popup_enable_timeout(app->alarm_set_popup);
+    popup_set_context(app->alarm_set_popup, app);
+    popup_set_callback(app->alarm_set_popup, alarm_set_popup_done);
+    view_dispatcher_add_view(
+        app->view_dispatcher, NsViewAlarmSet, popup_get_view(app->alarm_set_popup));
 
     // Twice a second, so the seconds shown never skip one (the alarm rings by itself)
     app->timer = furi_timer_alloc(ns_timer_callback, FuriTimerTypePeriodic, app);
@@ -664,6 +985,10 @@ int32_t clock_app(void* p) {
     view_dispatcher_remove_view(app->view_dispatcher, NsViewClock);
     view_dispatcher_remove_view(app->view_dispatcher, NsViewAlarmMenu);
     view_dispatcher_remove_view(app->view_dispatcher, NsViewAlarmTime);
+    view_dispatcher_remove_view(app->view_dispatcher, NsViewAlarmDays);
+    view_dispatcher_remove_view(app->view_dispatcher, NsViewAlarmSet);
+    view_free(app->alarm_days_view);
+    popup_free(app->alarm_set_popup);
     view_free(app->clock_view);
     variable_item_list_free(app->alarm_menu);
     view_free(app->alarm_time_view);

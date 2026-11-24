@@ -571,16 +571,24 @@ static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
 
             temp_w_default -= indent; // an indented label starts further in, ending where it did
 
+            // a dropdown's value: right-aligned before its chevron, with all the room its label
+            // leaves (never less than the arrows' slot), not cut to "Every da" in a short row
+            int32_t dropdown_left = temp_x_default;
+            if(control == VariableItemControlDropdown) {
+                const int32_t label_end =
+                    6 + indent + canvas_string_width(canvas, item->label) + 6;
+                dropdown_left = MIN(temp_x_default, MAX(label_end, 40));
+            }
+            const int32_t dropdown_room = CONTROL_RIGHT - 9 - dropdown_left;
+
             if(position == model->position) {
                 selected_y = item_y;
                 const size_t value_room =
-                    control == VariableItemControlOpens ?
-                        (size_t)OPENS_VALUE_MAX :
-                    control == VariableItemControlDropdown ?
-                        (size_t)(CONTROL_RIGHT - 9 - temp_x_default) :
+                    control == VariableItemControlOpens    ? (size_t)OPENS_VALUE_MAX :
+                    control == VariableItemControlDropdown ? (size_t)dropdown_room :
                     (control == VariableItemControlArrows || control == VariableItemControlMeter) ?
-                        37 :
-                        SIZE_MAX;
+                                                             37 :
+                                                             SIZE_MAX;
                 model->selected_scrolls =
                     canvas_string_width(canvas, item->label) > temp_w_default ||
                     canvas_string_width(canvas, furi_string_get_cstr(item->current_value_text)) >
@@ -647,15 +655,21 @@ static void variable_item_list_draw_callback(Canvas* canvas, void* _model) {
                     false);
                 canvas_draw_str(canvas, 115, item_text_y, ">");
             } else if(control == VariableItemControlDropdown) {
-                elements_scrollable_text_line_str(
-                    canvas,
-                    (CONTROL_RIGHT - 9 + temp_x_default) / 2,
-                    item_text_y,
-                    CONTROL_RIGHT - 9 - temp_x_default,
-                    furi_string_get_cstr(item->current_value_text),
-                    scroll_counter,
-                    false,
-                    true);
+                const char* value = furi_string_get_cstr(item->current_value_text);
+                const int32_t value_width = canvas_string_width(canvas, value);
+                if(value_width <= dropdown_room) {
+                    canvas_draw_str(canvas, CONTROL_RIGHT - 10 - value_width, item_text_y, value);
+                } else {
+                    elements_scrollable_text_line_str(
+                        canvas,
+                        dropdown_left,
+                        item_text_y,
+                        dropdown_room,
+                        value,
+                        scroll_counter,
+                        false,
+                        false);
+                }
                 // a chevron: OK opens the choices
                 const int32_t chevron = CONTROL_RIGHT - 6;
                 canvas_draw_line(canvas, chevron, item_text_y - 5, chevron + 3, item_text_y - 2);
