@@ -175,7 +175,7 @@ void subghz_scene_radio_settings_on_enter(void* context) {
     //Add TX Power
     item = variable_item_list_add(
         subghz->variable_item_list,
-        "TX Power",
+        "TX power",
         TX_POWER_COUNT,
         subghz_scene_radio_settings_set_tx_power,
         subghz);
@@ -187,7 +187,7 @@ void subghz_scene_radio_settings_on_enter(void* context) {
 
     item = variable_item_list_add(
         variable_item_list,
-        "Protocol Names",
+        "Protocol names",
         ON_OFF_COUNT,
         subghz_scene_receiver_config_set_timestamp_file_names,
         subghz);
@@ -198,7 +198,7 @@ void subghz_scene_radio_settings_on_enter(void* context) {
 
     item = variable_item_list_add(
         variable_item_list,
-        "Counter Incr.",
+        "Counter step",
         furi_hal_rtc_is_flag_set(FuriHalRtcFlagDebug) ? DEBUG_COUNTER_COUNT : 3,
         subghz_scene_receiver_config_set_debug_counter,
         subghz);
@@ -215,7 +215,7 @@ void subghz_scene_radio_settings_on_enter(void* context) {
     if(furi_hal_rtc_is_flag_set(FuriHalRtcFlagDebug)) {
         item = variable_item_list_add(
             variable_item_list,
-            "Ext Amp & LEDs",
+            "Ext. amp and LEDs",
             ON_OFF_COUNT,
             subghz_scene_reciever_config_set_ext_amp_leds_control,
             subghz);
@@ -226,7 +226,7 @@ void subghz_scene_radio_settings_on_enter(void* context) {
 
         item = variable_item_list_add(
             variable_item_list,
-            "Debug Pin",
+            "Debug pin",
             DEBUG_P_COUNT,
             subghz_scene_receiver_config_set_debug_pin,
             subghz);

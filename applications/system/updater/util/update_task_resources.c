@@ -73,6 +73,8 @@ bool update_task_resources_is_kept(const char* name) {
 
 #define resources_is_kept update_task_resources_is_kept
 
+#define RESOURCES_STALE_DIRS_MAX (2U * 1024U)
+
 // Files and folders the old resources had and the new ones do not
 static uint32_t resources_remove_stale(UpdateTask* update_task, const UpdateResourceIndex* index) {
     uint32_t removed = 0;
@@ -89,19 +91,56 @@ static uint32_t resources_remove_stale(UpdateTask* update_task, const UpdateReso
         }
         resource_manifest_rewind(reader);
 
+        /* The folders that go are noted on the way through, and removed last first (a folder is
+         * listed before what is in it): the Manifest read backwards, a seek a character, took
+         * seconds of every update, nearly always to remove nothing */
+        FuriString* stale_dirs = furi_string_alloc();
+        bool dirs_listed = true;
         update_task_set_progress(update_task, UpdateTaskStageResourcesFileCleanup, 0);
         while((entry = resource_manifest_reader_next(reader))) {
+            const char* name = furi_string_get_cstr(entry->name);
+            if(entry->type == ResourceManifestEntryTypeDirectory) {
+                if(!dirs_listed || update_resource_index_find(index, name) ||
+                   resources_is_kept(name)) {
+                    continue;
+                }
+                if(furi_string_size(stale_dirs) + strlen(name) + 1 > RESOURCES_STALE_DIRS_MAX ||
+                   strchr(name, '|')) {
+                    dirs_listed = false; // too many to note: the old way, below
+                    continue;
+                }
+                furi_string_cat_str(stale_dirs, name);
+                furi_string_push_back(stale_dirs, '|');
+                continue;
+            }
             if(entry->type != ResourceManifestEntryTypeFile) continue;
             update_task_set_progress(update_task, UpdateTaskStageProgress, done++ * 100 / files);
-            if(update_resource_index_find(index, furi_string_get_cstr(entry->name))) continue;
-            if(resources_is_kept(furi_string_get_cstr(entry->name))) continue;
-            path_concat(STORAGE_EXT_PATH_PREFIX, furi_string_get_cstr(entry->name), path);
+            if(update_resource_index_find(index, name)) continue;
+            if(resources_is_kept(name)) continue;
+            path_concat(STORAGE_EXT_PATH_PREFIX, name, path);
             if(storage_common_remove(update_task->storage, furi_string_get_cstr(path)) == FSE_OK) {
                 removed++;
             }
         }
 
         update_task_set_progress(update_task, UpdateTaskStageResourcesDirCleanup, 0);
+        if(dirs_listed) {
+            FuriString* name = furi_string_alloc();
+            while(furi_string_size(stale_dirs)) {
+                furi_string_left(stale_dirs, furi_string_size(stale_dirs) - 1); // its '|'
+                const size_t cut = furi_string_search_rchar(stale_dirs, '|');
+                const size_t from = cut == FURI_STRING_FAILURE ? 0 : cut + 1;
+                furi_string_set_n(name, stale_dirs, from, furi_string_size(stale_dirs) - from);
+                path_concat(STORAGE_EXT_PATH_PREFIX, furi_string_get_cstr(name), path);
+                // a folder that still holds the user's own files stays
+                storage_common_remove(update_task->storage, furi_string_get_cstr(path));
+                furi_string_left(stale_dirs, from);
+            }
+            furi_string_free(name);
+            furi_string_free(stale_dirs);
+            break;
+        }
+        furi_string_free(stale_dirs);
         done = 0;
         while((entry = resource_manifest_reader_previous(reader))) {
             if(entry->type != ResourceManifestEntryTypeDirectory) continue;
