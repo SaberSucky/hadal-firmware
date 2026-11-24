@@ -204,6 +204,14 @@ void widget_add_circle_element(Widget* widget, uint8_t x, uint8_t y, uint8_t rad
  */
 void widget_add_line_element(Widget* widget, uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2);
 
+/** Add the page header (elements_header): the title, then the header style's line. The rows
+ * under it start at ELEMENTS_HEADER_HEIGHT
+ *
+ * @param      widget  Widget instance
+ * @param      text    the title
+ */
+void widget_add_header_element(Widget* widget, const char* text);
+
 #ifdef __cplusplus
 }
 #endif

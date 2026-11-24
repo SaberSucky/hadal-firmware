@@ -214,6 +214,12 @@ void widget_add_circle_element(Widget* widget, uint8_t x, uint8_t y, uint8_t rad
     widget_add_element(widget, circle_element);
 }
 
+void widget_add_header_element(Widget* widget, const char* text) {
+    furi_check(widget);
+    furi_check(text);
+    widget_add_element(widget, widget_element_header_create(text));
+}
+
 void widget_add_line_element(Widget* widget, uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2) {
     furi_check(widget);
     WidgetElement* line_element = widget_element_line_create(x1, y1, x2, y2);

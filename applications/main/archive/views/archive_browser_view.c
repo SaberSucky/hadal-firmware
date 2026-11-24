@@ -249,10 +249,11 @@ static void render_item_menu(Canvas* canvas, ArchiveBrowserViewModel* model) {
 
     canvas_set_color(canvas, ColorWhite);
     uint8_t calc_height = menu_height - ((MENU_ITEMS - size_menu - 1) * line_height);
-    canvas_draw_box(canvas, 71, menu_y, 57, calc_height + 4 + 2);
+    canvas_draw_box(canvas, 71, menu_y, 57, calc_height + 4 + 4);
     canvas_set_color(canvas, ColorBlack);
 
-    elements_slightly_rounded_frame(canvas, 70, menu_y, 58, calc_height + 5 + 1);
+    // two rows taller than it was: the chosen entry's row clear of the frame
+    elements_slightly_rounded_frame(canvas, 70, menu_y, 58, calc_height + 5 + 3);
     canvas_draw_line(canvas, 70, menu_y + 1 + line_height, 128, menu_y + 1 + line_height);
     /*FURI_LOG_D(
         TAG,
@@ -261,25 +262,25 @@ static void render_item_menu(Canvas* canvas, ArchiveBrowserViewModel* model) {
         calc_height,
         model->menu_idx);*/
     if(model->menu_file_manage) {
-        canvas_draw_str(canvas, 82, menu_y + line_height - 1, "Manage");
+        canvas_draw_str_aligned(canvas, 99, menu_y + line_height - 1, AlignCenter, AlignBottom, "Manage");
     } else {
-        canvas_draw_str(canvas, 82, menu_y + line_height - 1, "Actions");
+        canvas_draw_str_aligned(canvas, 99, menu_y + line_height - 1, AlignCenter, AlignBottom, "Actions");
     }
     if(model->menu_can_switch) {
         canvas_draw_icon(canvas, 74, menu_y + 2, &I_ButtonLeft_4x7);
         canvas_draw_icon(canvas, 120, menu_y + 2, &I_ButtonRight_4x7);
     }
+    // the chosen entry an inverted row, as a dropdown's
     for(size_t i = 0; i < size_menu; i++) {
         ArchiveContextMenuItem_t* current = menu_array_get(model->context_menu, i);
-        canvas_draw_str(
-            canvas,
-            82,
-            menu_y + 1 + line_height + (i + 1) * line_height,
-            furi_string_get_cstr(current->text));
+        const uint8_t row_y = menu_y + 2 + line_height + i * line_height;
+        if(i == model->menu_idx) {
+            canvas_draw_rbox(canvas, 72, row_y + 1, 54, line_height, 2);
+            canvas_set_color(canvas, ColorWhite);
+        }
+        canvas_draw_str(canvas, 77, row_y + line_height - 1, furi_string_get_cstr(current->text));
+        canvas_set_color(canvas, ColorBlack);
     }
-
-    canvas_draw_icon(
-        canvas, 74, menu_y + 4 + (model->menu_idx + 1) * line_height, &I_ButtonRight_4x7);
 }
 
 static void archive_draw_frame(Canvas* canvas, uint16_t idx, bool scrollbar, bool moving) {
@@ -395,58 +396,32 @@ static void draw_list(Canvas* canvas, ArchiveBrowserViewModel* model) {
 static void archive_render_status_bar(Canvas* canvas, ArchiveBrowserViewModel* model) {
     furi_assert(model);
 
-    const char* tab_name = ArchiveTabNames[model->tab_idx];
-    bool clip = model->clipboard_mode != CLIPBOARD_MODE_OFF;
-
-    canvas_draw_icon(canvas, 0, 0, &I_Background_128x11);
-
+    // the header every page has, naming the tab; at its end the way to the other tabs (up and
+    // down while a favourite is moved), and Copy or Cut while something waits to be pasted
+    elements_header(canvas, ArchiveTabNames[model->tab_idx]);
     canvas_set_color(canvas, ColorWhite);
-    canvas_draw_box(canvas, 0, 0, 50, 13);
-    canvas_draw_box(canvas, 107, 0, 20, 13);
-
+    canvas_draw_box(canvas, 110, 0, 18, 14);
     canvas_set_color(canvas, ColorBlack);
-    canvas_draw_rframe(canvas, 0, 0, 51, 13, 1); // frame
-    canvas_draw_line(canvas, 49, 1, 49, 11); // shadow right
-    canvas_draw_line(canvas, 1, 11, 49, 11); // shadow bottom
-    canvas_draw_str_aligned(canvas, 25, 9, AlignCenter, AlignBottom, tab_name);
-
-    canvas_draw_rframe(canvas, 107, 0, 21, 13, 1);
-    canvas_draw_line(canvas, 126, 1, 126, 11);
-    canvas_draw_line(canvas, 108, 11, 126, 11);
-
     if(model->move_fav) {
-        canvas_draw_icon(canvas, 110, 4, &I_ButtonUp_7x4);
-        canvas_draw_icon(canvas, 117, 4, &I_ButtonDown_7x4);
+        canvas_draw_icon(canvas, 112, 5, &I_ButtonUp_7x4);
+        canvas_draw_icon(canvas, 120, 5, &I_ButtonDown_7x4);
     } else {
-        canvas_draw_icon(canvas, 111, 2, &I_ButtonLeft_4x7);
-        canvas_draw_icon(canvas, 119, 2, &I_ButtonRight_4x7);
+        canvas_draw_icon(canvas, 114, 3, &I_ButtonLeft_4x7);
+        canvas_draw_icon(canvas, 121, 3, &I_ButtonRight_4x7);
     }
 
-    canvas_set_color(canvas, ColorWhite);
-    canvas_draw_dot(canvas, 50, 0);
-    canvas_draw_dot(canvas, 127, 0);
-
-    if(clip) {
+    if(model->clipboard_mode != CLIPBOARD_MODE_OFF) {
+        const char* clip = (model->clipboard_mode == CLIPBOARD_MODE_COPY) ? "Copy" : "Cut";
+        canvas_set_font(canvas, FontSecondary);
+        const uint8_t width = canvas_string_width(canvas, clip) + 6;
         canvas_set_color(canvas, ColorWhite);
-        canvas_draw_box(canvas, 69, 0, 24, 13);
-
+        canvas_draw_box(canvas, 106 - width - 2, 0, width + 4, 14);
         canvas_set_color(canvas, ColorBlack);
-        canvas_draw_rframe(canvas, 69, 0, 25, 13, 1);
-        canvas_draw_line(canvas, 92, 1, 92, 11);
-        canvas_draw_line(canvas, 70, 11, 92, 11);
-        canvas_draw_str_aligned(
-            canvas,
-            81,
-            9,
-            AlignCenter,
-            AlignBottom,
-            (model->clipboard_mode == CLIPBOARD_MODE_COPY) ? "Copy" : "Cut");
-
+        canvas_draw_rbox(canvas, 106 - width, 1, width, 11, 3);
         canvas_set_color(canvas, ColorWhite);
-        canvas_draw_dot(canvas, 93, 0);
+        canvas_draw_str_aligned(canvas, 106 - width / 2, 10, AlignCenter, AlignBottom, clip);
+        canvas_set_color(canvas, ColorBlack);
     }
-
-    canvas_set_color(canvas, ColorBlack);
 }
 
 static void archive_view_render(Canvas* canvas, void* mdl) {

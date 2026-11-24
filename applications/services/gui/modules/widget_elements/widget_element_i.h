@@ -96,6 +96,9 @@ WidgetElement* widget_element_circle_create(uint8_t x, uint8_t y, uint8_t radius
 /** Create line element */
 WidgetElement* widget_element_line_create(uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2);
 
+/** Create header element */
+WidgetElement* widget_element_header_create(const char* text);
+
 #ifdef __cplusplus
 }
 #endif

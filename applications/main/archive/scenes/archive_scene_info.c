@@ -15,9 +15,6 @@ void archive_scene_info_on_enter(void* context) {
     furi_assert(context);
     ArchiveApp* instance = context;
 
-    widget_add_button_element(
-        instance->widget, GuiButtonTypeLeft, "Back", archive_scene_info_widget_callback, instance);
-
     FuriString* filename;
     FuriString* dirname;
     FuriString* str_size;
@@ -35,12 +32,9 @@ void archive_scene_info_on_enter(void* context) {
         furi_string_set(current_path, current->path);
     }
 
-    // Filename
+    // the file's name heads the page, as every page's header does; Back returns to the list
     path_extract_filename(current_path, filename, false);
-    snprintf(
-        file_info_message, sizeof(file_info_message), "\e#%s\e#", furi_string_get_cstr(filename));
-    widget_add_text_box_element(
-        instance->widget, 0, 0, 128, 25, AlignLeft, AlignCenter, file_info_message, false);
+    widget_add_header_element(instance->widget, furi_string_get_cstr(filename));
 
     // Directory path
     path_extract_dirname(furi_string_get_cstr(current_path), dirname);
@@ -66,12 +60,12 @@ void archive_scene_info_on_enter(void* context) {
         snprintf(
             file_info_message,
             sizeof(file_info_message),
-            "Size: \e#%s\e# Kb.\n%s",
+            "Size: \e#%s\e# KB\n%s",
             furi_string_get_cstr(str_size),
             furi_string_get_cstr(dirname));
     }
     widget_add_text_box_element(
-        instance->widget, 0, 25, 128, 25, AlignLeft, AlignCenter, file_info_message, true);
+        instance->widget, 3, 18, 122, 26, AlignLeft, AlignTop, file_info_message, true);
 
     // This one to return and cursor select this file
     path_extract_filename_no_ext(furi_string_get_cstr(current_path), filename);
