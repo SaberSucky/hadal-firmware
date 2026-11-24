@@ -292,7 +292,10 @@ static void storage_cli_read_chunks(PipeSide* pipe, FuriString* path, FuriString
                 for(size_t i = 0; i < read_size; i++) {
                     putchar(data[i]);
                 }
-                file_size -= read_size;
+                // a read that gives nothing (the card's error, or the file cut short under
+                // it) ends the loop, which otherwise asked for the next chunk for ever
+                if(read_size == 0) break;
+                file_size -= MIN((uint64_t)read_size, file_size);
             }
             free(data);
         }

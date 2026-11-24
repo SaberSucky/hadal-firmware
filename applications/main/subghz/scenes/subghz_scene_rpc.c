@@ -77,6 +77,14 @@ bool subghz_scene_rpc_on_event(void* context, SceneManagerEvent event) {
                     rpc_system_app_set_error_text(
                         subghz->rpc_ctx, "Error in protocol parameters description");
                     break;
+                case SubGhzTxRxStartTxStateErrorNoMemory:
+                    // refused before anything was sent: said so, not shown as sending
+                    subghz_block_generic_global.endless_tx = false;
+                    rpc_system_app_set_error_code(
+                        subghz->rpc_ctx, RpcAppSystemErrorCodeInternalParse);
+                    rpc_system_app_set_error_text(
+                        subghz->rpc_ctx, "Not enough memory to send this signal");
+                    break;
 
                 default: //if(SubGhzTxRxStartTxStateOk)
                     result = true;

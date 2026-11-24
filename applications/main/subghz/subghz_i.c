@@ -76,7 +76,7 @@ void subghz_dialog_message_no_memory(SubGhz* subghz) {
     dialog_message_set_header(message, "Not enough memory", 63, 3, AlignCenter, AlignTop);
     dialog_message_set_text(
         message,
-        "Signal can only\nbe saved.\nDelete old signals\nto send it.",
+        "Too little memory\nto send it now.\nDelete old signals\nand try again.",
         0,
         17,
         AlignLeft,

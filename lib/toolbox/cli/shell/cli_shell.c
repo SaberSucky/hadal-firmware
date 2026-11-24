@@ -19,6 +19,12 @@
 #define ANSI_TIMEOUT_MS             10
 #define TRANSIENT_SESSION_WINDOW_MS 100
 
+/* What a command takes beside its stack: the thread, its control block and name, the
+ * allocator's headers. And what loading a command's plugin takes: the loader's tables and
+ * the plugin itself */
+#define CLI_SHELL_THREAD_OVERHEAD  512U
+#define CLI_SHELL_PLUGIN_HEAP_NEED (12U * 1024U)
+
 typedef enum {
     CliShellComponentCompletions,
     CliShellComponentLine,
@@ -179,6 +185,12 @@ void cli_shell_execute_command(CliShell* cli_shell, FuriString* command) {
 
         // load external command
         if(command_data.flags & CliCommandFlagExternal) {
+            // a command's plugin loaded into what an app (Sub-GHz sending, say) left free
+            // restarted the Flipper when it did not fit: the command is refused instead
+            if(memmgr_heap_get_max_free_block() < CLI_SHELL_PLUGIN_HEAP_NEED) {
+                printf(ANSI_FG_RED "not enough memory for this command now" ANSI_RESET);
+                break;
+            }
             const CliCommandExternalConfig* ext_config = cli_shell->ext_config;
             plugin_manager = plugin_manager_alloc(
                 ext_config->appid, CLI_PLUGIN_API_VERSION, firmware_api_interface);
@@ -223,6 +235,13 @@ void cli_shell_execute_command(CliShell* cli_shell, FuriString* command) {
             // run command in this thread
             command_data.execute_callback(cli_shell->pipe, args, command_data.context);
         } else {
+            // a command's own stack, in one piece: with less than that free (an app using
+            // nearly all of it) the thread's allocation restarted the Flipper
+            if(memmgr_heap_get_max_free_block() <
+               command_data.stack_depth + CLI_SHELL_THREAD_OVERHEAD) {
+                printf(ANSI_FG_RED "not enough memory for this command now" ANSI_RESET);
+                break;
+            }
             // run command in separate thread
             cli_shell_detach_pipe(cli_shell);
             CliCommandThreadData thread_data = {

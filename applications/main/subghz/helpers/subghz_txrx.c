@@ -12,6 +12,12 @@
 
 #define TAG "SubGhzTxRx"
 
+/* What sending a RAW file takes (subghz_file_encoder_worker.c): 4 KB of samples, a 2 KB stack,
+ * the radio's 1 KB of DMA, the file's 512 byte cache and the worker itself (about 8.5 KB), with
+ * room left for the screen while it sends. The largest piece has to be there in one */
+#define SUBGHZ_TX_RAW_HEAP_NEED  (10U * 1024U)
+#define SUBGHZ_TX_RAW_BLOCK_NEED (4096U + 64U)
+
 //A probe for a module that is not there blocks for ~300ms: the OTG rail has to
 //settle before the driver can even ask, and the ask then runs out its own bus
 //timeout. Bound how often that is worth paying
@@ -490,6 +496,18 @@ SubGhzTxRxStartTxState subghz_txrx_tx_start(SubGhzTxRx* instance, FlipperFormat*
         // the encoder is certain to fit in it and there is nothing to measure. Only a wider
         // protocol has to look at the heap, and it looks before letting go of anything: a
         // block released on a measurement that then fails is a block that cannot be retaken
+        // RAW is sent from its file by a worker of its own, in pieces (its samples, a line
+        // of the file, a stack), not from one block: so the heap as a whole is what it needs,
+        // counting the held block it gets back. Sending one with too little ran out part way
+        // and restarted the Flipper
+        if(strcmp(furi_string_get_cstr(temp_str), SUBGHZ_PROTOCOL_RAW_NAME) == 0 &&
+           (memmgr_get_free_heap() + subghz_txrx_tx_block_size() < SUBGHZ_TX_RAW_HEAP_NEED ||
+            MAX(memmgr_heap_get_max_free_block(), subghz_txrx_tx_block_size()) <
+                SUBGHZ_TX_RAW_BLOCK_NEED)) {
+            FURI_LOG_E(TAG, "Not enough free heap to send RAW");
+            ret = SubGhzTxRxStartTxStateErrorNoMemory;
+            break;
+        }
         if(subghz_txrx_tx_block_need(furi_string_get_cstr(temp_str)) >
            subghz_txrx_tx_block_size()) {
             if(!subghz_txrx_tx_memory_available(furi_string_get_cstr(temp_str))) {

@@ -84,6 +84,91 @@ bool subghz_file_encoder_worker_data_parse(SubGhzFileEncoderWorker* instance, co
     return res;
 }
 
+/* A RAW file's timings, read straight from it a few bytes at a time. Each line was read whole
+ * first: a string of up to 4.6 KB, freed for every line and grown again a character at a time,
+ * which at its largest wanted 7 KB at once part way through sending, with the least free. It ran
+ * Sub-GHz out of memory sending a saved RAW signal, and restarted the Flipper */
+typedef struct {
+    Stream* stream;
+    uint8_t data[64];
+    uint16_t length;
+    uint16_t at;
+} SubGhzRawReader;
+
+typedef enum {
+    SubGhzRawLineData, /**< a RAW_Data line, its timings sent on */
+    SubGhzRawLineOther, /**< some other line: it ends the signal */
+    SubGhzRawLineEnd, /**< the end of the file, or the worker stopped */
+} SubGhzRawLine;
+
+/** The next byte, or -1 at the end of the file */
+static int16_t subghz_raw_reader_next(SubGhzRawReader* reader) {
+    if(reader->at == reader->length) {
+        reader->length = stream_read(reader->stream, reader->data, sizeof(reader->data));
+        reader->at = 0;
+        if(!reader->length) return -1;
+    }
+    return reader->data[reader->at++];
+}
+
+static void subghz_file_encoder_worker_send(SubGhzFileEncoderWorker* instance, int32_t duration) {
+    if((duration < -SUBGHZ_FILE_ENCODER_DURATION_MAX) ||
+       (duration > SUBGHZ_FILE_ENCODER_DURATION_MAX)) {
+        //the radio cannot hold a level for that long, so on TX the sample is
+        //replaced by a short pulse - when decoding, clamping keeps the long
+        //silence between two signals a long silence
+        int32_t clamped = instance->is_decoding ? SUBGHZ_FILE_ENCODER_DURATION_MAX : 100;
+        subghz_file_encoder_worker_add_level_duration(instance, (duration > 0) ? clamped : -clamped);
+    } else {
+        subghz_file_encoder_worker_add_level_duration(instance, duration);
+    }
+}
+
+/** One line of the file. Blank lines (and a Windows line end's \r) are passed over */
+static SubGhzRawLine
+    subghz_file_encoder_worker_line(SubGhzFileEncoderWorker* instance, SubGhzRawReader* reader) {
+    static const char key[] = "RAW_Data:";
+    int16_t c;
+    do {
+        c = subghz_raw_reader_next(reader);
+    } while(c == ' ' || c == '\t' || c == '\r' || c == '\n');
+    if(c < 0) return SubGhzRawLineEnd;
+
+    for(size_t i = 0; key[i]; i++) {
+        if(c != key[i]) {
+            while(c >= 0 && c != '\n') c = subghz_raw_reader_next(reader);
+            return SubGhzRawLineOther;
+        }
+        c = subghz_raw_reader_next(reader);
+    }
+
+    char token[16];
+    size_t length = 0;
+    bool skip_rest = false; // after a token that is not a number, as the line parse did
+    while(true) {
+        if(!instance->worker_running) return SubGhzRawLineEnd;
+        const bool line_end = (c < 0) || (c == '\n');
+        if(line_end || c == ' ' || c == ',' || c == '\r' || c == '\t') {
+            if(length && !skip_rest) {
+                token[length] = '\0';
+                int32_t duration;
+                if(strint_to_int32(token, NULL, &duration, 10) == StrintParseNoError) {
+                    subghz_file_encoder_worker_send(instance, duration);
+                } else {
+                    skip_rest = true;
+                }
+            }
+            length = 0;
+            if(line_end) return SubGhzRawLineData;
+        } else if(length < sizeof(token) - 1) {
+            token[length++] = (char)c;
+        } else {
+            skip_rest = true; // longer than any number
+        }
+        c = subghz_raw_reader_next(reader);
+    }
+}
+
 void subghz_file_encoder_worker_get_text_progress(
     SubGhzFileEncoderWorker* instance,
     FuriString* output) {
@@ -151,17 +236,12 @@ static int32_t subghz_file_encoder_worker_thread(void* context) {
         FURI_LOG_I(TAG, "Start transmission");
     } while(0);
 
+    SubGhzRawReader reader = {.stream = stream};
     while(res && instance->worker_running) {
         size_t stream_free_byte = furi_stream_buffer_spaces_available(instance->stream);
+        // a line (up to 512 timings) is read when it has room
         if((stream_free_byte / sizeof(int32_t)) >= SUBGHZ_FILE_ENCODER_LOAD) {
-            if(stream_read_line(stream, instance->str_data)) {
-                furi_string_trim(instance->str_data);
-                if(!subghz_file_encoder_worker_data_parse(
-                       instance, furi_string_get_cstr(instance->str_data))) {
-                    subghz_file_encoder_worker_add_level_duration(instance, LEVEL_DURATION_RESET);
-                    break;
-                }
-            } else {
+            if(subghz_file_encoder_worker_line(instance, &reader) != SubGhzRawLineData) {
                 subghz_file_encoder_worker_add_level_duration(instance, LEVEL_DURATION_RESET);
                 break;
             }
@@ -200,7 +280,11 @@ SubGhzFileEncoderWorker* subghz_file_encoder_worker_alloc(void) {
 
     instance->thread =
         furi_thread_alloc_ex("SubGhzFEWorker", 2048, subghz_file_encoder_worker_thread, instance);
-    instance->stream = furi_stream_buffer_alloc(sizeof(int32_t) * 2048, sizeof(int32_t));
+    // Two full lines of a RAW file (a line holds up to 512 timings; the worker reads one when
+    // half is free): 8 KB here was what sending a saved RAW signal ran Sub-GHz out of memory
+    // with, beside the history and the app. A line waits for room, so none is dropped
+    instance->stream = furi_stream_buffer_alloc(
+        sizeof(int32_t) * SUBGHZ_FILE_ENCODER_LOAD * 2, sizeof(int32_t));
 
     instance->storage = furi_record_open(RECORD_STORAGE);
     // buffered: a RAW_Data line is read 32 bytes at a time, one storage call each otherwise
