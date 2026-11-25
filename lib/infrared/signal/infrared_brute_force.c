@@ -14,6 +14,7 @@
 #include "infrared_learned.h"
 #include "infrared_signal.h"
 #include "infrared_signal_key.h"
+#include <infrared_worker.h>
 
 ARRAY_DEF(SignalPositionArray, size_t, M_DEFAULT_OPLIST); //-V658
 
@@ -686,17 +687,15 @@ const char*
     return furi_string_get_cstr(device->suggested_name);
 }
 
-// One entry of the on-demand library index. Names are not stored here: they are
-// read back from the file by offset only for the few entries a run touches.
+// An entry met on the way through the database: where it is, and the device it sends to. Names
+// are not kept: they are read back by offset for the few entries a run touches.
 typedef struct {
-    size_t name_offset; /**< Stream position of the signal's "name:" line. */
-    size_t body_offset; /**< Stream position of the signal body (matches load_signal). */
+    uint32_t name_offset; /**< Stream position of the signal's "name:" line. */
+    uint32_t body_offset; /**< Stream position of the signal body (matches load_signal). */
     bool is_raw;
     InfraredProtocol protocol;
     uint32_t address;
 } InfraredBruteForceIndexEntry;
-
-ARRAY_DEF(InfraredBruteForceIndexArray, InfraredBruteForceIndexEntry, M_POD_OPLIST)
 
 // Two entries belong to the same device only if both are raw, or both are parsed
 // with the same protocol and address. The command differs per button, so ignore it.
@@ -705,6 +704,25 @@ static bool ir_bf_index_same_device(
     const InfraredBruteForceIndexEntry* b) {
     if(a->is_raw || b->is_raw) return a->is_raw && b->is_raw;
     return a->protocol == b->protocol && a->address == b->address;
+}
+
+/* The next entry from where the file stands, with just what tells its device: a raw capture's
+ * timings are skipped (the next name is looked for past them), never read into RAM */
+static bool
+    ir_bf_read_entry(FlipperFormat* ff, FuriString* text, InfraredBruteForceIndexEntry* entry) {
+    entry->name_offset = flipper_format_tell(ff);
+    if(infrared_signal_read_name(ff, text) != InfraredErrorCodeNone) return false;
+    entry->body_offset = flipper_format_tell(ff);
+    if(!flipper_format_read_string(ff, "type", text)) return false;
+    entry->is_raw = furi_string_equal(text, "raw");
+    entry->protocol = InfraredProtocolUnknown;
+    entry->address = 0;
+    if(!entry->is_raw) {
+        if(!flipper_format_read_string(ff, "protocol", text)) return false;
+        entry->protocol = infrared_get_protocol_by_name(furi_string_get_cstr(text));
+        if(!flipper_format_read_hex(ff, "address", (uint8_t*)&entry->address, 4)) return false;
+    }
+    return true;
 }
 
 // Read just the button name of the entry at name_offset into out_name.
@@ -719,6 +737,34 @@ static bool ir_bf_name_seen(FuriString** seen, size_t seen_count, const FuriStri
         if(furi_string_equal(seen[i], name)) return true;
     }
     return false;
+}
+
+/* What reading one more button takes: a raw capture is read whole and then copied (up to 4 KB
+ * each), and the remote is still to be written after. Short of it, the remote keeps the buttons
+ * it has: with a universal remote open the RAM is low, and a failed allocation stops the Flipper */
+#define IR_BF_DEVICE_RESERVE  (4U * 1024U)
+#define IR_BF_DEVICE_RAW_NEED (2U * MAX_TIMINGS_AMOUNT * sizeof(uint32_t))
+
+static bool ir_bf_device_read(
+    FlipperFormat* ff,
+    const InfraredBruteForceIndexEntry* entry,
+    InfraredSignal* signal,
+    FuriString* name,
+    InfraredBruteForceDevice* device) {
+    const size_t need = IR_BF_DEVICE_RESERVE + (entry->is_raw ? IR_BF_DEVICE_RAW_NEED : 0);
+    if(memmgr_heap_get_max_free_block() < need) {
+        FURI_LOG_W(
+            TAG,
+            "Low on RAM: the remote keeps %zu buttons",
+            InfraredBruteForceDeviceItemArray_size(device->items));
+        return false;
+    }
+    if(!ir_bf_read_entry_name(ff, entry->name_offset, name)) return false;
+    if(INFRARED_ERROR_PRESENT(infrared_signal_read_body(signal, ff))) return false;
+    InfraredBruteForceDeviceItem* item = InfraredBruteForceDeviceItemArray_push_new(device->items);
+    infrared_signal_set_signal(item->signal, signal);
+    furi_string_set(item->name, name);
+    return true;
 }
 
 size_t infrared_brute_force_collect_device(
@@ -741,86 +787,82 @@ size_t infrared_brute_force_collect_device(
     // never open, as storage waits for a file's other handle to close first, and the app froze
     // (load_signal() seeks to each signal, so where this leaves the handle does not matter)
     FlipperFormat* ff = brute_force->ff;
-    InfraredBruteForceIndexArray_t index;
-    InfraredBruteForceIndexArray_init(index);
-    InfraredSignal* signal = infrared_signal_alloc();
     FuriString* name = furi_string_alloc();
-
+    // Only the target's neighbours are held, never the whole database (an index of TVs took 16 KB,
+    // and with a remote open that ran the Flipper out of RAM): the entries of one device just before
+    // it, the newest last in a ring, and those just after it
+    InfraredBruteForceIndexEntry* before = malloc(sizeof(InfraredBruteForceIndexEntry) * max_signals);
+    InfraredBruteForceIndexEntry* after = malloc(sizeof(InfraredBruteForceIndexEntry) * max_signals);
+    size_t before_count = 0, before_next = 0, after_count = 0;
+    InfraredBruteForceIndexEntry target = {0};
+    bool found = false;
     // seen[] holds copies of the names already in the run (capped at max_signals)
     FuriString** seen = malloc(sizeof(FuriString*) * max_signals);
     size_t seen_count = 0;
-    size_t collected = 0;
+    InfraredSignal* signal = NULL;
 
     do {
         if(!flipper_format_rewind(ff)) break;
 
-        // Pass 1: index every signal's position and device key (no names, no body kept)
-        size_t target_pos = (size_t)-1;
-        while(true) {
-            const size_t name_offset = flipper_format_tell(ff);
-            if(infrared_signal_read_name(ff, name) != InfraredErrorCodeNone) break;
-            const size_t body_offset = flipper_format_tell(ff);
-            if(INFRARED_ERROR_PRESENT(infrared_signal_read_body(signal, ff))) break;
-
-            InfraredBruteForceIndexEntry entry = {
-                .name_offset = name_offset,
-                .body_offset = body_offset,
-                .is_raw = infrared_signal_is_raw(signal),
-            };
-            if(!entry.is_raw) {
-                const InfraredMessage* message = infrared_signal_get_message(signal);
-                entry.protocol = message->protocol;
-                entry.address = message->address;
+        // Pass 1: through the file to the target, and on while the device stays the same
+        InfraredBruteForceIndexEntry entry;
+        while(ir_bf_read_entry(ff, name, &entry)) {
+            const InfraredBruteForceIndexEntry* last =
+                before_count ? &before[(before_next + max_signals - 1) % max_signals] : NULL;
+            if(found) {
+                if(after_count == max_signals || !ir_bf_index_same_device(&entry, &target)) break;
+                after[after_count++] = entry;
+            } else if(entry.body_offset == target_offset) {
+                target = entry;
+                found = true;
+                if(last && !ir_bf_index_same_device(last, &target)) before_count = 0;
+            } else {
+                // another device starts: the ones before it are no neighbours
+                if(last && !ir_bf_index_same_device(last, &entry)) before_count = 0;
+                before[before_next] = entry;
+                before_next = (before_next + 1) % max_signals;
+                if(before_count < max_signals) before_count++;
             }
-            if(body_offset == target_offset) {
-                target_pos = InfraredBruteForceIndexArray_size(index);
-            }
-            InfraredBruteForceIndexArray_push_back(index, entry);
         }
+        if(!found) break; // confirmed signal not found in the file
 
-        const size_t count = InfraredBruteForceIndexArray_size(index);
-        if(target_pos == (size_t)-1) break; // confirmed signal not found in the file
-
-        const InfraredBruteForceIndexEntry* target =
-            InfraredBruteForceIndexArray_cget(index, target_pos);
-
-        // Pass 2: grow a run of the same device around the target, stopping at a
-        // key change or a repeated button name, capped at max_signals.
-        if(!ir_bf_read_entry_name(ff, target->name_offset, name)) break;
+        // Pass 2: grow a run around the target, stopping at a repeated button name, capped at
+        // max_signals: backwards first, then forwards
+        if(!ir_bf_read_entry_name(ff, target.name_offset, name)) break;
         seen[seen_count++] = furi_string_alloc_set(name);
-        size_t lo = target_pos, hi = target_pos;
-
-        while(lo > 0 && seen_count < max_signals) {
+        size_t back = 0; // of before[], newest first
+        while(back < before_count && seen_count < max_signals) {
             const InfraredBruteForceIndexEntry* e =
-                InfraredBruteForceIndexArray_cget(index, lo - 1);
-            if(!ir_bf_index_same_device(e, target)) break;
+                &before[(before_next + max_signals - 1 - back) % max_signals];
             if(!ir_bf_read_entry_name(ff, e->name_offset, name)) break;
             if(ir_bf_name_seen(seen, seen_count, name)) break;
             seen[seen_count++] = furi_string_alloc_set(name);
-            lo--;
+            back++;
         }
-        while(hi + 1 < count && seen_count < max_signals) {
-            const InfraredBruteForceIndexEntry* e =
-                InfraredBruteForceIndexArray_cget(index, hi + 1);
-            if(!ir_bf_index_same_device(e, target)) break;
-            if(!ir_bf_read_entry_name(ff, e->name_offset, name)) break;
+        size_t ahead = 0;
+        while(ahead < after_count && seen_count < max_signals) {
+            if(!ir_bf_read_entry_name(ff, after[ahead].name_offset, name)) break;
             if(ir_bf_name_seen(seen, seen_count, name)) break;
             seen[seen_count++] = furi_string_alloc_set(name);
-            hi++;
+            ahead++;
         }
 
-        // Pass 3: read the run's names and bodies in file order into the collection
-        for(size_t i = lo; i <= hi; i++) {
-            const InfraredBruteForceIndexEntry* e = InfraredBruteForceIndexArray_cget(index, i);
-            if(!flipper_format_seek(ff, e->name_offset, FlipperFormatOffsetFromStart)) break;
-            if(infrared_signal_read_name(ff, name) != InfraredErrorCodeNone) break;
-            if(INFRARED_ERROR_PRESENT(infrared_signal_read_body(signal, ff))) break;
-
-            InfraredBruteForceDeviceItem* item =
-                InfraredBruteForceDeviceItemArray_push_new(device->items);
-            infrared_signal_set_signal(item->signal, signal);
-            furi_string_set(item->name, name);
-            collected++;
+        // Pass 3: the run's names and bodies, in file order
+        signal = infrared_signal_alloc();
+        bool target_read = false;
+        bool ok = true;
+        for(size_t k = back; ok && k > 0; k--) {
+            ok = ir_bf_device_read(
+                ff, &before[(before_next + max_signals - k) % max_signals], signal, name, device);
+        }
+        if(ok) ok = target_read = ir_bf_device_read(ff, &target, signal, name, device);
+        for(size_t k = 0; ok && k < ahead; k++) {
+            ok = ir_bf_device_read(ff, &after[k], signal, name, device);
+        }
+        // the button that worked is always in it: alone, if the RAM ran out before it
+        if(!target_read) {
+            infrared_brute_force_device_reset(device);
+            ir_bf_device_read(ff, &target, signal, name, device);
         }
 
         furi_string_set(device->suggested_name, brute_force->current_record_name);
@@ -830,10 +872,12 @@ size_t infrared_brute_force_collect_device(
         furi_string_free(seen[i]);
     }
     free(seen);
+    free(before);
+    free(after);
     furi_string_free(name);
-    infrared_signal_free(signal);
-    InfraredBruteForceIndexArray_clear(index);
+    if(signal) infrared_signal_free(signal);
 
+    const size_t collected = InfraredBruteForceDeviceItemArray_size(device->items);
     if(collected == 0) infrared_brute_force_device_reset(device);
     return collected;
 }

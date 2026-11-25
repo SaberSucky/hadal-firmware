@@ -30,9 +30,9 @@ typedef struct {
 /* Sending: title, bar, percentage, two hints */
 #define PANEL_Y_SENDING      25
 #define PANEL_HEIGHT_SENDING 81
-/* Paused: title, bar, count, then five hints, so the panel starts higher and is taller */
+/* Paused: title, bar, count, then six hints, so the panel starts higher and runs to the bottom */
 #define PANEL_Y_PAUSED       14
-#define PANEL_HEIGHT_PAUSED  103
+#define PANEL_HEIGHT_PAUSED  114
 #define HINT_PITCH           10
 
 static void draw_hint(Canvas* canvas, uint8_t x, uint8_t top, const char* text) {
@@ -81,25 +81,29 @@ static void infrared_progress_view_draw_callback(Canvas* canvas, void* _model) {
         canvas, x + 33, y + (model->is_paused ? 36 : 37), AlignCenter, AlignCenter, progress_string);
 
     if(model->is_paused) {
-        // Five hints at an even pitch, the last one well inside the bottom border
-        const uint8_t bx = x + 10;
+        // Six hints at an even pitch, the last one well inside the bottom border
+        const uint8_t bx = x + 8;
         const uint8_t top = y + 44;
 
+        // Back resumes; held, it stops (a held key is the one that ends)
         canvas_draw_icon(canvas, bx + 0, top + 0 * HINT_PITCH, &I_Pin_back_arrow_10x8);
         draw_hint(canvas, bx, top + 0 * HINT_PITCH, "resume");
 
-        canvas_draw_icon(canvas, bx + 1, top + 1 * HINT_PITCH - 1, &I_Ok_btn_9x9);
-        draw_hint(canvas, bx, top + 1 * HINT_PITCH, "send 1");
+        canvas_draw_icon(canvas, bx + 0, top + 1 * HINT_PITCH, &I_Pin_back_arrow_10x8);
+        draw_hint(canvas, bx, top + 1 * HINT_PITCH, "hold: stop");
 
-        canvas_draw_icon(canvas, bx + 2, top + 2 * HINT_PITCH + 2, &I_ButtonLeftSmall_3x5);
-        canvas_draw_icon(canvas, bx + 7, top + 2 * HINT_PITCH + 2, &I_ButtonRightSmall_3x5);
-        draw_hint(canvas, bx, top + 2 * HINT_PITCH, "select");
+        canvas_draw_icon(canvas, bx + 1, top + 2 * HINT_PITCH - 1, &I_Ok_btn_9x9);
+        draw_hint(canvas, bx, top + 2 * HINT_PITCH, "send 1");
 
-        canvas_draw_icon(canvas, bx + 4, top + 3 * HINT_PITCH + 2, &I_SmallArrowUp_3x5);
-        draw_hint(canvas, bx, top + 3 * HINT_PITCH, "save all");
+        canvas_draw_icon(canvas, bx + 2, top + 3 * HINT_PITCH + 2, &I_ButtonLeftSmall_3x5);
+        canvas_draw_icon(canvas, bx + 7, top + 3 * HINT_PITCH + 2, &I_ButtonRightSmall_3x5);
+        draw_hint(canvas, bx, top + 3 * HINT_PITCH, "select");
 
-        canvas_draw_icon(canvas, bx + 4, top + 4 * HINT_PITCH + 2, &I_SmallArrowDown_3x5);
-        draw_hint(canvas, bx, top + 4 * HINT_PITCH, "save 1");
+        canvas_draw_icon(canvas, bx + 4, top + 4 * HINT_PITCH + 2, &I_SmallArrowUp_3x5);
+        draw_hint(canvas, bx, top + 4 * HINT_PITCH, "save all");
+
+        canvas_draw_icon(canvas, bx + 4, top + 5 * HINT_PITCH + 2, &I_SmallArrowDown_3x5);
+        draw_hint(canvas, bx, top + 5 * HINT_PITCH, "save 1");
     } else {
         const uint8_t bx = x + 14;
         const uint8_t by = y + 50;
@@ -168,8 +172,10 @@ bool infrared_progress_view_input_callback(InputEvent* event, void* context) {
                 else if(event->key == InputKeyUp)
                     instance->input_callback(
                         instance->context, InfraredProgressViewInputSaveDevice);
-                else if(event->key == InputKeyBack)
+                else if(event->key == InputKeyBack && event->type == InputTypeShort)
                     instance->input_callback(instance->context, InfraredProgressViewInputResume);
+                else if(event->key == InputKeyBack && event->type == InputTypeLong)
+                    instance->input_callback(instance->context, InfraredProgressViewInputStop);
             } else {
                 if(event->key == InputKeyOk)
                     instance->input_callback(instance->context, InfraredProgressViewInputPause);
