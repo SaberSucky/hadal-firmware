@@ -172,14 +172,25 @@ bool update_manifest_has_obdata(UpdateManifest* update_manifest) {
     return ob_data_valid;
 }
 
+/* Read in one piece and parsed in RAM. Parsed from the file, every value (the option bytes
+ * alone are 3 x 128 hex values) was a 32-byte read and a seek back, two calls to the storage
+ * thread each: 320 ms for each read of update.fuf, 85 ms now, and an update reads it in each of
+ * its three stages */
 bool update_manifest_init(UpdateManifest* update_manifest, const char* manifest_filename) {
     Storage* storage = furi_record_open(RECORD_STORAGE);
-    FlipperFormat* flipper_file = flipper_format_file_alloc(storage);
-    if(flipper_format_file_open_existing(flipper_file, manifest_filename)) {
-        update_manifest_init_from_ff(update_manifest, flipper_file);
+    File* file = storage_file_alloc(storage);
+    if(storage_file_open(file, manifest_filename, FSAM_READ, FSOM_OPEN_EXISTING)) {
+        const uint64_t size = storage_file_size(file);
+        if(size && size <= UINT16_MAX) {
+            uint8_t* data = malloc(size);
+            if(storage_file_read(file, data, size) == size) {
+                update_manifest_init_mem(update_manifest, data, size);
+            }
+            free(data);
+        }
     }
 
-    flipper_format_free(flipper_file);
+    storage_file_free(file);
     furi_record_close(RECORD_STORAGE);
 
     return update_manifest->valid;

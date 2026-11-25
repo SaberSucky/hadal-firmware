@@ -290,6 +290,12 @@ int32_t cli_vcp_srv(void* p) {
         return 0;
     }
 
+    // The USB driver holds one packet and refuses the next until this thread reads it. At the
+    // priority of the RPC and GUI threads it waited behind them: uploads ran at 130-142 KB/s with
+    // the screen busy, 149 KB/s steadily above them (about what Windows sends). It only moves
+    // bytes between the endpoint and a pipe, and never spins
+    furi_thread_set_current_priority(FuriThreadPriorityHigh);
+
     CliVcp* cli_vcp = cli_vcp_alloc();
     furi_record_create(RECORD_CLI_VCP, cli_vcp);
     furi_event_loop_run(cli_vcp->event_loop);

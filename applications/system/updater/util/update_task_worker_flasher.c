@@ -89,8 +89,8 @@ static bool update_task_write_dfu(UpdateTask* update_task) {
         update_task_set_progress(update_task, UpdateTaskStageValidateDFUImage, 0);
         CHECK_RESULT(
             update_task_open_file(update_task, update_task->manifest->firmware_dfu_image));
-        CHECK_RESULT(
-            dfu_file_validate_crc(update_task->file, &update_task_file_progress, update_task));
+        // Its CRC was checked by the preflight, earlier in this same run, on a card this stage
+        // mounts read-only: a second pass over the 800 KB found nothing new and took 0.85 s
 
         const uint8_t valid_targets =
             dfu_file_validate_headers(update_task->file, &flipper_dfu_params);
