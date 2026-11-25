@@ -15,10 +15,7 @@
 #include <storage/storage_sd_api.h>
 
 #include "scenes/storage_settings_scene.h"
-
-#include <settings_helpers/submenu_based.h>
-
-#define STORAGE_SETTINGS_MOUNT_INDEX 2
+#include "storage_settings_view.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -41,17 +38,16 @@ typedef struct {
     // text
     FuriString* text_string;
 
-    // helpers
-    SubmenuSettingsHelperDescriptor* helper_descriptor;
-    SubmenuSettingsHelper* settings_helper;
+    StorageSettingsView* storage_view; /**< the drives at a glance */
 
-    bool from_favorites;
+    bool from_favorites; /**< opened at one of its actions: never, now */
 } StorageSettings;
 
 typedef enum {
     StorageSettingsViewSubmenu,
     StorageSettingsViewDialogEx,
-} StorageSettingsView;
+    StorageSettingsViewDrives,
+} StorageSettingsViewId;
 
 #ifdef __cplusplus
 }

@@ -624,6 +624,8 @@ static NotificationAppSettings* alloc_settings(void) {
     app->gui = furi_record_open(RECORD_GUI);
 
     app->variable_item_list = variable_item_list_alloc();
+    // the header every Settings page has; the name in the list is too long for one
+    variable_item_list_set_header(app->variable_item_list, "Notifications");
     View* view = variable_item_list_get_view(app->variable_item_list);
 
     VariableItem* item;
@@ -746,6 +748,7 @@ static NotificationAppSettings* alloc_settings(void) {
     //--- RGB BACKLIGHT END ---
 
     app->variable_item_list_rgb = variable_item_list_alloc();
+    variable_item_list_set_header(app->variable_item_list_rgb, "RGB backlight");
     app->color_texts = malloc(rgb_backlight_get_color_count() * sizeof(const char*));
     for(uint8_t i = 0; i < rgb_backlight_get_color_count(); i++) {
         app->color_texts[i] = rgb_backlight_get_color_text(i);

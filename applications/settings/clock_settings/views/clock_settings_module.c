@@ -32,14 +32,16 @@ typedef enum {
          ((m)->editing ? EditStateActiveEditing : EditStateActive) : \
          EditStateNone)
 
-#define ROW_0_Y (4)
-#define ROW_0_H (20)
+/* Under the header every Settings page has: three rows of the same height, a gap between them for
+ * the arrows a field shows while it is changed */
+#define ROW_0_Y (19)
+#define ROW_0_H (11)
 
-#define ROW_1_Y (30)
-#define ROW_1_H (12)
+#define ROW_1_Y (35)
+#define ROW_1_H (11)
 
-#define ROW_2_Y (48)
-#define ROW_2_H (12)
+#define ROW_2_Y (51)
+#define ROW_2_H (11)
 
 #define ROW_COUNT    3
 #define COLUMN_COUNT 3
@@ -64,8 +66,9 @@ static inline void clock_settings_module_draw_block(
     canvas_set_color(canvas, ColorBlack);
     if(state != EditStateNone) {
         if(state == EditStateActiveEditing) {
-            canvas_draw_icon(canvas, x + w / 2 - 2, y - 1 - 3, &I_SmallArrowUp_3x5);
-            canvas_draw_icon(canvas, x + w / 2 - 2, y + h + 1, &I_SmallArrowDown_3x5);
+            // in the gaps between the rows, clear of the neighbouring fields
+            canvas_draw_icon(canvas, x + w / 2 - 2, y - 5, &I_SmallArrowUp_3x5);
+            canvas_draw_icon(canvas, x + w / 2 - 2, y + h, &I_SmallArrowDown_3x5);
         }
         canvas_draw_rbox(canvas, x, y, w, h, 1);
         canvas_set_color(canvas, ColorWhite);
@@ -85,23 +88,24 @@ static void
     char buffer[64];
 
     canvas_set_font(canvas, FontPrimary);
-    canvas_draw_str(canvas, 0, ROW_0_Y + 15, "Time");
+    canvas_draw_str(canvas, 0, ROW_0_Y + 9, "Time");
 
+    // as the date under it: three fields, a colon between them
     snprintf(buffer, sizeof(buffer), "%02u", model->current.hour);
     clock_settings_module_draw_block(
-        canvas, 32, ROW_0_Y, 28, ROW_0_H, FontBigNumbers, get_state(model, 0, 0), buffer);
-    canvas_draw_box(canvas, 62, ROW_0_Y + ROW_0_H - 7, 2, 2);
-    canvas_draw_box(canvas, 62, ROW_0_Y + ROW_0_H - 7 - 6, 2, 2);
+        canvas, 44, ROW_0_Y, 17, ROW_0_H, FontPrimary, get_state(model, 0, 0), buffer);
+    canvas_draw_box(canvas, 65, ROW_0_Y + ROW_0_H - 4, 2, 2);
+    canvas_draw_box(canvas, 65, ROW_0_Y + ROW_0_H - 8, 2, 2);
 
     snprintf(buffer, sizeof(buffer), "%02u", model->current.minute);
     clock_settings_module_draw_block(
-        canvas, 66, ROW_0_Y, 28, ROW_0_H, FontBigNumbers, get_state(model, 0, 1), buffer);
-    canvas_draw_box(canvas, 96, ROW_0_Y + ROW_0_H - 7, 2, 2);
-    canvas_draw_box(canvas, 96, ROW_0_Y + ROW_0_H - 7 - 6, 2, 2);
+        canvas, 71, ROW_0_Y, 17, ROW_0_H, FontPrimary, get_state(model, 0, 1), buffer);
+    canvas_draw_box(canvas, 92, ROW_0_Y + ROW_0_H - 4, 2, 2);
+    canvas_draw_box(canvas, 92, ROW_0_Y + ROW_0_H - 8, 2, 2);
 
     snprintf(buffer, sizeof(buffer), "%02u", model->current.second);
     clock_settings_module_draw_block(
-        canvas, 100, ROW_0_Y, 28, ROW_0_H, FontBigNumbers, get_state(model, 0, 2), buffer);
+        canvas, 98, ROW_0_Y, 17, ROW_0_H, FontPrimary, get_state(model, 0, 2), buffer);
 }
 
 static void
@@ -168,6 +172,7 @@ static void
 
 static void clock_settings_module_draw_callback(Canvas* canvas, void* _model) {
     ClockSettingsModuleViewModel* model = _model;
+    elements_header(canvas, "Clock & alarm");
     clock_settings_module_draw_time_callback(canvas, model);
     clock_settings_module_draw_date_callback(canvas, model);
     clock_settings_module_draw_alarm_callback(canvas, model);
