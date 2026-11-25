@@ -1,8 +1,6 @@
 ADD_SCENE(hadal_settings, start, Start)
 ADD_SCENE(hadal_settings, interface, Interface)
 ADD_SCENE(hadal_settings, main_menu, MainMenu)
-ADD_SCENE(hadal_settings, main_menu_item, MainMenuItem)
-ADD_SCENE(hadal_settings, main_menu_add, MainMenuAdd)
 ADD_SCENE(hadal_settings, main_menu_reset, MainMenuReset)
 ADD_SCENE(hadal_settings, asset_pack, AssetPack)
 ADD_SCENE(hadal_settings, protocols, Protocols)

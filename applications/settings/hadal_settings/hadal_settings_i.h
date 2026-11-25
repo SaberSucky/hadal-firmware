@@ -19,6 +19,7 @@
 #include "scenes/hadal_settings_scene.h"
 #include "pack_info.h"
 #include "main_menu_edit.h"
+#include "main_menu_view.h"
 #include "menu_styles.h"
 #include "keybinds.h"
 
@@ -33,6 +34,7 @@ typedef enum {
     HadalViewByteInput,
     HadalViewTextInput,
     HadalViewPackPreview, /**< Asset Pack's, while it is open */
+    HadalViewMainMenu,
 } HadalView;
 
 /** Asset Pack's preview (scenes/hadal_settings_scene_asset_pack.c) */
@@ -57,7 +59,10 @@ typedef struct {
     uint8_t bytes[8]; /**< what the byte input edits */
 
     HadalMainMenu main_menu;
-    size_t main_menu_selected; /**< the entry the item page is about */
+    MainMenuView* main_menu_view;
+    size_t main_menu_origin; /**< where the app being carried was picked up */
+    /** adding: the entry each tile adds, NULL for the SD card's file browser */
+    const char* main_menu_candidates[MAIN_MENU_VIEW_TILES_MAX];
 
     DesktopKeybind keybind_selected; /**< the button the action page is about */
 

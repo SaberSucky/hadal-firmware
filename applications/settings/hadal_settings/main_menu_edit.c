@@ -1,6 +1,8 @@
 #include "main_menu_edit.h"
 
 #include <applications.h>
+#include <assets_icons.h>
+#include <gui/icon_i.h>
 #include <loader/loader.h>
 #include <flipper_application/flipper_application.h>
 #include <toolbox/path.h>
@@ -9,19 +11,67 @@
 #define APPS_ENTRY     LOADER_APPLICATIONS_NAME
 #define MAX_FILE       4096u
 
-static void label_for(Storage* storage, const char* entry, FuriString* label) {
+struct HadalFapIcon {
+    Icon icon;
+    const uint8_t* frame; /**< the icon's one frame: data */
+    uint8_t data[FAP_MANIFEST_MAX_ICON_SIZE];
+};
+
+const Icon* hadal_main_menu_named_icon(const char* entry) {
+    if(strcmp(entry, APPS_ENTRY) == 0) return &A_Plugins_14;
+    if(strcmp(entry, SETTINGS_ENTRY) == 0) return &A_Settings_14;
+    for(size_t i = 0; i < FLIPPER_APPS_COUNT; i++) {
+        if(strcmp(FLIPPER_APPS[i].name, entry) == 0) return FLIPPER_APPS[i].icon;
+    }
+    for(size_t i = 0; i < FLIPPER_EXTERNAL_APPS_COUNT; i++) {
+        if(strcmp(FLIPPER_EXTERNAL_APPS[i].name, entry) == 0) return FLIPPER_EXTERNAL_APPS[i].icon;
+    }
+    return NULL;
+}
+
+/* What the menu shows for an entry: an app on the SD card by the name and icon in its manifest */
+static void describe(Storage* storage, HadalMainMenuItem* item) {
+    const char* entry = furi_string_get_cstr(item->entry);
+    item->icon = NULL;
+    item->fap_icon = NULL;
     if(entry[0] != '/') {
-        furi_string_set(label, entry);
+        furi_string_set(item->label, entry);
+        item->icon = hadal_main_menu_named_icon(entry);
         return;
     }
-    // An app on the SD card is shown by the name in its manifest
+    HadalFapIcon* fap_icon = malloc(sizeof(HadalFapIcon));
+    memset(fap_icon->data, 0, sizeof(fap_icon->data));
+    uint8_t* data = fap_icon->data;
     FuriString* path = furi_string_alloc_set(entry);
-    uint8_t* icon = malloc(FAP_MANIFEST_MAX_ICON_SIZE);
-    if(!flipper_application_load_name_and_icon(path, storage, &icon, label)) {
-        path_extract_filename(path, label, true);
+    if(flipper_application_load_name_and_icon(path, storage, &data, item->label)) {
+        bool drawn = false; // a manifest with no icon leaves it all zero
+        for(size_t i = 0; i < sizeof(fap_icon->data); i++) {
+            if(fap_icon->data[i]) drawn = true;
+        }
+        if(drawn) {
+            fap_icon->frame = fap_icon->data;
+            const Icon icon = {
+                .width = 10,
+                .height = 10,
+                .frame_count = 1,
+                .frame_rate = 0,
+                .frames = &fap_icon->frame,
+            };
+            memcpy(&fap_icon->icon, &icon, sizeof(Icon));
+            item->icon = &fap_icon->icon;
+            item->fap_icon = fap_icon;
+        }
+    } else {
+        path_extract_filename(path, item->label, true);
     }
-    free(icon);
+    if(!item->fap_icon) free(fap_icon);
     furi_string_free(path);
+}
+
+static void item_clear(HadalMainMenuItem* item) {
+    furi_string_free(item->entry);
+    furi_string_free(item->label);
+    free(item->fap_icon);
 }
 
 static void push(HadalMainMenu* menu, Storage* storage, const char* entry) {
@@ -33,7 +83,7 @@ static void push(HadalMainMenu* menu, Storage* storage, const char* entry) {
     HadalMainMenuItem* item = &menu->items[menu->count++];
     item->entry = furi_string_alloc_set(entry);
     item->label = furi_string_alloc();
-    label_for(storage, entry, item->label);
+    describe(storage, item);
 }
 
 static void load_defaults(HadalMainMenu* menu, Storage* storage) {
@@ -125,19 +175,22 @@ void hadal_main_menu_reset(HadalMainMenu* menu, Storage* storage) {
 
 void hadal_main_menu_free(HadalMainMenu* menu) {
     for(size_t i = 0; i < menu->count; i++) {
-        furi_string_free(menu->items[i].entry);
-        furi_string_free(menu->items[i].label);
+        item_clear(&menu->items[i]);
     }
     free(menu->items);
     menu->items = NULL;
     menu->count = 0;
 }
 
-bool hadal_main_menu_contains(const HadalMainMenu* menu, const char* entry) {
+size_t hadal_main_menu_find(const HadalMainMenu* menu, const char* entry) {
     for(size_t i = 0; i < menu->count; i++) {
-        if(furi_string_equal_str(menu->items[i].entry, entry)) return true;
+        if(furi_string_equal_str(menu->items[i].entry, entry)) return i;
     }
-    return false;
+    return menu->count;
+}
+
+bool hadal_main_menu_contains(const HadalMainMenu* menu, const char* entry) {
+    return hadal_main_menu_find(menu, entry) < menu->count;
 }
 
 bool hadal_main_menu_is_settings(const HadalMainMenu* menu, size_t index) {
@@ -157,8 +210,7 @@ size_t hadal_main_menu_move(HadalMainMenu* menu, size_t index, int delta) {
 
 void hadal_main_menu_remove(HadalMainMenu* menu, size_t index) {
     if(index >= menu->count || hadal_main_menu_is_settings(menu, index)) return;
-    furi_string_free(menu->items[index].entry);
-    furi_string_free(menu->items[index].label);
+    item_clear(&menu->items[index]);
     memmove(
         &menu->items[index],
         &menu->items[index + 1],

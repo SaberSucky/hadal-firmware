@@ -66,6 +66,9 @@ static HadalSettings* hadal_settings_alloc(void) {
         app->view_dispatcher,
         HadalViewVariableList,
         variable_item_list_get_view(app->variable_list));
+    app->main_menu_view = main_menu_view_alloc();
+    view_dispatcher_add_view(
+        app->view_dispatcher, HadalViewMainMenu, main_menu_view_get_view(app->main_menu_view));
     view_dispatcher_attach_to_gui(app->view_dispatcher, app->gui, ViewDispatcherTypeFullscreen);
 
     hadal_main_menu_load(&app->main_menu, app->storage);
@@ -78,6 +81,8 @@ static void hadal_settings_free(HadalSettings* app) {
     view_dispatcher_remove_view(app->view_dispatcher, HadalViewWidget);
     view_dispatcher_remove_view(app->view_dispatcher, HadalViewDialog);
     view_dispatcher_remove_view(app->view_dispatcher, HadalViewVariableList);
+    view_dispatcher_remove_view(app->view_dispatcher, HadalViewMainMenu);
+    main_menu_view_free(app->main_menu_view);
     view_dispatcher_remove_view(app->view_dispatcher, HadalViewNumberInput);
     number_input_free(app->number_input);
     view_dispatcher_remove_view(app->view_dispatcher, HadalViewByteInput);
