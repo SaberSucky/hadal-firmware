@@ -83,13 +83,11 @@ static uint32_t resources_remove_stale(UpdateTask* update_task, const UpdateReso
     do {
         if(!resource_manifest_reader_open(reader, CARD_MANIFEST)) break;
 
-        uint32_t files = 1, dirs = 1, done = 0;
+        // The bar goes by the length of the new Manifest: the old one read through once more
+        // only to count its lines took 0.22 s of every update
+        const uint32_t lines = index->count + 1;
+        uint32_t done = 0;
         ResourceManifestEntry* entry;
-        while((entry = resource_manifest_reader_next(reader))) {
-            if(entry->type == ResourceManifestEntryTypeFile) files++;
-            if(entry->type == ResourceManifestEntryTypeDirectory) dirs++;
-        }
-        resource_manifest_rewind(reader);
 
         /* The folders that go are noted on the way through, and removed last first (a folder is
          * listed before what is in it): the Manifest read backwards, a seek a character, took
@@ -114,7 +112,8 @@ static uint32_t resources_remove_stale(UpdateTask* update_task, const UpdateReso
                 continue;
             }
             if(entry->type != ResourceManifestEntryTypeFile) continue;
-            update_task_set_progress(update_task, UpdateTaskStageProgress, done++ * 100 / files);
+            update_task_set_progress(
+                update_task, UpdateTaskStageProgress, MIN(done++ * 100 / lines, 100U));
             if(update_resource_index_find(index, name)) continue;
             if(resources_is_kept(name)) continue;
             path_concat(STORAGE_EXT_PATH_PREFIX, name, path);
@@ -144,7 +143,8 @@ static uint32_t resources_remove_stale(UpdateTask* update_task, const UpdateReso
         done = 0;
         while((entry = resource_manifest_reader_previous(reader))) {
             if(entry->type != ResourceManifestEntryTypeDirectory) continue;
-            update_task_set_progress(update_task, UpdateTaskStageProgress, done++ * 100 / dirs);
+            update_task_set_progress(
+                update_task, UpdateTaskStageProgress, MIN(done++ * 100 / lines, 100U));
             if(update_resource_index_find(index, furi_string_get_cstr(entry->name))) continue;
             if(resources_is_kept(furi_string_get_cstr(entry->name))) continue;
             path_concat(STORAGE_EXT_PATH_PREFIX, furi_string_get_cstr(entry->name), path);
