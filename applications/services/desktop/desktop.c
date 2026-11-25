@@ -490,6 +490,14 @@ static void desktop_apply_settings(Desktop* desktop) {
     animation_manager_set_pause_in_dark(
         desktop->animation_manager, !desktop->settings.animate_screen_off);
 
+    // Sonar is gone and 3D does what it did: whoever had chosen it gets 3D, not the plain list
+    if(strcmp(desktop->settings.menu_style, "menu_style_sonar.fal") == 0) {
+        strlcpy(
+            desktop->settings.menu_style,
+            "menu_style_3d.fal",
+            sizeof(desktop->settings.menu_style));
+        desktop_settings_save(&desktop->settings);
+    }
     loader_set_menu_style(desktop->loader, desktop->settings.menu_style);
     elements_set_header_style(desktop->settings.header_style);
 

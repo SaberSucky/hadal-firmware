@@ -28,7 +28,8 @@ static bool compress_decode_internal(
     size_t data_in_size,
     uint8_t* data_out,
     size_t data_out_size,
-    size_t* data_res_size);
+    size_t* data_res_size,
+    bool drop_overflow);
 
 typedef struct {
     uint8_t is_compressed;
@@ -73,7 +74,9 @@ void compress_icon_decode(CompressIcon* instance, const uint8_t* icon_data, uint
     CompressHeader* header = (CompressHeader*)icon_data;
     if(header->is_compressed) {
         size_t decoded_size = 0;
-        /* If decompression fails - check that decode_buf_size is large enough */
+        /* What does not fit in the buffer is dropped: a bitmap is drawn from its first width x
+         * height bits only. Frames a row taller than their animation says (two of the WatchDogs
+         * pack's: 1040 bytes for 1028) overran it, and stopped the Flipper whenever one came up */
         furi_check(
             compress_decode_internal(
                 instance->decoder,
@@ -82,7 +85,8 @@ void compress_icon_decode(CompressIcon* instance, const uint8_t* icon_data, uint
                 sizeof(CompressHeader) + header->compressed_buff_size,
                 instance->buffer,
                 instance->buffer_size,
-                &decoded_size),
+                &decoded_size,
+                true),
             "Icon did not decode");
         *output = instance->buffer;
     } else {
@@ -305,13 +309,20 @@ static int32_t memory_stream_io_callback(void* context, uint8_t* ptr, size_t siz
     return size;
 }
 
+/* An icon's sink: keeps what fits and takes the rest as written, so that it is dropped */
+static int32_t memory_stream_drop_overflow_callback(void* context, uint8_t* ptr, size_t size) {
+    memory_stream_io_callback(context, ptr, size);
+    return size;
+}
+
 static bool compress_decode_internal(
     heatshrink_decoder* decoder,
     const uint8_t* data_in,
     size_t data_in_size,
     uint8_t* data_out,
     size_t data_out_size,
-    size_t* data_res_size) {
+    size_t* data_res_size,
+    bool drop_overflow) {
     furi_check(decoder);
     furi_check(data_in);
     furi_check(data_out);
@@ -337,7 +348,7 @@ static bool compress_decode_internal(
                 COMPRESS_ICON_ENCODED_BUFF_SIZE,
                 memory_stream_io_callback,
                 &compressed_context,
-                memory_stream_io_callback,
+                drop_overflow ? memory_stream_drop_overflow_callback : memory_stream_io_callback,
                 &decompressed_context))) {
             *data_res_size = data_out_size - decompressed_context.data_size;
         }
@@ -381,7 +392,7 @@ bool compress_decode(
             hs_config->input_buffer_sz, hs_config->window_sz2, hs_config->lookahead_sz2);
     }
     return compress_decode_internal(
-        compress->decoder, data_in, data_in_size, data_out, data_out_size, data_res_size);
+        compress->decoder, data_in, data_in_size, data_out, data_out_size, data_res_size, false);
 }
 
 bool compress_decode_streamed(

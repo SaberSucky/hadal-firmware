@@ -52,7 +52,7 @@ Hadal runs ST's **Full** radio stack, so the Flipper can listen as well as adver
 </p>
 
 - **Control centre**: Up on the desktop. Quick toggles, two apps of your choice, brightness and volume.
-- **Menu Style**: the built-in list or one of eleven styles, PS4 and Sonar among them.
+- **Menu Style**: the built-in list or one of ten styles, PS4 and 3D among them.
 - **Header Style**: Fade, Rule, Dots or Plain (below).
 - **Main Menu**: your order, with any app from the SD card.
 - **Desktop Keys**: each of the ten buttons, pressed or held, opens an action, an app or a file.
