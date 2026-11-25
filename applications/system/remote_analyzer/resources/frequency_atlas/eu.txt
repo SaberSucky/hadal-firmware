@@ -1,0 +1,36 @@
+Filetype: Flipper Frequency Atlas
+Version: 1
+# Frequency Atlas band plan: Remote Analyzer > Frequency Atlas, region chosen in
+# Settings > Hadal > Protocols > Region. Format: documentation/file_formats/FrequencyAtlasFormat.md
+#
+# One band per Band line, fields split by |:
+#   Band: start_hz | end_hz | listen_hz | label | typical use | limit
+# listen_hz is where the receiver parks to check the band; empty means the middle.
+# Only bands the CC1101 can tune are listed (300-348, 386-464, 778-928 MHz; with Extended
+# Sub-GHz on 281-361, 378-481, 749-962 MHz), so 169 MHz metering and the like are left out.
+#
+# This is the CEPT harmonised baseline the EU (and the UK) build on, not any one country's
+# rules: member states can carry national exceptions, and 870-876 and 915-921 MHz are not
+# implemented everywhere. Copy this file to e.g. de.txt and edit it for a country's own table.
+# A firmware update puts the shipped files back as they were, so edit a copy, not this file.
+#
+# Figures from ERC Recommendation 70-03 (Annex 1 non-specific SRDs, Annex 7 alarms), latest
+# amended 9 October 2026, and ECC/DEC/(15)05 for PMR446.
+Region: EU
+Name: EU - CEPT ERC 70-03
+Source: CEPT ERC Recommendation 70-03, amended 9 Oct 2026; ECC/DEC/(15)05 (PMR446)
+Note: Reference only, not legal advice or a compliance check. Harmonised baseline: a member state's own rules can differ, see its national table (CEPT EFIS).
+
+Band: 433050000|434790000|433920000|SRD 433|Gate and garage remotes, car key fobs, doorbells, weather stations, alarm sensors, LoRa 433|10 mW e.r.p. at up to 10% duty cycle (g1), or 1 mW e.r.p. with no duty limit (g2). 434.04-434.79 MHz: 10 mW e.r.p., no duty limit, 25 kHz channels (g3)
+Band: 446000000|446200000|446100000|PMR446|Licence exempt walkie-talkies. Voice-like FM bursts here are radios, not a remote|500 mW e.r.p. (ECC/DEC/(15)05). A rise to 1 W is under consultation - verify before relying on either
+Band: 868000000|868600000|868300000|SRD 868|Smart home sensors, LoRaWAN 868.1/868.3/868.5, Sigfox, Z-Wave 868.4|25 mW e.r.p., 1% duty cycle or LBT+AFA (h1.5)
+Band: 868600000|868700000||Alarms 868.6|Intruder and fire alarm sensors|10 mW e.r.p., 1% duty cycle, 25 kHz channels or the whole band as one (Annex 7 a)
+Band: 868700000|869200000|868950000|SRD 868.7|General short range devices, sensors, telemetry|25 mW e.r.p., 0.1% duty cycle or LBT+AFA (h1.6)
+Band: 869200000|869250000||Social alarms|Social (care) alarms: pendants and pull cords that call for help|10 mW e.r.p., 0.1% duty cycle, 25 kHz channel spacing (Annex 7 b)
+Band: 869250000|869300000||Alarms 869.25|Alarm systems|10 mW e.r.p., 0.1% duty cycle, 25 kHz (Annex 7 c)
+Band: 869300000|869400000||Alarms 869.3|Alarm systems|10 mW e.r.p., 1% duty cycle, 25 kHz (Annex 7 d)
+Band: 869400000|869650000|869525000|SRD 500 mW|Higher power telemetry and alarms, LoRaWAN downlink 869.525|500 mW e.r.p., 10% duty cycle or LBT+AFA (h1.7)
+Band: 869650000|869700000||Alarms 869.65|Alarm systems|25 mW e.r.p., 10% duty cycle, 25 kHz (Annex 7 e)
+Band: 869700000|870000000|869850000|SRD 869.7|Z-Wave 869.85, short range voice and data|5 mW e.r.p. with no duty limit (h1.8), or 25 mW e.r.p. at 1% duty cycle or LBT+AFA (h1.9)
+Band: 870000000|874400000|872200000|SRD 870|Networked meters and sensors, where a country has opened the band|25 mW e.r.p., 1% duty cycle, 600 kHz (h2). Where railway GSM is protected (873-874.4 MHz): 0.01% and at most 5 ms per second
+Band: 915000000|919400000|917200000|SRD 915|IoT and RFID, where a country has opened the band; not the US 902-928 MHz rules|25 mW e.r.p., 1% duty cycle, 600 kHz; RFID channels 916.3, 917.5, 918.7 MHz: 100 mW e.r.p., 400 kHz (h3). Where railway GSM is protected (918-919.4 MHz): 0.01% and at most 5 ms per second

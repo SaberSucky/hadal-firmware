@@ -17,8 +17,12 @@ App(
     fap_category="Sub-GHz",
     fap_author="@xMasterX",
     fap_description="Decode one remote at a time on the internal CC1101: last signal only, "
-    "plus a frequency analyzer that is paged in only while it is on screen",
+    "plus a frequency analyzer and a frequency atlas that are paged in only while on screen",
     fap_version="1.0",
+    # The Frequency Atlas's band plans: resources/frequency_atlas/<region>.txt lands on the card
+    # as /ext/frequency_atlas/<region>.txt, data the atlas reads rather than code in any image,
+    # so a region is added or corrected by editing a text file.
+    resources="resources",
     # plugins/ ships as an embedded .fal - keep it out of the app image.
     # Exclusions are leaf names, not paths.
     sources=["*.c*", "!plugins"],
@@ -50,6 +54,20 @@ App(
     entry_point="remote_analyzer_raw_ep",
     requires=["remote_analyzer"],
     sources=["plugins/decode_raw/*.c"],
+    fal_embedded=True,
+    fap_exclude_libs=["gcc"],
+)
+
+# The Frequency Atlas: a region's band plan off the SD card, with a live reading per band. The
+# parser and the scan logic are plain C with no firmware dependencies, built as they are by the
+# host tests (scripts/host_tests/frequency_atlas_host.c).
+App(
+    appid="remote_analyzer_atlas",
+    apptype=FlipperAppType.PLUGIN,
+    targets=["f7"],
+    entry_point="remote_analyzer_atlas_ep",
+    requires=["remote_analyzer"],
+    sources=["plugins/frequency_atlas/*.c"],
     fal_embedded=True,
     fap_exclude_libs=["gcc"],
 )

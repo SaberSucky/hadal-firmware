@@ -36,7 +36,7 @@ static uint8_t remote_analyzer_signal_kind(SubGhzProtocolDecoderBase* decoder_ba
 }
 
 /** Where the decoded protocol stands in the SubGhz app, as the last line of the reading. */
-static const char* remote_analyzer_support_note(SubGhzProtocolDecoderBase* decoder_base) {
+const char* remote_analyzer_support_note(SubGhzProtocolDecoderBase* decoder_base) {
     const SubGhzProtocol* protocol = decoder_base->protocol;
     if(protocol == NULL || protocol->name == NULL || ra_protocol_is_own(protocol)) {
         return "Not supported in SubGHz";
@@ -294,6 +294,10 @@ static RemoteAnalyzer* remote_analyzer_alloc(void) {
     app->fa_plugin = NULL;
     app->raw_plugin = NULL;
     app->about_plugin = NULL;
+    app->atlas_plugin = NULL;
+    app->atlas_protocol[0] = '\0';
+    app->atlas_note = NULL;
+    app->atlas_modulation = furi_string_alloc();
 
     return app;
 }
@@ -308,6 +312,7 @@ static void remote_analyzer_free(RemoteAnalyzer* app) {
     app->fa_plugin = NULL;
     app->raw_plugin = NULL;
     app->about_plugin = NULL;
+    app->atlas_plugin = NULL;
 
     ra_radio_free(app->radio);
 
@@ -325,6 +330,7 @@ static void remote_analyzer_free(RemoteAnalyzer* app) {
     furi_mutex_free(app->signal_mutex);
     furi_string_free(app->signal_text);
     furi_string_free(app->signal_prev);
+    furi_string_free(app->atlas_modulation);
 
     furi_record_close(RECORD_DIALOGS);
     furi_record_close(RECORD_NOTIFICATION);
@@ -333,12 +339,20 @@ static void remote_analyzer_free(RemoteAnalyzer* app) {
     free(app);
 }
 
+/** What the loader can pass, as from Settings > Hadal > Protocols: "atlas" opens the Frequency
+ * Atlas alone, and Back from it closes the app. Anything else is the start menu. */
+#define RA_ARG_ATLAS "atlas"
+
 int32_t remote_analyzer_app(void* p) {
-    UNUSED(p);
+    const char* args = p;
 
     RemoteAnalyzer* app = remote_analyzer_alloc();
 
-    scene_manager_next_scene(app->scene_manager, RaSceneStart);
+    if(args && (strcmp(args, RA_ARG_ATLAS) == 0)) {
+        scene_manager_next_scene(app->scene_manager, RaSceneFrequencyAtlas);
+    } else {
+        scene_manager_next_scene(app->scene_manager, RaSceneStart);
+    }
 
     // Charging noise sits right on top of what the receiver is trying to hear
     furi_hal_power_suppress_charge_enter();

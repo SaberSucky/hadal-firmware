@@ -1,0 +1,39 @@
+Filetype: Flipper Frequency Atlas
+Version: 1
+# Frequency Atlas band plan: Remote Analyzer > Frequency Atlas, region chosen in
+# Settings > Hadal > Protocols > Region. Format: documentation/file_formats/FrequencyAtlasFormat.md
+#
+# One band per Band line, fields split by |:
+#   Band: start_hz | end_hz | listen_hz | label | typical use | limit
+# listen_hz is where the receiver parks to check the band; empty means the middle.
+# Only bands the CC1101 can tune are listed (300-348, 386-464, 778-928 MHz; with Extended
+# Sub-GHz on 281-361, 378-481, 749-962 MHz). Left out for that reason: 173.2-173.35 MHz
+# (non-specific SRDs and telemetry, IR2030/1, and fixed alarms on 173.225 MHz, IR2030/22),
+# which is below what the radio reaches even in Extended mode.
+#
+# To change it, copy it to a new name in this folder and edit the copy: a firmware update
+# puts the shipped files back as they were. A new region is a new <code>.txt file here.
+#
+# Figures from Ofcom IR 2030 (UK Interface Requirement 2030, licence exempt short range
+# devices), published 23 October 2026. Where that text did not give a figure, the line says
+# "verify" and names where the figure came from instead.
+Region: UK
+Name: UK - Ofcom IR 2030
+Source: Ofcom IR 2030 (licence exempt SRDs), published 23 Oct 2026
+Note: Reference only, not legal advice or a compliance check. The rules in force are Ofcom's; check IR 2030 before relying on a figure.
+
+Band: 433050000|434790000|433920000|SRD 433|Gate and garage remotes, car key fobs, doorbells, weather stations, alarm sensors, LoRa 433|10 mW e.r.p. at up to 10% duty cycle, or 1 mW e.r.p. (IR2030/1/10, /1/11). 434.04-434.79 MHz: 10 mW e.r.p. in 25 kHz channels (IR2030/1/12; its duty terms are approximate - verify with Ofcom)
+Band: 446000000|446200000|446100000|PMR446|Licence exempt walkie-talkies. Voice-like FM bursts here are radios, not a remote|500 mW e.r.p. (IR2030/34/1)
+Band: 458818750|458906250|458837500|Alarms 458|Fixed alarms 458.825, lone worker alarms 458.8375, vehicle paging alarms 458.900 MHz|100 mW e.r.p., 12.5 kHz channels; vehicle alarm arm/disarm at up to 1 mW. Not airborne (IR2030/22/3, /21/2, /19/2)
+Band: 868000000|868600000|868300000|SRD 868|Smart home sensors, LoRaWAN 868.1/868.3/868.5, Sigfox, Z-Wave 868.4|25 mW e.r.p., with spectrum access mitigation or else a duty cycle limit (IR2030/1/16). The 1% duty figure is from ERC 70-03 band h1.5 - verify with Ofcom
+Band: 868600000|868700000||Alarms 868.6|Intruder and fire alarm sensors|10 mW e.r.p., 25 kHz channels (IR2030/17/1). Duty cycle approximate - verify with Ofcom (ERC 70-03 Annex 7 gives 1%)
+Band: 868700000|869200000|868950000|SRD 868.7|General short range devices, sensors, telemetry|25 mW e.r.p., with spectrum access mitigation or a 0.1% duty cycle (IR2030/1/17)
+Band: 869200000|869250000||Social alarms|Social (care) alarms: pendants and pull cords that call for help|10 mW e.r.p., 25 kHz channels, 0.1% duty cycle (IR2030/17/5)
+Band: 869250000|869300000||Alarms 869.25|Alarm systems|10 mW e.r.p., 25 kHz channels (IR2030/17/2). Duty cycle approximate - verify with Ofcom (ERC 70-03 Annex 7 gives 0.1%)
+Band: 869300000|869400000||SRD 869.3|Alarm systems and general short range devices|Any SRD: 10 mW e.r.p., 25 kHz, 10% duty cycle (IR2030/1/18). Alarms: 10 mW e.r.p. (IR2030/17/3), duty approximate - verify with Ofcom
+Band: 869400000|869650000|869525000|SRD 500 mW|Higher power telemetry and alarms, LoRaWAN downlink 869.525|500 mW e.r.p., with spectrum access mitigation or a 10% duty cycle (IR2030/1/19)
+Band: 869650000|869700000||Alarms 869.65|Alarm systems|25 mW e.r.p., 25 kHz channels (IR2030/17/4). Duty cycle approximate - verify with Ofcom (ERC 70-03 Annex 7 gives 10%)
+Band: 869700000|870000000|869850000|SRD 869.7|Z-Wave 869.85, short range voice and data|5 mW e.r.p. (IR2030/1/21), or 25 mW e.r.p. with mitigation or a 1% duty cycle (IR2030/1/20). No duty limit at 5 mW is ERC 70-03 h1.8 - verify with Ofcom
+Band: 870000000|874400000|872200000|SRD 870|Networked meters and sensors. Not for airborne use|25 mW e.r.p.: 0.1% duty in 200 kHz or 1% in 600 kHz (IR2030/1/29, /1/31); 500 mW for data networks with power control (IR2030/1/47). 873-876 MHz: 0.01% and at most 5 ms per second (IR2030/1/30)
+Band: 915000000|918000000|916500000|SRD 915|Newer UK IoT and RFID allocation; not the US 902-928 MHz rules. Not airborne|25 mW e.r.p.: 0.1% duty in 200 kHz (IR2030/1/33) or 1% in 600 kHz from 915.2 MHz (IR2030/1/35). 916.1-916.5 and 917.3-917.7 MHz: 100 mW e.r.p., 1% (IR2030/1/37)
+Band: 918000000|921000000|919500000|SRD 918|Newer UK IoT allocation beside railway GSM. Not airborne|25 mW e.r.p., 0.01% duty cycle and at most 5 ms per second (IR2030/1/34, /1/36)

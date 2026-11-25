@@ -20,6 +20,7 @@
 #include "helpers/ra_fa_plugin.h"
 #include "helpers/ra_raw_plugin.h"
 #include "helpers/ra_about_plugin.h"
+#include "helpers/ra_atlas_plugin.h"
 #include "views/ra_read_view.h"
 #include "scenes/ra_scene.h"
 
@@ -46,6 +47,7 @@ typedef enum {
     RaCustomEventFaPicked,
     RaCustomEventFaGoRead,
     RaCustomEventRawCancelled, /**< no capture was picked */
+    RaCustomEventAtlasDecoded, /**< a protocol decoded a frame on the atlas's band */
 } RaCustomEvent;
 
 /** What the LED is saying. All three blink; the green is held briefly after a decode. */
@@ -101,6 +103,13 @@ typedef struct {
     RaRawEnv raw_env;
     const RaAboutPlugin* about_plugin;
     RaAboutEnv about_env;
+    const RaAtlasPlugin* atlas_plugin;
+    RaAtlasEnv atlas_env;
+    /** The atlas's last decode: protocol name and support note. Written on the worker
+     * thread, read on the GUI thread, under signal_mutex. */
+    char atlas_protocol[24];
+    const char* atlas_note;
+    FuriString* atlas_modulation; /**< the preset name the atlas listens with */
 } RemoteAnalyzer;
 
 /** Vibro and a chirp, for a code that is not the one already on screen. */
@@ -114,6 +123,9 @@ void remote_analyzer_forget_last_signal(RemoteAnalyzer* app);
  * itself. Has to run before that plugin's code is unmapped.
  */
 void remote_analyzer_restore_rx_callback(RemoteAnalyzer* app);
+
+/** Where the SubGHz app stands on @p decoder_base's protocol: static text, one or two lines. */
+const char* remote_analyzer_support_note(SubGhzProtocolDecoderBase* decoder_base);
 
 /** The text and badge the Read screen shows for @p decoder_base. @ref RaRawFormat. */
 void remote_analyzer_format_signal(

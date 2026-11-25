@@ -25,6 +25,9 @@
 
 #define HADAL_MAX_PACKS 40u
 
+/** Protocols' Frequency Atlas row, which Hadal reopens on when the atlas closes */
+#define HADAL_PROTOCOLS_ROW_ATLAS 4
+
 typedef enum {
     HadalViewSubmenu,
     HadalViewWidget,

@@ -111,6 +111,13 @@ int32_t hadal_settings_app(void* p) {
     // the Desktop page, which the loader opens again after it
     if(p && strcmp(p, "desktop_keys") == 0) {
         scene_manager_next_scene(app->scene_manager, HadalSettingsSceneDesktopKeys);
+    } else if(p && strcmp(p, "protocols") == 0) {
+        // Back from the Frequency Atlas, which Protocols launched: on the row it was opened from
+        scene_manager_set_scene_state(app->scene_manager, HadalSettingsSceneStart, 1);
+        scene_manager_next_scene(app->scene_manager, HadalSettingsSceneStart);
+        scene_manager_set_scene_state(
+            app->scene_manager, HadalSettingsSceneProtocols, HADAL_PROTOCOLS_ROW_ATLAS);
+        scene_manager_next_scene(app->scene_manager, HadalSettingsSceneProtocols);
     } else {
         scene_manager_next_scene(app->scene_manager, HadalSettingsSceneStart);
     }

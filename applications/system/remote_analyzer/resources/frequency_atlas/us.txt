@@ -1,0 +1,31 @@
+Filetype: Flipper Frequency Atlas
+Version: 1
+# Frequency Atlas band plan: Remote Analyzer > Frequency Atlas, region chosen in
+# Settings > Hadal > Protocols > Region. Format: documentation/file_formats/FrequencyAtlasFormat.md
+#
+# One band per Band line, fields split by |:
+#   Band: start_hz | end_hz | listen_hz | label | typical use | limit
+# listen_hz is where the receiver parks to check the band; empty means the middle.
+# Only bands the CC1101 can tune are listed (300-348, 386-464, 778-928 MHz; with Extended
+# Sub-GHz on 281-361, 378-481, 749-962 MHz). Part 15.231 covers 260-470 MHz outside the
+# restricted bands; the rows below are the parts of it the radio reaches, split where a
+# restricted band (15.205: 322-335.4 and 399.9-410 MHz) or the radio's own gap cuts it.
+#
+# Part 15 writes these limits as field strength at 3 m, not as power, and so does this file.
+# 15.231(b) runs from 3,750 uV/m at 260 MHz to 12,500 uV/m at 470 MHz in a straight line;
+# the per-frequency figures below are worked out from that line.
+#
+# A firmware update puts the shipped files back as they were, so edit a copy, not this file.
+Region: US
+Name: US - FCC Part 15
+Source: 47 CFR Part 15 (15.205, 15.231, 15.247, 15.249) and Part 95 subpart B (FRS)
+Note: Reference only, not legal advice or a compliance check. The rules in force are the FCC's, as published in 47 CFR.
+
+Band: 285000000|322000000|315000000|315 remotes|Car key fobs, garage and gate remotes, tyre pressure sensors, ceiling fans (300-318 MHz)|15.231: control signals only; a manual transmitter stops within 5 s of release. About 6,040 uV/m at 3 m at 315 MHz. Other data: about 2,420 uV/m, bursts of 1 s at most, then silent 30x as long and at least 10 s (15.231(e))
+Band: 335400000|348000000|345000000|345 sensors|Wireless security sensors and remotes on 345 MHz|15.231 control signals: about 7,290 uV/m at 3 m at 345 MHz. 322-335.4 MHz just below is a restricted band (15.205)
+Band: 386000000|399900000|390000000|390 garage|Garage door and gate remotes on 390 MHz|15.231 control signals: about 9,170 uV/m at 3 m at 390 MHz. 399.9-410 MHz just above is a restricted band (15.205); 348-386 MHz is out of the radio's reach
+Band: 410000000|470000000|433920000|433 remotes|Aftermarket and universal remotes, sensors and weather stations on 433.92 MHz|15.231 control signals: about 11,000 uV/m at 3 m at 433.92 MHz, rising to 12,500 uV/m at 470 MHz
+Band: 462543750|462731250|462637500|FRS 462|Family Radio Service walkie-talkies, channels 1-7 and 15-22. Voice FM, not a remote|2 W e.r.p. (47 CFR 95.567)
+Band: 467556250|467718750|467637500|FRS 467|Family Radio Service walkie-talkies, channels 8-14. Voice FM, not a remote. Needs Extended Sub-GHz to check|0.5 W e.r.p. (47 CFR 95.567)
+Band: 902000000|928000000|915000000|ISM 902-928|LoRa and IoT sensors, Z-Wave, meters, some keyless entry and garage remotes, older cordless phones|15.247: 1 W conducted for hopping with 50+ channels or digital modulation, 0.25 W with 25-49 channels, antennas over 6 dBi cut the power. 15.249: 50 mV/m at 3 m. 15.231: 12,500 uV/m at 3 m
+Band: 908300000|908500000|908420000|Z-Wave US|Z-Wave home automation at 908.42 MHz (916 MHz for its fastest rate)|Inside the 902-928 MHz band. Z-Wave devices are usually certified under 15.249 (50 mV/m at 3 m) - approximate, verify against the device's FCC ID

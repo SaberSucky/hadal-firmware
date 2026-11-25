@@ -4,6 +4,7 @@ typedef enum {
     RaSceneStartIndexRead,
     RaSceneStartIndexDecodeRaw,
     RaSceneStartIndexFrequencyAnalyzer,
+    RaSceneStartIndexFrequencyAtlas,
     RaSceneStartIndexAbout,
 } RaSceneStartIndex;
 
@@ -18,6 +19,9 @@ static void ra_scene_start_callback(void* context, uint32_t index) {
         break;
     case RaSceneStartIndexFrequencyAnalyzer:
         scene_manager_next_scene(app->scene_manager, RaSceneFrequencyAnalyzer);
+        break;
+    case RaSceneStartIndexFrequencyAtlas:
+        scene_manager_next_scene(app->scene_manager, RaSceneFrequencyAtlas);
         break;
     case RaSceneStartIndexAbout:
         scene_manager_next_scene(app->scene_manager, RaSceneAbout);
@@ -38,6 +42,12 @@ void ra_scene_start_on_enter(void* context) {
         app->submenu,
         "Frequency Analyzer",
         RaSceneStartIndexFrequencyAnalyzer,
+        ra_scene_start_callback,
+        app);
+    submenu_add_item(
+        app->submenu,
+        "Frequency Atlas",
+        RaSceneStartIndexFrequencyAtlas,
         ra_scene_start_callback,
         app);
     submenu_add_item(
