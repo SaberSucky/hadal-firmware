@@ -88,6 +88,13 @@ void* text_input_get_validator_callback_context(TextInput* text_input);
  */
 void text_input_set_header_text(TextInput* text_input, const char* text);
 
+/** Momentum's: whether the keyboard offers the symbols a file name cannot hold. Hadal's keyboard
+ * has no such keys; kept so that community apps written for Momentum build unchanged */
+static inline void text_input_show_illegal_symbols(TextInput* text_input, bool show) {
+    (void)text_input;
+    (void)show;
+}
+
 #ifdef __cplusplus
 }
 #endif

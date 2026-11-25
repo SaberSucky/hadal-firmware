@@ -350,6 +350,18 @@ const FuriHalSpiBusHandle furi_hal_spi_bus_handle_external = {
     .cs = &gpio_ext_pa4,
 };
 
+/* A second device on the same bus and pins as furi_hal_spi_bus_handle_external, selected by its
+ * own CS pin (pc3) instead: for a board with two external SPI devices wired at once (an NRF24
+ * module alongside the usual one, say). Community apps for Momentum expect this handle. */
+const FuriHalSpiBusHandle furi_hal_spi_bus_handle_external_extra = {
+    .bus = &furi_hal_spi_bus_r,
+    .callback = furi_hal_spi_bus_handle_external_event_callback,
+    .miso = &gpio_ext_pa6,
+    .mosi = &gpio_ext_pa7,
+    .sck = &gpio_ext_pb3,
+    .cs = &gpio_ext_pc3,
+};
+
 inline static void furi_hal_spi_bus_d_handle_event_callback(
     const FuriHalSpiBusHandle* handle,
     FuriHalSpiBusHandleEvent event,

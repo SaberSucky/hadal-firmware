@@ -39,24 +39,39 @@ def load_lock(path=LOCK):
     return lock
 
 
+MAIN_SOURCE = "unleashed"  # lock["source"]; others are named in lock["sources"]
+
+
+def lock_sources(lock):
+    """Every source by name: the main one, and those an app may name with "source"."""
+    sources = {MAIN_SOURCE: lock.get("source", {})}
+    sources.update(lock.get("sources", {}))
+    return sources
+
+
 def check_lock(lock):
     """Reasons the lock file cannot be trusted, empty if it is fine."""
     problems = []
-    source = lock.get("source", {})
-    if not re.fullmatch(r"https://[^\s]+", source.get("repo", "")):
-        problems.append("source.repo must be an https URL")
-    if not re.fullmatch(r"[0-9a-f]{40}", source.get("commit", "")):
-        problems.append("source.commit must be a full 40 character commit hash (a branch would drift)")
+    sources = lock_sources(lock)
+    for name, source in sources.items():
+        label = "source" if name == MAIN_SOURCE else f"sources.{name}"
+        if not re.fullmatch(r"https://[^\s]+", source.get("repo", "")):
+            problems.append(f"{label}.repo must be an https URL")
+        if not re.fullmatch(r"[0-9a-f]{40}", source.get("commit", "")):
+            problems.append(f"{label}.commit must be a full 40 character commit hash (a branch would drift)")
     seen_paths, seen_ids, seen_names = set(), set(), set()
     for app in lock.get("apps", []):
+        if app.get("source", MAIN_SOURCE) not in sources:
+            problems.append(f"{app.get('path')} names an unknown source {app.get('source')!r}")
         path = app.get("path", "")
         parts = path.split("/")
-        if not path or path.startswith("/") or ".." in parts or len(parts) < 2:
+        if not path or path.startswith("/") or ".." in parts:
             problems.append(f"unsafe or empty app path: {path!r}")
             continue
-        if path in seen_paths:
+        key = (app.get("source", MAIN_SOURCE), path)
+        if key in seen_paths:
             problems.append(f"app path listed twice: {path}")
-        seen_paths.add(path)
+        seen_paths.add(key)
         name = parts[-1]
         if name in seen_names:
             problems.append(f"two app folders would both be staged as {name}")
@@ -72,6 +87,14 @@ def check_lock(lock):
             omit_parts = omit.split("/")
             if not omit or omit.startswith("/") or ".." in omit_parts:
                 problems.append(f"unsafe or empty omit path in {path}: {omit!r}")
+        # files copied in from Hadal's own tree after staging (an asset the app's own folder in
+        # the source collection does not carry, such as a shared icon other apps ship their own
+        # copy of): {dest relative to the staged folder: source relative to the repo root}
+        for dest, src in app.get("assets", {}).items():
+            if not dest or dest.startswith("/") or ".." in dest.split("/"):
+                problems.append(f"unsafe or empty assets dest in {path}: {dest!r}")
+            if not src or src.startswith("/") or ".." in src.split("/") or not os.path.isfile(os.path.join(REPO, src)):
+                problems.append(f"{path} assets.{dest}: {src!r} is not a file in the repo")
     return problems
 
 
@@ -79,21 +102,38 @@ def git(*args, cwd=None):
     subprocess.run(["git", *args], cwd=cwd, check=True, stdout=subprocess.DEVNULL)
 
 
-def fetch_source(lock):
-    """The pinned commit of the source repository, checked out in the cache folder."""
-    repo, commit = lock["source"]["repo"], lock["source"]["commit"]
-    if os.path.isdir(os.path.join(CACHE, ".git")):
-        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=CACHE, capture_output=True, text=True).stdout.strip()
-        if head == commit:
-            return CACHE
-        shutil.rmtree(CACHE)
-    os.makedirs(CACHE)
-    git("init", "-q", cwd=CACHE)
-    git("remote", "add", "origin", repo, cwd=CACHE)
+def fetch_source(lock, name=MAIN_SOURCE):
+    """A source's pinned commit, checked out in its cache folder. The main source is checked out
+    whole; another only for the folders its apps list (a sparse, blobless fetch: Momentum's app
+    repository is over a gigabyte, the few folders taken from it a fraction of that)."""
+    source = lock_sources(lock)[name]
+    repo, commit = source["repo"], source["commit"]
+    cache = CACHE if name == MAIN_SOURCE else f"{CACHE}_{name}"
+    paths = None
+    if name != MAIN_SOURCE:
+        paths = sorted(a["path"] for a in lock["apps"] if a.get("source", MAIN_SOURCE) == name)
+    wanted = "\n".join(paths or []) + "\n"
+    paths_file = os.path.join(cache, ".git", "hadal_paths")
+    if os.path.isdir(os.path.join(cache, ".git")):
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=cache, capture_output=True, text=True).stdout.strip()
+        had = open(paths_file).read() if os.path.exists(paths_file) else "\n"
+        if head == commit and had == wanted:
+            return cache
+        shutil.rmtree(cache)
+    os.makedirs(cache)
+    git("init", "-q", cwd=cache)
+    git("remote", "add", "origin", repo, cwd=cache)
     print(f"fetching {repo} at {commit[:8]} ...")
-    git("fetch", "-q", "--depth", "1", "origin", commit, cwd=CACHE)
-    git("checkout", "-q", "FETCH_HEAD", cwd=CACHE)
-    return CACHE
+    if paths is None:
+        git("fetch", "-q", "--depth", "1", "origin", commit, cwd=cache)
+    else:
+        git("sparse-checkout", "init", "--no-cone", cwd=cache)
+        git("sparse-checkout", "set", "--no-cone", *[f"/{p}/" for p in paths], cwd=cache)
+        git("fetch", "-q", "--depth", "1", "--filter=blob:none", "origin", commit, cwd=cache)
+    git("checkout", "-q", "FETCH_HEAD", cwd=cache)
+    with open(paths_file, "w") as f:
+        f.write(wanted)
+    return cache
 
 
 def staged_folders():
@@ -110,12 +150,12 @@ def clean():
 
 def fetch():
     lock = load_lock()
-    source = fetch_source(lock)
+    caches = {name: fetch_source(lock, name) for name in lock_sources(lock)}
     os.makedirs(STAGE, exist_ok=True)
     clean()
     count = 0
     for app in lock["apps"]:
-        src = os.path.join(source, app["path"])
+        src = os.path.join(caches[app.get("source", MAIN_SOURCE)], app["path"])
         if not os.path.isfile(os.path.join(src, "application.fam")):
             raise SystemExit(f"{app['path']} is not an app folder in the pinned source")
         dest = os.path.join(STAGE, os.path.basename(app["path"]))
@@ -131,6 +171,13 @@ def fetch():
                 os.remove(target)
             else:
                 raise SystemExit(f"{app['path']}: nothing to omit at {omit}")
+        # files the lock adds in: the app's own source folder did not carry them, so its build
+        # would otherwise be missing an icon or similar asset other bundled apps ship their own
+        # copy of
+        for asset_dest, asset_src in app.get("assets", {}).items():
+            target = os.path.join(dest, *asset_dest.split("/"))
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            shutil.copyfile(os.path.join(REPO, asset_src), target)
         with open(os.path.join(dest, MARKER), "w") as f:
             f.write(app["path"] + "\n")
         count += 1
@@ -158,10 +205,10 @@ def manifest_info(folder):
 
 def notices():
     lock = load_lock()
-    source = fetch_source(lock)
+    caches = {name: fetch_source(lock, name) for name in lock_sources(lock)}
     rows = []
     for app in lock["apps"]:
-        info, licences = manifest_info(os.path.join(source, app["path"]))
+        info, licences = manifest_info(os.path.join(caches[app.get("source", MAIN_SOURCE)], app["path"]))
         rows.append(
             (
                 ", ".join(info["names"]) or os.path.basename(app["path"]),
@@ -179,7 +226,13 @@ def notices():
             "and used under the licence each of them carries. They are built unchanged from\n"
             f"[{lock['source']['repo'].split('github.com/')[-1]}]({lock['source']['repo']}) at commit "
             f"`{lock['source']['commit'][:8]}`, a public collection kept up to date by the Unleashed team, "
-            "where each app's own folder holds its licence and its source.\n\n"
+            "where each app's own folder holds its licence and its source"
+            + "".join(
+                f", and from [{s['repo'].split('github.com/')[-1]}]({s['repo']}) at commit `{s['commit'][:8]}` "
+                f"for the apps that collection does not have"
+                for s in lock.get("sources", {}).values()
+            )
+            + ".\n\n"
             "Thank you to everyone whose apps these are.\n\n"
         )
         f.write("| App | Author | Web page | Licence file |\n|---|---|---|---|\n")
@@ -201,8 +254,10 @@ def main():
     else:
         lock = load_lock()
         for app in lock["apps"]:
-            print(f"{app['path']:55} {' '.join(app['appids'])}")
-        print(f"\n{len(lock['apps'])} app folders from {lock['source']['repo']} @ {lock['source']['commit'][:8]}")
+            print(f"{app.get('source', MAIN_SOURCE):10} {app['path']:55} {' '.join(app['appids'])}")
+        for name, source in lock_sources(lock).items():
+            count = sum(1 for a in lock["apps"] if a.get("source", MAIN_SOURCE) == name)
+            print(f"{count} app folders from {source['repo']} @ {source['commit'][:8]}")
 
 
 if __name__ == "__main__":

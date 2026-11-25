@@ -24,8 +24,16 @@ def __generate_resources_dist_entries(env):
                 )
             )
 
-    # Deploy apps' resources too
-    for app in env["APPBUILD"].apps:
+    # Deploy apps' resources too: the built-in apps', and those of the apps installed on the card
+    # (as Momentum's fbt does - see _validate_app_params), but only for an app whose .fap is itself
+    # deployed, so a debug or example app's files do not land on the card without it
+    resources_apps = env["APPBUILD"].apps
+    resources_apps.extend(
+        app_artifacts.app
+        for app_artifacts in env["FW_EXTAPPS"].application_map.values()
+        if any(deployable for deployable, _ in app_artifacts.dist_entries)
+    )
+    for app in resources_apps:
         if not app.resources:
             continue
         apps_resource_dir = app._appdir.Dir(app.resources)

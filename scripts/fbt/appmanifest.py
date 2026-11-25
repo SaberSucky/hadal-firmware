@@ -187,12 +187,13 @@ class AppManager:
                 )
 
         if apptype in AppBuildset.DIST_APP_TYPES:
-            # For distributing .fap's resources, there's "fap_file_assets"
-            for app_property in ("resources",):
-                if kw.get(app_property):
-                    raise FlipperManifestException(
-                        f"App {kw.get('appid')} of type {apptype} cannot have '{app_property}' in manifest"
-                    )
+            # An app installed on the SD card may have "resources" too, as in Momentum's fbt, which
+            # the apps Hadal bundles from Momentum-Apps are written for (multi_fuzzer ships its
+            # example UID lists that way, to the folders its file browser opens). When the app is
+            # built in the firmware tree, fbt_resources.py deploys that folder into the card's
+            # resources like a built-in app's. A standalone ufbt build has no card resources to put
+            # it in, so there it is ignored; "fap_file_assets" is what ships files inside a .fap.
+            pass
         else:
             for app_property in (
                 "fap_extbuild",

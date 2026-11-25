@@ -693,9 +693,6 @@
    "path": "non_catalog_apps/esp_flasher",
    "appids": [
     "esp_flasher"
-   ],
-   "omit": [
-    "packedfws/marauder"
    ]
   },
   {
@@ -1033,6 +1030,501 @@
    "appids": [
     "flipper_xremote"
    ]
+  },
+  {
+   "path": "wardriver",
+   "appids": [
+    "wardriver"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "flipboard_blinky",
+   "appids": [
+    "flipboard_blinky"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "flipboard_keyboard",
+   "appids": [
+    "flipboard_keyboard"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "flipboard_signal",
+   "appids": [
+    "flipboard_signal"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "flipboard_simon",
+   "appids": [
+    "flipboard_simon"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "flip_downloader",
+   "appids": [
+    "flip_downloader"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "flip_library",
+   "appids": [
+    "flip_library"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "flip_map",
+   "appids": [
+    "flip_map"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "flip_social",
+   "appids": [
+    "flip_social"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "flip_telegram",
+   "appids": [
+    "flip_telegram"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "flip_trader",
+   "appids": [
+    "flip_trader"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "flip_weather",
+   "appids": [
+    "flip_weather"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "flip_wifi",
+   "appids": [
+    "flip_wifi"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "flip_world",
+   "appids": [
+    "flip_world"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "free_roam",
+   "appids": [
+    "free_roam"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "web_crawler",
+   "appids": [
+    "web_crawler"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "malveke_gb_cartridge",
+   "appids": [
+    "malveke_gb_cartridge"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "malveke_gb_emulator",
+   "appids": [
+    "malveke_gb_emulator"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "malveke_gb_link_camera",
+   "appids": [
+    "malveke_gb_link_camera"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "malveke_gb_live_camera",
+   "appids": [
+    "malveke_gb_live_camera"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "malveke_gb_photo",
+   "appids": [
+    "malveke_gb_photo"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "malveke_gba_cartridge",
+   "appids": [
+    "malveke_gba_cartridge"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "malveke_pin_test",
+   "appids": [
+    "malveke_pin_test"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "mayhem_camera",
+   "appids": [
+    "mayhem_camera"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "mayhem_morseflash",
+   "appids": [
+    "mayhem_morseflash"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "mayhem_motion",
+   "appids": [
+    "mayhem_motion"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "mayhem_nannycam",
+   "appids": [
+    "mayhem_nannycam"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "mayhem_qrcode",
+   "appids": [
+    "mayhem_qrcode"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "co2_logger",
+   "appids": [
+    "co2_logger"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "radar_scanner",
+   "appids": [
+    "radar_scanner"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "uv_meter_as7331",
+   "appids": [
+    "uv_meter_as7331"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "fm_transmitter",
+   "appids": [
+    "fmtx_app"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "gpio_badge",
+   "appids": [
+    "gpio_badge"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "gpio_explorer",
+   "appids": [
+    "gpio_explorer_app"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "gpio_reader_b",
+   "appids": [
+    "gpio_reader_b"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "checkers",
+   "appids": [
+    "checkers"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "geometry_flip",
+   "appids": [
+    "geometry_dash"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "multi_dice",
+   "appids": [
+    "multi_dice"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "umpire_indicator",
+   "appids": [
+    "umpire_indicator"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "yappy_invaders",
+   "appids": [
+    "yapinvaders"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "fmatrix",
+   "appids": [
+    "fmatrix"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "space_playground",
+   "appids": [
+    "fzspground"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "image_viewer",
+   "appids": [
+    "image_viewer"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "cyborg_detector",
+   "appids": [
+    "cyborg_detector"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "em4100_generator",
+   "appids": [
+    "em4100_generator"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "hc11_modem",
+   "appids": [
+    "hc11_modem"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "tasks",
+   "appids": [
+    "tasks"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "nightstand_clock",
+   "appids": [
+    "nightstand"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "voltage_calculator",
+   "appids": [
+    "voltcalc_app"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "portal_of_flipper",
+   "appids": [
+    "portal_of_flipper"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "apps_source_code/mifare_fuzzer",
+   "appids": [
+    "mifare_fuzzer"
+   ]
+  },
+  {
+   "path": "base_pack/ble_spam",
+   "appids": [
+    "ble_spam"
+   ]
+  },
+  {
+   "path": "base_pack/esp8266_deauth",
+   "appids": [
+    "esp8266_deauther"
+   ]
+  },
+  {
+   "path": "base_pack/mousejacker",
+   "appids": [
+    "nrf24_mouse_jacker"
+   ]
+  },
+  {
+   "path": "base_pack/sentry_safe",
+   "appids": [
+    "gpio_sentry_safe"
+   ]
+  },
+  {
+   "path": "base_pack/wifi_marauder_companion",
+   "appids": [
+    "esp32_wifi_marauder"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/chief_cooker",
+   "appids": [
+    "chief_cooker"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/combocracker",
+   "appids": [
+    "combo_cracker"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/flipper_evil_portal",
+   "appids": [
+    "evil_portal"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/ghost_esp_app",
+   "appids": [
+    "ghost_esp"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/lidar_emulator",
+   "appids": [
+    "lidar_emulator"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/meal_pager",
+   "appids": [
+    "meal_pager"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/saflip",
+   "appids": [
+    "saflip"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/ulc_brute",
+   "appids": [
+    "ulc_brute"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/ulc_relay",
+   "appids": [
+    "ulc_relay"
+   ]
+  },
+  {
+   "path": "non_catalog_apps/wifi_deauther",
+   "appids": [
+    "esp8266_wifi_deauther_v2"
+   ]
+  },
+  {
+   "path": "mayhem_marauder",
+   "appids": [
+    "mayhem_marauder"
+   ],
+   "source": "momentum",
+   "assets": {
+    "assets/DolphinDone_80x58.png": "assets/icons/Dolphin/DolphinDone_80x58.png",
+    "assets/DolphinMafia_119x62.png": "assets/icons/Dolphin/DolphinMafia_119x62.png"
+   }
+  },
+  {
+   "path": "flipper_blackhat",
+   "appids": [
+    "blackhat"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "multi_fuzzer",
+   "appids": [
+    "fuzzer_ibtn",
+    "fuzzer_rfid"
+   ],
+   "source": "momentum"
+  },
+  {
+   "path": "nrf24mousejacker",
+   "appids": [
+    "nrf24mousejacker"
+   ],
+   "source": "momentum",
+   "assets": {
+    "images/badusb_10px.png": "assets/icons/Archive/badusb_10px.png"
+   }
+  },
+  {
+   "path": "subghz_bruteforcer",
+   "appids": [
+    "subghz_bruteforcer"
+   ],
+   "source": "momentum"
   }
- ]
+ ],
+ "sources": {
+  "momentum": {
+   "repo": "https://github.com/Next-Flip/Momentum-Apps",
+   "commit": "55a446b1b01bf2a2f98161d704e62cc47075ad30"
+  }
+ }
 }

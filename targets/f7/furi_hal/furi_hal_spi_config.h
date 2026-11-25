@@ -47,6 +47,13 @@ extern const FuriHalSpiBusHandle furi_hal_spi_bus_handle_nfc;
  */
 extern const FuriHalSpiBusHandle furi_hal_spi_bus_handle_external;
 
+/** A second external device on `furi_hal_spi_bus_r`, same pins as `furi_hal_spi_bus_handle_external`
+ * but selected by cs: pc3 instead of pa4, for a board with two external SPI devices wired at once.
+ *
+ * @warning not initialized by default, call `furi_hal_spi_bus_handle_init` to initialize
+ */
+extern const FuriHalSpiBusHandle furi_hal_spi_bus_handle_external_extra;
+
 /** ST7567(Display) on `furi_hal_spi_bus_d` */
 extern const FuriHalSpiBusHandle furi_hal_spi_bus_handle_display;
 
