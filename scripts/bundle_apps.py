@@ -5,10 +5,24 @@
     python3 scripts/bundle_apps.py list      # what is bundled
     python3 scripts/bundle_apps.py clean     # remove what `fetch` put in applications_user/
     python3 scripts/bundle_apps.py notices   # write THIRD_PARTY_APPS.md from the apps' own manifests
+    python3 scripts/bundle_apps.py update    # move the pins to the sources' newest commits
+    python3 scripts/bundle_apps.py update --check   # only say what that would change
+    python3 scripts/bundle_apps.py update --new     # also list the app folders upstream that are not bundled
 
 applications/bundled_apps.json pins the source (Unleashed's all-the-plugins collection, at one
 commit) and lists each app folder in it. `fetch` puts those folders in applications_user/, which the
 build compiles against Hadal's own SDK and, like any app, packs into the update package.
+
+`update` is how the apps get their newer versions: a pin never moves by itself, because an upstream
+commit that breaks the build, or ships a broken app, must not reach a device unseen. It reads what
+changed between the pin and the source's newest commit (the folder trees and manifests only, a few
+MB however large the repository is), says which bundled apps changed, which app ids changed, and
+which app folders upstream are not bundled (marking those Hadal builds itself, which are never
+bundled), then moves the pin. It never drops an app: if a bundled folder is gone from the newer
+commit, that source's pin stays where it is and the folder is named.
+After it: `fetch`, build, and run scripts/update_package_check.py (which refuses a package missing
+a bundled app, or with an app built for a newer API than the firmware has), then try the apps that
+changed on a device.
 
 The apps are other people's work under their own licences: the source repository is public, each
 folder keeps its own LICENSE file, and nothing here modifies them. applications_user/ is not tracked
@@ -20,6 +34,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 
@@ -102,6 +117,17 @@ def git(*args, cwd=None):
     subprocess.run(["git", *args], cwd=cwd, check=True, stdout=subprocess.DEVNULL)
 
 
+def rmtree_force(path):
+    """Remove a folder tree, the read-only object files git keeps in a clone included: Windows
+    refuses to delete those, and a cache that could not be removed could not be fetched again."""
+
+    def retry(func, target, _exc_info):
+        os.chmod(target, stat.S_IWRITE)
+        func(target)
+
+    shutil.rmtree(path, onerror=retry)
+
+
 def fetch_source(lock, name=MAIN_SOURCE):
     """A source's pinned commit, checked out in its cache folder. The main source is checked out
     whole; another only for the folders its apps list (a sparse, blobless fetch: Momentum's app
@@ -119,7 +145,7 @@ def fetch_source(lock, name=MAIN_SOURCE):
         had = open(paths_file).read() if os.path.exists(paths_file) else "\n"
         if head == commit and had == wanted:
             return cache
-        shutil.rmtree(cache)
+        rmtree_force(cache)
     os.makedirs(cache)
     git("init", "-q", cwd=cache)
     git("remote", "add", "origin", repo, cwd=cache)
@@ -144,7 +170,7 @@ def staged_folders():
 
 def clean():
     for name in staged_folders():
-        shutil.rmtree(os.path.join(STAGE, name))
+        rmtree_force(os.path.join(STAGE, name))
     return len(staged_folders())
 
 
@@ -154,6 +180,8 @@ def fetch():
     os.makedirs(STAGE, exist_ok=True)
     clean()
     count = 0
+    builtin = builtin_apps()
+    duplicates = []
     for app in lock["apps"]:
         src = os.path.join(caches[app.get("source", MAIN_SOURCE)], app["path"])
         if not os.path.isfile(os.path.join(src, "application.fam")):
@@ -181,7 +209,203 @@ def fetch():
         with open(os.path.join(dest, MARKER), "w") as f:
             f.write(app["path"] + "\n")
         count += 1
+        # a module Hadal builds itself is not bundled again from a collection (by id: it would not
+        # even build; by name: it would be there twice, under two ids)
+        with open(os.path.join(dest, "application.fam"), errors="replace") as f:
+            ids_names = external_apps(f.read())
+        if is_builtin([i for i, _ in ids_names], [n for _, n in ids_names], builtin):
+            duplicates.append(app["path"])
+    if duplicates:
+        raise SystemExit(
+            "these bundled apps are modules Hadal builds itself, by id or by name; take them out of "
+            "applications/bundled_apps.json (an app Hadal builds is not bundled again):\n  " + "\n  ".join(duplicates)
+        )
     print(f"staged {count} apps in applications_user/; build as usual")
+
+
+def save_lock(lock, path=LOCK):
+    # the file's own shape (one space of indent, no final newline), so a diff shows only the change
+    with open(path, "w", newline="\n") as f:
+        f.write(json.dumps(lock, indent=1))
+
+
+def tip_of(repo):
+    """The commit a repository's default branch is at now."""
+    out = subprocess.run(["git", "ls-remote", repo, "HEAD"], capture_output=True, text=True, check=True).stdout
+    found = re.match(r"([0-9a-f]{40})\s+HEAD", out)
+    if not found:
+        raise SystemExit(f"cannot read the newest commit of {repo}")
+    return found.group(1)
+
+
+def external_apps(manifest):
+    """The (id, name) of the apps in a manifest that are installed on the card
+    (FlipperAppType.EXTERNAL): a manifest may hold several apps, and a plugin or a service in it is
+    not one of these."""
+    apps = []
+    for body in re.findall(r"App\((.*?)\n\)", manifest, re.S):
+        if "FlipperAppType.EXTERNAL" in body:
+            found = re.search(r'appid\s*=\s*"([^"]+)"', body)
+            if found:
+                # the app's own name, not that of a library declared inside it (a deeper indent)
+                name = re.search(r'^[ \t]{1,4}name\s*=\s*"([^"]*)"', body, re.M) or re.search(
+                    r'\bname\s*=\s*"([^"]*)"', body
+                )
+                apps.append((found.group(1), name.group(1) if name else ""))
+    return apps
+
+
+def external_appids(manifest):
+    return [appid for appid, _ in external_apps(manifest)]
+
+
+def normalised(name):
+    """A name as one that differs only in case, spaces or punctuation is the same one."""
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+def builtin_apps():
+    """The ids and names (normalised) of the apps in Hadal's own tree, of any kind: a module Hadal
+    builds itself is not bundled again from a collection, whatever it is called there."""
+    ids, names = set(), set()
+    for dirpath, _, files in os.walk(os.path.join(REPO, "applications")):
+        if "application.fam" in files:
+            with open(os.path.join(dirpath, "application.fam"), errors="replace") as f:
+                text = f.read()
+            for body in re.findall(r"App\((.*?)\n\)", text, re.S):
+                found = re.search(r'appid\s*=\s*"([^"]+)"', body)
+                name = re.search(r'^[ \t]{1,4}name\s*=\s*"([^"]*)"', body, re.M)
+                if found:
+                    ids.add(found.group(1))
+                if name:
+                    names.add(normalised(name.group(1)))
+    return ids, names
+
+
+def is_builtin(ids, names, builtin):
+    """Whether an app (its ids, its names) is one Hadal already has: by id or by name."""
+    built_ids, built_names = builtin
+    return bool(set(ids) & built_ids) or any(normalised(n) in built_names for n in names if n)
+
+
+def assess_update(apps, changed_files, folders_at_tip):
+    """What moving a source to a newer commit does to the apps taken from it.
+
+    apps: the lock's entries for the source. changed_files: the files that differ between the two
+    commits. folders_at_tip: {app folder: its app ids} at the newer commit. Returns
+      changed  the bundled folders with a changed file (one that is gone is not "changed": it is
+               reported on its own)
+      gone     the bundled folders the newer commit no longer has as an app (they would be lost)
+      ids      {folder: (ids in the lock, ids now)} where an app's ids are not the lock's
+      new      the app folders the newer commit has that are not bundled
+    """
+    bundled = {a["path"] for a in apps}
+    gone = sorted(p for p in bundled if p not in folders_at_tip)
+    return {
+        "changed": sorted(
+            p
+            for p in bundled
+            if p in folders_at_tip and any(f == p or f.startswith(p + "/") for f in changed_files)
+        ),
+        "gone": gone,
+        "ids": {
+            a["path"]: (sorted(a["appids"]), sorted(folders_at_tip[a["path"]]))
+            for a in apps
+            if a["path"] in folders_at_tip and sorted(a["appids"]) != sorted(folders_at_tip[a["path"]])
+        },
+        "new": sorted(p for p in folders_at_tip if p not in bundled),
+    }
+
+
+def inspect_source(repo, pin, tip, apps, cache):
+    """Fetch two commits of a source into cache and say what moving from pin to tip does to its
+    apps (see assess_update). Only what is needed: the folder trees of both commits, and the
+    manifests of the newer one (a blobless, sparse fetch, a few MB however large the repository is)."""
+    if os.path.isdir(cache):
+        rmtree_force(cache)
+    os.makedirs(cache)
+    git("init", "-q", cwd=cache)
+    git("remote", "add", "origin", repo, cwd=cache)
+    git("sparse-checkout", "init", "--no-cone", cwd=cache)
+    git("sparse-checkout", "set", "--no-cone", "**/application.fam", cwd=cache)
+    for commit in (pin, tip):
+        git("fetch", "-q", "--depth", "1", "--filter=blob:none", "origin", commit, cwd=cache)
+    git("checkout", "-q", tip, cwd=cache)
+    # no renames: finding them reads file contents, which this fetch does not have
+    diff = subprocess.run(
+        ["git", "diff", "--no-renames", "--name-only", "-z", pin, tip],
+        cwd=cache,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    changed_files = [name for name in diff.split("\0") if name]
+    folders, names = {}, {}
+    for dirpath, dirs, files in os.walk(cache):
+        dirs[:] = [d for d in dirs if d != ".git"]
+        if "application.fam" in files:
+            with open(os.path.join(dirpath, "application.fam"), errors="replace") as f:
+                found = external_apps(f.read())
+            if found:  # a folder that holds no card app any more is not an app folder
+                path = os.path.relpath(dirpath, cache).replace(os.sep, "/")
+                folders[path] = [appid for appid, _ in found]
+                names[path] = [name for _, name in found]
+    result = assess_update(apps, changed_files, folders)
+    result["files"] = len(changed_files)
+    result["folders"] = folders
+    result["names"] = names
+    return result
+
+
+def update(check_only=False, show_new=False):
+    lock = load_lock()
+    builtin = builtin_apps() if show_new else (set(), set())
+    attention = moved = 0
+    for name, source in lock_sources(lock).items():
+        apps = [a for a in lock["apps"] if a.get("source", MAIN_SOURCE) == name]
+        pin, tip = source["commit"], tip_of(source["repo"])
+        label = source["repo"].split("github.com/")[-1]
+        if tip == pin:
+            print(f"{name}: {label} is at its newest commit, {pin[:8]}")
+            continue
+        print(f"{name}: {label} {pin[:8]} -> {tip[:8]}")
+        found = inspect_source(source["repo"], pin, tip, apps, f"{CACHE}_update_{name}")
+        print(f"  {found['files']} files changed upstream")
+        changed = [os.path.basename(p) for p in found["changed"]]
+        print(f"  {len(changed)} of {len(apps)} bundled apps changed" + (": " + ", ".join(changed) if changed else ""))
+        for path, (old, new) in found["ids"].items():
+            print(f"  app ids of {os.path.basename(path)}: {', '.join(old)} -> {', '.join(new)}")
+        if found["new"]:
+            print(f"  {len(found['new'])} app folders upstream are not bundled" + ("" if show_new else " (--new lists them)"))
+            if show_new:
+                # Hadal builds some of these itself (by id or by name): those are never to be bundled
+                for path in found["new"]:
+                    ids = found["folders"][path]
+                    own = is_builtin(ids, found.get("names", {}).get(path, []), builtin)
+                    print(f"    {path}  ({', '.join(ids)})" + ("  [built into Hadal: not for bundling]" if own else ""))
+        if found["gone"]:
+            attention += 1
+            print(
+                "  NOT MOVED: the newer commit has no app in "
+                + ", ".join(found["gone"])
+                + "; the pin stays so that no app is lost. Find where it went (renamed, moved?) and change"
+                " its path in applications/bundled_apps.json, then update again."
+            )
+            continue
+        if check_only:
+            continue
+        source["commit"] = tip
+        for entry in apps:  # an app's ids follow the manifest, which is what the package check looks for
+            if entry["path"] in found["ids"]:
+                entry["appids"] = found["ids"][entry["path"]][1]
+        moved += 1
+    if moved:
+        save_lock(lock)
+        print(
+            f"\nmoved {moved} pin(s) in applications/bundled_apps.json. Now: bundle_apps.py fetch, build,"
+            " scripts/update_package_check.py, bundle_apps.py notices, and try the apps that changed on a device."
+        )
+    return 1 if attention else 0
 
 
 def manifest_info(folder):
@@ -219,7 +443,7 @@ def notices():
         )
     rows.sort(key=lambda r: r[0].lower())
     out = os.path.join(REPO, "THIRD_PARTY_APPS.md")
-    with open(out, "w") as f:
+    with open(out, "w", newline="\n") as f:  # the same bytes on any system, as the file in git
         f.write("# Bundled third-party apps\n\n")
         f.write(
             "These apps are not part of Hadal. They are other people's work, bundled in Hadal's update package "
@@ -243,10 +467,14 @@ def notices():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=("fetch", "list", "clean", "notices"))
+    parser.add_argument("command", choices=("fetch", "list", "clean", "notices", "update"))
+    parser.add_argument("--check", action="store_true", help="update: only say what would change")
+    parser.add_argument("--new", action="store_true", help="update: list the app folders upstream that are not bundled")
     args = parser.parse_args()
     if args.command == "fetch":
         fetch()
+    elif args.command == "update":
+        return update(check_only=args.check, show_new=args.new)
     elif args.command == "clean":
         print(f"removed {clean() or 'all'} staged apps")
     elif args.command == "notices":

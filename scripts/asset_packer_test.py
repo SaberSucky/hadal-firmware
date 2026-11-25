@@ -1557,6 +1557,9 @@ class UpdatePackageCheckTests(TempDirCase):
         return d
 
     def run_check(self, package, expect="any", **kw):
+        # no bundled apps unless a test says which: the real lock names hundreds, and a fake
+        # package made for another rule would be refused for lacking every one of them
+        kw.setdefault("bundled", set())
         with tempfile.TemporaryDirectory() as scratch:
             return self.checker.check_package(package, expect, scratch=scratch, **kw)[0]
 
@@ -1677,6 +1680,26 @@ class UpdatePackageCheckTests(TempDirCase):
         self.assertEqual(self.failures(report), [])
         self.assertTrue(any("apps were built for API" in t for _, t in report.lines))
 
+    def test_a_package_missing_a_bundled_app_is_refused(self):
+        # installing such a package takes the app off the card as a file the new resources lack:
+        # the user lost every app that way once
+        with open(self.real_fap(), "rb") as f:
+            data = f.read()
+        package = self.package_with_app(data)  # holds one app, apps/Tools/x.fap
+        refused = self.failures(self.run_check(package, "light", bundled={"x", "never_shipped"}))
+        self.assertTrue(any("never_shipped" in t and "delete" in t for t in refused), refused)
+        self.assertEqual(self.failures(self.run_check(package, "light", bundled={"x"})), [])
+
+    def test_the_bundled_app_list_is_read_from_the_lock_unless_a_caller_names_it(self):
+        ids = self.checker.bundled_app_ids()
+        self.assertGreater(len(ids), 200, "the real lock's ids")
+        self.assertIn("fuzzer_rfid", ids, "an app with two ids in one folder counts both")
+        lock = self.p("lock.json")
+        with open(lock, "w") as f:
+            f.write('{"apps": [{"path": "a", "appids": ["one", "two"]}, {"path": "b", "appids": ["three"]}]}')
+        self.assertEqual(self.checker.bundled_app_ids(lock), {"one", "two", "three"})
+        self.assertEqual(self.checker.bundled_app_ids(self.p("no_such_file.json")), set())
+
     def test_a_bundled_app_built_for_another_api_is_caught(self):
         import struct
 
@@ -1794,6 +1817,181 @@ class BundleAppsTests(TempDirCase):
         self.assertEqual(info["authors"], {"Someone"})
         self.assertEqual(info["urls"], {"https://example.com/demo"})
         self.assertEqual(licences, ["LICENSE"])
+
+    def test_external_appids_are_the_card_apps_of_a_manifest_only(self):
+        manifest = (
+            'App(\n    appid="one",\n    apptype=FlipperAppType.EXTERNAL,\n)\n\n'
+            'App(\n    appid="two",\n    apptype=FlipperAppType.PLUGIN,\n)\n\n'
+            'App(\n    appid="three",\n    apptype=FlipperAppType.EXTERNAL,\n    fap_private_libs=[\n'
+            '        Lib(\n            name="worker",\n        ),\n    ],\n)\n'
+        )
+        self.assertEqual(self.mod.external_appids(manifest), ["one", "three"])
+        self.assertEqual(self.mod.external_appids("not a manifest"), [])
+
+    def test_the_app_name_is_the_apps_own_not_a_library_s(self):
+        manifest = (
+            'App(\n    appid="demo",\n    name="Demo App",\n    apptype=FlipperAppType.EXTERNAL,\n'
+            '    fap_private_libs=[\n        Lib(\n            name="worker",\n        ),\n    ],\n)\n'
+            'App(\n    appid="second",\n    apptype=FlipperAppType.EXTERNAL,\n    name="Second",\n)\n'
+        )
+        self.assertEqual(self.mod.external_apps(manifest), [("demo", "Demo App"), ("second", "Second")])
+
+    def test_an_app_hadal_builds_itself_is_known_by_id_or_by_name(self):
+        builtin = self.mod.builtin_apps()
+        self.assertIn("mass_storage", builtin[0], "Hadal's own tree is read for ids")
+        self.assertIn(self.mod.normalised("Mass Storage"), builtin[1], "and for names")
+        self.assertTrue(self.mod.is_builtin(["mass_storage"], ["Anything"], builtin), "by id")
+        self.assertTrue(self.mod.is_builtin(["other_id"], ["Mass-Storage"], builtin), "by name: case and punctuation do not matter")
+        self.assertFalse(self.mod.is_builtin(["fuzzer_rfid"], ["RFID Fuzzer"], builtin))
+        self.assertFalse(self.mod.is_builtin([], [""], builtin), "an app with no name is not matched on an empty one")
+
+    def test_fetch_refuses_an_app_hadal_builds_itself_and_stages_the_rest(self):
+        import contextlib
+        import io
+        from unittest import mock
+
+        src, stage = self.p("src"), self.p("stage")
+
+        def make(folder, appid, name):
+            os.makedirs(os.path.join(src, folder))
+            with open(os.path.join(src, folder, "application.fam"), "w") as f:
+                f.write(f'App(\n    appid="{appid}",\n    name="{name}",\n    apptype=FlipperAppType.EXTERNAL,\n)\n')
+
+        make("good", "good_app", "Good App")
+        make("dup", "a_different_id", "Mass-Storage")  # Hadal's own Mass Storage, under another id
+        entries = [{"path": "good", "appids": ["good_app"]}, {"path": "dup", "appids": ["a_different_id"]}]
+
+        def run(apps):
+            lock = {"source": {"repo": "https://example.com/r", "commit": "a" * 40}, "apps": apps}
+            with mock.patch.object(self.mod, "load_lock", lambda: lock), mock.patch.object(
+                self.mod, "fetch_source", lambda lock_, name=self.mod.MAIN_SOURCE: src
+            ), mock.patch.object(self.mod, "STAGE", stage), contextlib.redirect_stdout(io.StringIO()):
+                self.mod.fetch()
+
+        with self.assertRaises(SystemExit) as caught:
+            run(entries)
+        self.assertIn("\n  dup", str(caught.exception), "the duplicate is named")
+        self.assertNotIn("\n  good", str(caught.exception), "and only it")
+        run(entries[:1])  # without it, the rest stages as usual
+        self.assertTrue(os.path.isfile(os.path.join(stage, "good", "application.fam")))
+
+    def test_an_update_sees_changes_removals_new_folders_and_changed_ids(self):
+        apps = [
+            {"path": "a/x", "appids": ["x"]},
+            {"path": "a/xy", "appids": ["xy"]},
+            {"path": "a/gone", "appids": ["g"]},
+            {"path": "a/ids", "appids": ["old"]},
+        ]
+        # a file in a/xyz is not one of a/xy's, nor of a/x's: a folder is not a name prefix
+        changed_files = ["a/x/main.c", "a/xyz/other.c", "readme.md"]
+        at_tip = {"a/x": ["x"], "a/xy": ["xy"], "a/ids": ["new1", "new2"], "a/fresh": ["f"]}
+        found = self.mod.assess_update(apps, changed_files, at_tip)
+        self.assertEqual(found["changed"], ["a/x"])
+        self.assertEqual(found["gone"], ["a/gone"])
+        self.assertEqual(found["ids"], {"a/ids": (["old"], ["new1", "new2"])})
+        self.assertEqual(found["new"], ["a/fresh"])
+
+    def test_inspect_source_reads_two_commits_of_a_real_repository(self):
+        import subprocess
+
+        if not shutil.which("git"):
+            self.skipTest("git is not available")
+        origin, cache = self.p("origin"), self.p("cache")
+        os.makedirs(origin)
+        # git keeps read-only files in a clone: Windows cannot delete them the ordinary way
+        self.addCleanup(lambda: [os.path.isdir(d) and self.mod.rmtree_force(d) for d in (origin, cache)])
+
+        def git(*args):
+            return subprocess.run(
+                ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *args],
+                cwd=origin,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+
+        def app(folder, appid, source="x"):
+            os.makedirs(os.path.join(origin, folder), exist_ok=True)
+            with open(os.path.join(origin, folder, "application.fam"), "w") as f:
+                f.write(f'App(\n    appid="{appid}",\n    apptype=FlipperAppType.EXTERNAL,\n)\n')
+            with open(os.path.join(origin, folder, "main.c"), "w") as f:
+                f.write(source)
+
+        git("init", "-q")
+        git("config", "uploadpack.allowAnySHA1InWant", "true")
+        git("config", "uploadpack.allowFilter", "true")
+        app("apps/keep", "keep")
+        app("apps/edit", "edit")
+        app("apps/old", "old")
+        git("add", "-A")
+        git("commit", "-q", "-m", "one")
+        pin = git("rev-parse", "HEAD")
+        app("apps/edit", "edit", "changed")
+        shutil.rmtree(os.path.join(origin, "apps", "old"))
+        app("apps/fresh", "fresh")
+        git("add", "-A")
+        git("commit", "-q", "-m", "two")
+        tip = git("rev-parse", "HEAD")
+
+        apps = [{"path": f"apps/{n}", "appids": [n]} for n in ("keep", "edit", "old")]
+        found = self.mod.inspect_source(origin, pin, tip, apps, cache)
+        self.assertEqual(found["changed"], ["apps/edit"])
+        self.assertEqual(found["gone"], ["apps/old"])
+        self.assertEqual(found["new"], ["apps/fresh"])
+        self.assertEqual(found["ids"], {})
+        self.assertEqual(found["files"], 5)  # edit's file, old's two, fresh's two
+        self.assertEqual(
+            found["folders"], {"apps/keep": ["keep"], "apps/edit": ["edit"], "apps/fresh": ["fresh"]}
+        )
+
+    def run_update(self, lock, inspect, **kwargs):
+        """update() on a copy of the lock with the network and the files out of it: what it saves."""
+        import contextlib
+        import io
+        import json
+        from unittest import mock
+
+        saved = []
+        with mock.patch.object(self.mod, "load_lock", lambda: lock), mock.patch.object(
+            self.mod, "tip_of", lambda repo: "f" * 40
+        ), mock.patch.object(self.mod, "inspect_source", inspect), mock.patch.object(
+            self.mod, "save_lock", lambda l: saved.append(json.dumps(l))
+        ), contextlib.redirect_stdout(io.StringIO()):
+            code = self.mod.update(**kwargs)
+        return code, saved
+
+    @staticmethod
+    def found(gone=(), ids=None):
+        return {"files": 1, "changed": [], "gone": list(gone), "ids": ids or {}, "new": [], "folders": {}}
+
+    def test_an_update_never_moves_a_pin_that_would_lose_an_app(self):
+        lock = self.good_lock()
+        pins = (lock["source"]["commit"], lock["sources"]["momentum"]["commit"])
+
+        def inspect(repo, pin, tip, apps, cache):
+            # the newer Momentum-Apps commit has lost an app; the other source's has not
+            return self.found(gone=["wardriver"] if "Momentum" in repo else ())
+
+        code, saved = self.run_update(lock, inspect)
+        self.assertEqual(code, 1, "an app that would be lost must be reported as needing attention")
+        self.assertEqual(lock["source"]["commit"], "f" * 40, "the source that lost nothing moves")
+        self.assertEqual(lock["sources"]["momentum"]["commit"], pins[1], "the one that would lose an app stays")
+        self.assertEqual(len(saved), 1)
+
+    def test_an_update_follows_a_changed_app_id_and_check_changes_nothing(self):
+        lock = self.good_lock()
+        first = next(a for a in lock["apps"] if a.get("source", "unleashed") == "unleashed")
+        before = list(first["appids"])
+        ids = {first["path"]: (before, ["renamed_upstream"])}
+        code, saved = self.run_update(lock, lambda *a: self.found(ids=ids), check_only=True)
+        self.assertEqual((code, saved), (0, []))
+        self.assertEqual(first["appids"], before, "--check must not touch the lock")
+        code, saved = self.run_update(lock, lambda *a: self.found(ids=ids))
+        self.assertEqual(code, 0)
+        self.assertEqual(first["appids"], ["renamed_upstream"])
+        self.assertEqual(lock["source"]["commit"], "f" * 40)
+        self.assertEqual(len(saved), 1)
+        self.assertEqual(self.mod.check_lock(lock), [], "an update must leave a valid lock")
 
 
 class PackInfoTests(TempDirCase):
@@ -2372,8 +2570,8 @@ class RealAssetsTests(TempDirCase):
         index = pack.source_icon_index(base)
         # 245 static + 19 animated; nested folders such as BLE/BLE_HID must be included
         # 264 + Archive/disk_10px + the control centre's 13 icons + the hint bar's 3 glyphs, and
-        # the passport's one background for its two pieces
-        self.assertEqual(len(index), 280)
+        # the passport's one background for its two pieces, and the Settings list's 10 icons
+        self.assertEqual(len(index), 290)
         self.assertIn("BLE/BLE_HID/Ok_btn_9x9", index)
         self.assertEqual(index["BLE/BLE_HID/Ok_btn_9x9"], (9, 9, 1))
         hashes = {pack.icon_path_hash(p) for p in index}

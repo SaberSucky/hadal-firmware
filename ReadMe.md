@@ -176,6 +176,8 @@ python3 scripts/update_package_check.py dist/f7-C/flipper-z-f7-update-local.tgz 
 python3 scripts/bundle_apps.py fetch
 ```
 
+Their versions move only when you say so: `python3 scripts/bundle_apps.py update` shows which of them changed upstream (`--check` only looks) and moves the pins; then fetch, build, and run `scripts/update_package_check.py`. An app Hadal builds itself is never bundled again from a collection.
+
 Their authors and licences are in [THIRD_PARTY_APPS.md](THIRD_PARTY_APPS.md). Some ship no licence file, so check before you redistribute a build.
 
 </details>

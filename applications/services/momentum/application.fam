@@ -1,0 +1,9 @@
+# Headers only (settings.h, momentum.h): community apps written for Momentum include them, and this
+# folder is on every app's include path (applications/services is one of fbt's include folders).
+# There is nothing to build; the manifest is here so that fbt does not warn on every build about a
+# folder that has none, which would hide a warning that matters.
+App(
+    appid="momentum_compat",
+    name="Momentum compatibility headers",
+    apptype=FlipperAppType.METAPACKAGE,
+)

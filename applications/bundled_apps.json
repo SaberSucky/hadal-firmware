@@ -2,7 +2,7 @@
  "comment": "Third-party apps Hadal bundles. Fetched from the source below at the pinned commit and built against Hadal's own SDK by scripts/bundle_apps.py. They are other people's apps under their own licences, see THIRD_PARTY_APPS.md.",
  "source": {
   "repo": "https://github.com/xMasterX/all-the-plugins",
-  "commit": "bd1b44f7a5fd4d5f94cf0c249c84bb77975c5e88"
+  "commit": "0eef8a01dbf23ec6d9e4b33aae8a2b740af34a05"
  },
  "apps": [
   {
