@@ -257,8 +257,8 @@ static bool power_update_info(Power* power, bool full) {
     info.is_shutdown_requested = furi_hal_power_is_shutdown_requested();
     info.is_otg_enabled = furi_hal_power_is_otg_enabled();
     info.charge = furi_hal_power_get_pct();
-    if(power->is_otg_requested || info.is_otg_enabled) {
-        info.voltage_vbus = furi_hal_power_get_usb_voltage(); // the OTG logic below
+    if(power->is_otg_requested || info.is_otg_enabled || power->settings.charge_supress_percent) {
+        info.voltage_vbus = furi_hal_power_get_usb_voltage(); // the OTG logic, Limit charge
     }
     if(full || info.is_charging || ++power->ticks_since_full_read >= POWER_FULL_READ_TICKS) {
         power->ticks_since_full_read = 0;
@@ -284,8 +284,10 @@ static bool power_update_info(Power* power, bool full) {
 static void power_check_charging_state(Power* power) {
     NotificationApp* notification = furi_record_open(RECORD_NOTIFICATION);
 
-    if(furi_hal_power_is_charging()) {
-        if((power->info.charge == 100) || (furi_hal_power_is_charging_done())) {
+    // held at the Limit charge cap on USB: charged as far as it should be (green), not unplugged
+    if(power->charge_held_at || furi_hal_power_is_charging()) {
+        if(power->charge_held_at || (power->info.charge == 100) ||
+           (furi_hal_power_is_charging_done())) {
             if(power->state != PowerStateCharged) {
                 notification_internal_message(notification, &sequence_charged);
                 power->state = PowerStateCharged;
@@ -592,22 +594,28 @@ static void power_message_callback(FuriEventLoopObject* object, void* context) {
     }
 }
 
+/* Limit charge: on USB, charging stops at the cap and starts again only POWER_CHARGE_RESUME_PCT
+ * below it, so a Flipper left plugged in sits still at the cap and isn't topped up each time the
+ * gauge ticks down 1%. Unplugged, the hold ends: the next plug-in charges back up to the cap.
+ * A changed cap is decided afresh. Holds by Sub-GHz and others add up in furi_hal_power, so
+ * charging comes back only when none holds it */
+#define POWER_CHARGE_RESUME_PCT (5U)
+
 static void power_charge_supress(Power* power) {
-    // if charge_supress_percent selected (not OFF) and current charge level equal or higher than selected level
-    // then we start supression if we not supress it before.
-    if(power->settings.charge_supress_percent &&
-       power->info.charge >= power->settings.charge_supress_percent) {
-        if(!power->charge_is_supressed) {
-            power->charge_is_supressed = true;
-            furi_hal_power_suppress_charge_enter();
-        }
-        // disable supression if charge_supress_percent OFF but charge still supressed
-    } else {
-        if(power->charge_is_supressed) {
-            power->charge_is_supressed = false;
-            furi_hal_power_suppress_charge_exit();
-        }
+    const uint8_t cap = power->settings.charge_supress_percent;
+    const uint8_t charge = power->info.charge;
+    const bool on_usb = !power->info.is_otg_enabled &&
+                        power->info.voltage_vbus >= POWER_VBUS_LOW_THRESHOLD;
+    const bool hold = cap && on_usb &&
+                      (charge >= cap || (power->charge_held_at == cap &&
+                                         charge + POWER_CHARGE_RESUME_PCT > cap));
+
+    if(hold && !power->charge_held_at) {
+        furi_hal_power_suppress_charge_enter();
+    } else if(!hold && power->charge_held_at) {
+        furi_hal_power_suppress_charge_exit();
     }
+    power->charge_held_at = hold ? cap : 0;
 }
 
 static void power_tick_callback(void* context) {
@@ -618,12 +626,12 @@ static void power_tick_callback(void* context) {
     const bool need_refresh = power_update_info(power, false);
     // Check low battery level
     power_check_low_battery(power);
+    // Limit charge, before the charging state it decides
+    power_charge_supress(power);
     // Check and notify about charging state
     power_check_charging_state(power);
     // Check and notify about battery level change
     power_check_battery_level_change(power);
-    // charge supress arm/disarm
-    power_charge_supress(power);
     // Battery history
     battery_log_tick(&power->battery_log, &power->info);
     // Update battery view port
@@ -673,7 +681,6 @@ static void power_init_settings(Power* power) {
     power_settings_load(&power->settings);
     power_settings_apply(power);
     furi_record_close(RECORD_STORAGE);
-    power->charge_is_supressed = false;
 }
 
 static Power* power_alloc(void) {

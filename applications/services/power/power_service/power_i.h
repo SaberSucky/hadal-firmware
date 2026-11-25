@@ -44,7 +44,7 @@ struct Power {
     bool app_running;
     FuriPubSub* input_events_pubsub;
     FuriPubSubSubscription* input_events_subscription;
-    bool charge_is_supressed;
+    uint8_t charge_held_at; /**< Limit charge: the cap charging is held off at, 0 when it isn't */
     BatteryLog battery_log;
 };
 
