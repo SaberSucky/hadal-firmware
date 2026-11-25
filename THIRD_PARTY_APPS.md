@@ -11,11 +11,8 @@ Thank you to everyone whose apps these are.
 | 4 in row | leo-need-more-coffee | https://github.com/leo-need-more-coffee/flipperzero-4inrow | none in the source |
 | [BMI/LSM] Air Mouse | - | - | LICENSE |
 | [ESP32] Camera Suite | @CodyTolene @Z4urce @leedave @rnadyrshin | https://github.com/CodyTolene/Flipper-Zero-Cam | LICENSE |
-| [ESP32] WiFi Marauder | - | - | LICENSE |
-| [ESP8266] Deauther | @SequoiaSan & @xMasterX | - | none in the source |
 | [GPIO] i2c Tools | @NaejEL | - | LICENSE |
 | [GPIO] Reader | @aureli1c | https://github.com/aureli1c/flipperzero_GPIO_read | none in the source |
-| [GPIO] Sentry Safe | @H4ckd4ddy & @xMasterX (ported to latest firmware) | - | LICENSE |
 | [GPIO] Timelapse | Aurelius Rosenbaum | https://github.com/theageoflove/flipperzero-zeitraffer | none in the source |
 | [GPIO] Wire Tester | @unixispower | https://gitlab.com/unixispower/flipper-wire-tester | LICENSE |
 | [HC-SR] Dist. Sensor | @xMasterX (first implementation by @Sanqui) | - | none in the source |
@@ -23,7 +20,6 @@ Thank you to everyone whose apps these are.
 | [J305] Atomic Dice Roller | - | - | none in the source |
 | [J305] Geiger Counter | @nmrr | https://github.com/nmrr/flipperzero-geigercounter | none in the source |
 | [NMEA] GPS | @ezod & @xMasterX | - | LICENSE |
-| [NRF24] Mouse Jacker | @mothball187 & @xMasterX | - | none in the source |
 | [NRF24] Sniffer | @mothball187 & @xMasterX | - | none in the source |
 | [SPI] Terminal | Jan Wiesemann | https://github.com/janwiesemann/flipper-spi-terminal | LICENSE |
 | [TEA5767] FM Radio | coolshrimp | https://coolshrimp/flipperzero-firmware-wPlugins/ | LICENSE |
@@ -41,7 +37,6 @@ Thank you to everyone whose apps these are.
 | AVR Flasher | - | - | none in the source |
 | Barcode App | @Kingal1337 | https://github.com/Kingal1337/flipper-barcode-generator | LICENSE |
 | Blackjack | @teeebor | - | none in the source |
-| BLE Spam | @WillyJL @ECTO-1A @Spooks4576 | https://github.com/Next-Flip/Momentum-Apps/tree/dev/ble_spam | LICENSE |
 | Bomberduck | @leo-need-more-coffee & @xMasterX | - | LICENSE |
 | BPM Tapper | @panki27 | https://github.com/panki27/bpm-tapper | LICENSE |
 | BT Trigger | @Nem0oo | https://github.com/Nem0oo/flipper-zero-bluetooth-trigger | none in the source |
@@ -52,21 +47,17 @@ Thank you to everyone whose apps these are.
 | CAN Tools | Matthew KuKanich | https://github.com/MatthewKuKanich/ | none in the source |
 | Channel Scanner | - | - | none in the source |
 | Chess | Struan Clark (xtruan) | https://github.com/xtruan/flipper-chess | LICENSE |
-| Chief Cooker | Denr01 | https://github.com/denr01/FZ-ChiefCooker | LICENSE |
 | Color Guess | Leedave | https://github.com/leedave/Flipper-Zero-Color-Guess | LICENSE |
-| Combo Cracker | - | - | LICENSE |
 | Count Down Timer | @0w0mewo | https://github.com/0w0mewo/fpz_cntdown_timer | none in the source |
 | Counter | @Krulknul | https://github.com/Krulknul/dolphin-counter | none in the source |
 | Cross Remote | Leedave | https://github.com/leedave/flipper-zero-cross-remote | none in the source |
 | DAP Link | - | - | none in the source |
-| Deauther v2 | @Timmotools & @xMasterX | https://github.com/Timmotools/flipperzero_esp8266_deautherv2 | LICENSE |
 | DOOM | @xMasterX & @Svarich & @hedger (original code by @p4nic4ttack) | - | none in the source |
 | DTMF Dolphin | @litui & @xMasterX | - | LICENSE |
 | EM4100 Key generator | @Milk-Cool | https://github.com/Milk-Cool/fz-em4100-generator | LICENSE |
 | Enhanced Sub-Ghz Chat | @twisted-pear & @xMasterX & more in ReadMe | https://github.com/twisted-pear/esubghz_chat | LICENSE |
 | ESP Flasher | - | - | LICENSE |
 | Etch A Sketch | @SimplyMinimal | https://github.com/SimplyMinimal/FlipperZero-Etch-A-Sketch | LICENSE |
-| Evil Portal | bigbrodude6119 | - | LICENSE.txt |
 | Flame RNG | OrionW06 | https://github.com/OrionW06/Flame-RNG | LICENSE |
 | Flappy Bird | @DroomOne & @xMasterX | - | none in the source |
 | Flashlight | @xMasterX | https://github.com/xMasterX/flipper-flashlight | LICENSE |
@@ -80,7 +71,6 @@ Thank you to everyone whose apps these are.
 | FM TX | @yo3gnd | - | LICENSE |
 | Game 15 | @x27 | - | none in the source |
 | Game of Life | @tgxn (original by @itsyourbedtime) | https://github.com/tgxn/flipperzero-firmware/blob/dev/applications/game_of_life/game_of_life.c | none in the source |
-| Ghost ESP | - | - | none in the source |
 | GPIO Controller | @Lokno | https://github.com/Lokno/gpio_controller | none in the source |
 | Heap Defence | @xMasterX (original implementation by @wquinoa & @Vedmein) | - | none in the source |
 | HEX Editor | @dunaevai135 | https://github.com/dunaevai135/flipper-zero-hex_editor | none in the source |
@@ -98,16 +88,13 @@ Thank you to everyone whose apps these are.
 | Key Copier | Torron | - | LICENSE |
 | Laser Tag | @RocketGod-git & @jamisonderek | https://github.com/RocketGod-Git/Flipper-Zero-Laser-Tag | LICENSE |
 | LEGO Dimensions Toy Pad | Seger | https://github.com/SegerEnd/Flipper-Zero-LD-Toypad-Emulator | none in the source |
-| LIDAR Emulator | regaly | https://github.com/regaly/flipperzero-lidar_emulator | LICENSE.txt |
 | Lightmeter | Oleksii Kutuzov | https://github.com/oleksiikutuzov/flipperzero-lightmeter | LICENSE |
 | Longwave Clock | @m7i-org | https://github.com/flipper_longwave_clock | LICENSE |
 | MagSpoof | Zachary Weiss | https://github.com/zacharyweiss/magspoof_flipper | LICENSE |
-| Mass Storage | - | - | none in the source |
 | Metroflip | luu176 | - | LICENSE |
 | Metronome | @panki27 & @xMasterX | - | none in the source |
 | Midea | xMasterX | - | LICENSE |
 | MIFARE Classic Editor | TollyH | https://github.com/TollyH/flipper-apps/tree/main/mfc-editor | LICENSE |
-| Mifare Fuzzer | @spheeere98 @Sil333033 | https://github.com/spheeere98/mifare_fuzzer | none in the source |
 | Mine Sweeper | Alexander Rodriguez | https://github.com/squee72564/F0_Minesweeper_Fap | LICENSE |
 | Mitsubishi (Full) | xMasterX | - | LICENSE |
 | Morse Code | @wh00hw & @xMasterX | - | none in the source |
@@ -140,12 +127,10 @@ Thank you to everyone whose apps these are.
 | Radio Scanner | @RocketGod-git | https://github.com/RocketGod-Git/Flipper-Zero-Radio-Scanner | LICENSE |
 | RC2014 ColecoVision | - | - | LICENSE |
 | Resistance calculator | Lewis Westbury | https://github.com/instantiator/flipper-zero-experimental-apps/tree/main/resistors | LICENSE |
-| Restaurant Pager Trigger | leedave | https://github.com/leedave/flipper-zero-meal-pager | none in the source |
 | Reversi | @dimat | https://github.com/dimat/flipperzero-reversi | LICENSE |
 | RFID detector | SkorP | - | none in the source |
 | Roots of Life | @Xorboo | https://github.com/Xorboo/root-of-life | LICENSE |
 | Rubik's Cube Scrambler | @RaZeSloth | https://github.com/RaZeSloth/flipperzero-rubiks-cube-scrambler | LICENSE |
-| SaFlip | Aaronjamt | https://github.com/aaronjamt/saflip | LICENSE.md |
 | Scope | anfractuosity | - | none in the source |
 | Scorched Tanks | @jasniec | https://github.com/jasniec/flipper-scorched-tanks-game | LICENSE |
 | Seader | bettse | https://seader.ericbetts.dev | LICENSE |
@@ -178,8 +163,6 @@ Thank you to everyone whose apps these are.
 | TPMS Reader | @wosk | https://github.com/wosk/flipperzero-tpms | none in the source |
 | Tuning Fork | @besya | https://github.com/besya/flipperzero-tuning-fork | LICENSE |
 | UART Terminal | @cool4uma & @rnadyrshin & (some fixes by @xMasterX) | - | LICENSE |
-| UL-C Bruteforce | noproto | https://github.com/noproto | none in the source |
-| UL-C Relay | noproto | https://github.com/noproto | none in the source |
 | ULCFKey | noproto | https://github.com/noproto | none in the source |
 | uPython | Oliver Fabel | https://github.com/ofabel/mp-flipper | LICENSE.txt |
 | USB Consumer Control | piraija | - | LICENSE |

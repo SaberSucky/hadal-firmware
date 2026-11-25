@@ -52,6 +52,18 @@ STACK_TYPES = {1: "BLE_FULL", 2: "BLE_HCI", 3: "BLE_LIGHT", 4: "BLE_BEACON", 5: 
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 API_CSV = os.path.join(REPO, "targets", "f7", "api_symbols.csv")
+BUNDLED_APPS = os.path.join(REPO, "applications", "bundled_apps.json")
+
+
+def bundled_app_ids(path=BUNDLED_APPS):
+    """The ids of the third-party apps Hadal bundles (scripts/bundle_apps.py), none if no list"""
+    import json
+
+    try:
+        with open(path, encoding="utf-8") as f:
+            return {appid for entry in json.load(f)["apps"] for appid in entry["appids"]}
+    except (OSError, ValueError, KeyError):
+        return set()
 FAP_MANIFEST_MAGIC = 0x52474448
 STANDARD = {
     "light": ("BLE_LIGHT", "scripts/ob.data"),
@@ -464,6 +476,19 @@ def check_package(path, expect="any", ob_data=None, scratch=None, api_csv=API_CS
                 )
             else:
                 report.info("resources hold no apps")
+            # Every app Hadal bundles must be in it: a package built without them staged
+            # (scripts/bundle_apps.py fetch) left them out, and installing it took them off the
+            # card as stale files the new resources did not have
+            bundled = bundled_app_ids()
+            if bundled:
+                present = {os.path.basename(name)[: -len(".fap")] for name in apps}
+                absent = sorted(bundled - present)
+                report.check(
+                    not absent,
+                    f"all {len(bundled)} bundled third-party apps are in it",
+                    f"{len(absent)} bundled apps are missing, and installing it would delete them "
+                    f"from the card (run scripts/bundle_apps.py fetch): {', '.join(absent[:6])}",
+                )
 
     summary = {
         "stack": stack_name,

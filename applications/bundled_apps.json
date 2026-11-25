@@ -174,12 +174,6 @@
    ]
   },
   {
-   "path": "apps_source_code/mifare_fuzzer",
-   "appids": [
-    "mifare_fuzzer"
-   ]
-  },
-  {
    "path": "apps_source_code/nfc_apdu_runner",
    "appids": [
     "nfc_apdu_runner"
@@ -306,12 +300,6 @@
    ]
   },
   {
-   "path": "base_pack/ble_spam",
-   "appids": [
-    "ble_spam"
-   ]
-  },
-  {
    "path": "base_pack/bomberduck",
    "appids": [
     "bomberduck"
@@ -339,12 +327,6 @@
    "path": "base_pack/dtmf_dolphin",
    "appids": [
     "dtmf_dolphin"
-   ]
-  },
-  {
-   "path": "base_pack/esp8266_deauth",
-   "appids": [
-    "esp8266_deauther"
    ]
   },
   {
@@ -432,12 +414,6 @@
    ]
   },
   {
-   "path": "base_pack/mass_storage",
-   "appids": [
-    "mass_storage"
-   ]
-  },
-  {
    "path": "base_pack/metronome",
    "appids": [
     "metronome"
@@ -459,12 +435,6 @@
    "path": "base_pack/morse_code",
    "appids": [
     "morse_code"
-   ]
-  },
-  {
-   "path": "base_pack/mousejacker",
-   "appids": [
-    "nrf24_mouse_jacker"
    ]
   },
   {
@@ -564,12 +534,6 @@
    ]
   },
   {
-   "path": "base_pack/sentry_safe",
-   "appids": [
-    "gpio_sentry_safe"
-   ]
-  },
-  {
    "path": "base_pack/signal_generator",
    "appids": [
     "signal_generator"
@@ -660,12 +624,6 @@
    ]
   },
   {
-   "path": "base_pack/wifi_marauder_companion",
-   "appids": [
-    "esp32_wifi_marauder"
-   ]
-  },
-  {
    "path": "base_pack/wifi_scanner",
    "appids": [
     "wifi_scanner"
@@ -726,18 +684,6 @@
    ]
   },
   {
-   "path": "non_catalog_apps/chief_cooker",
-   "appids": [
-    "chief_cooker"
-   ]
-  },
-  {
-   "path": "non_catalog_apps/combocracker",
-   "appids": [
-    "combo_cracker"
-   ]
-  },
-  {
    "path": "non_catalog_apps/cross_remote",
    "appids": [
     "xremote"
@@ -747,6 +693,9 @@
    "path": "non_catalog_apps/esp_flasher",
    "appids": [
     "esp_flasher"
+   ],
+   "omit": [
+    "packedfws/marauder"
    ]
   },
   {
@@ -777,12 +726,6 @@
    "path": "non_catalog_apps/flipper_atomicdiceroller",
    "appids": [
     "flipper_atomicdiceroller"
-   ]
-  },
-  {
-   "path": "non_catalog_apps/flipper_evil_portal",
-   "appids": [
-    "evil_portal"
    ]
   },
   {
@@ -846,12 +789,6 @@
    ]
   },
   {
-   "path": "non_catalog_apps/ghost_esp_app",
-   "appids": [
-    "ghost_esp"
-   ]
-  },
-  {
    "path": "non_catalog_apps/hitachi_ac_remote",
    "appids": [
     "hitachi_ac_remote"
@@ -900,21 +837,9 @@
    ]
   },
   {
-   "path": "non_catalog_apps/lidar_emulator",
-   "appids": [
-    "lidar_emulator"
-   ]
-  },
-  {
    "path": "non_catalog_apps/magspoof_flipper",
    "appids": [
     "magspoof"
-   ]
-  },
-  {
-   "path": "non_catalog_apps/meal_pager",
-   "appids": [
-    "meal_pager"
    ]
   },
   {
@@ -1008,12 +933,6 @@
    ]
   },
   {
-   "path": "non_catalog_apps/saflip",
-   "appids": [
-    "saflip"
-   ]
-  },
-  {
    "path": "non_catalog_apps/seader",
    "appids": [
     "seader"
@@ -1068,18 +987,6 @@
    ]
   },
   {
-   "path": "non_catalog_apps/ulc_brute",
-   "appids": [
-    "ulc_brute"
-   ]
-  },
-  {
-   "path": "non_catalog_apps/ulc_relay",
-   "appids": [
-    "ulc_relay"
-   ]
-  },
-  {
    "path": "non_catalog_apps/ulcfkey",
    "appids": [
     "ulcfkey"
@@ -1107,12 +1014,6 @@
    "path": "non_catalog_apps/weebo",
    "appids": [
     "weebo"
-   ]
-  },
-  {
-   "path": "non_catalog_apps/wifi_deauther",
-   "appids": [
-    "esp8266_wifi_deauther_v2"
    ]
   },
   {

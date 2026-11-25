@@ -67,6 +67,11 @@ def check_lock(lock):
             if appid in seen_ids:
                 problems.append(f"app id listed twice: {appid}")
             seen_ids.add(appid)
+        # parts of a folder left out of what is staged (files the app would install on the card)
+        for omit in app.get("omit", []):
+            omit_parts = omit.split("/")
+            if not omit or omit.startswith("/") or ".." in omit_parts:
+                problems.append(f"unsafe or empty omit path in {path}: {omit!r}")
     return problems
 
 
@@ -117,6 +122,15 @@ def fetch():
         if os.path.exists(dest):
             raise SystemExit(f"{dest} exists and is not ours; move it away first")
         shutil.copytree(src, dest, ignore=shutil.ignore_patterns(".git", ".github"))
+        # what the lock says to leave out (e.g. firmware images for tools Hadal does not ship)
+        for omit in app.get("omit", []):
+            target = os.path.join(dest, *omit.split("/"))
+            if os.path.isdir(target):
+                shutil.rmtree(target)
+            elif os.path.exists(target):
+                os.remove(target)
+            else:
+                raise SystemExit(f"{app['path']}: nothing to omit at {omit}")
         with open(os.path.join(dest, MARKER), "w") as f:
             f.write(app["path"] + "\n")
         count += 1
