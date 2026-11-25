@@ -50,7 +50,10 @@ static void input_cli_send_print_usage(void) {
 
 static void input_cli_send(PipeSide* pipe, FuriString* args, FuriPubSub* event_pubsub) {
     UNUSED(pipe);
-    InputEvent event;
+    // zeroed: a key sent here acts as the button would, turned with the screen. Left as it was on
+    // the stack, its source was whatever lay there, and on a screen held upright it went one way
+    // or the other by chance
+    InputEvent event = {0};
     FuriString* key_str;
     key_str = furi_string_alloc();
     bool parsed = false;

@@ -737,8 +737,10 @@ size_t infrared_brute_force_collect_device(
     const size_t target_offset =
         *SignalPositionArray_cget(brute_force->current_record.signals, signal_index);
 
-    Storage* storage = furi_record_open(RECORD_STORAGE);
-    FlipperFormat* ff = flipper_format_buffered_file_alloc(storage);
+    // The database is open already, for sending: read through that handle. A second one would
+    // never open, as storage waits for a file's other handle to close first, and the app froze
+    // (load_signal() seeks to each signal, so where this leaves the handle does not matter)
+    FlipperFormat* ff = brute_force->ff;
     InfraredBruteForceIndexArray_t index;
     InfraredBruteForceIndexArray_init(index);
     InfraredSignal* signal = infrared_signal_alloc();
@@ -750,7 +752,7 @@ size_t infrared_brute_force_collect_device(
     size_t collected = 0;
 
     do {
-        if(!flipper_format_buffered_file_open_existing(ff, brute_force->db_filename)) break;
+        if(!flipper_format_rewind(ff)) break;
 
         // Pass 1: index every signal's position and device key (no names, no body kept)
         size_t target_pos = (size_t)-1;
@@ -831,8 +833,6 @@ size_t infrared_brute_force_collect_device(
     furi_string_free(name);
     infrared_signal_free(signal);
     InfraredBruteForceIndexArray_clear(index);
-    flipper_format_free(ff);
-    furi_record_close(RECORD_STORAGE);
 
     if(collected == 0) infrared_brute_force_device_reset(device);
     return collected;

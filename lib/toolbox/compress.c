@@ -67,21 +67,23 @@ void compress_icon_free(CompressIcon* instance) {
 
 void compress_icon_decode(CompressIcon* instance, const uint8_t* icon_data, uint8_t** output) {
     furi_check(instance);
-    furi_check(icon_data);
+    furi_check(icon_data, "Icon has no image");
     furi_check(output);
 
     CompressHeader* header = (CompressHeader*)icon_data;
     if(header->is_compressed) {
         size_t decoded_size = 0;
         /* If decompression fails - check that decode_buf_size is large enough */
-        furi_check(compress_decode_internal(
-            instance->decoder,
-            icon_data,
-            /* Decoder will check/process headers again - need to pass them */
-            sizeof(CompressHeader) + header->compressed_buff_size,
-            instance->buffer,
-            instance->buffer_size,
-            &decoded_size));
+        furi_check(
+            compress_decode_internal(
+                instance->decoder,
+                icon_data,
+                /* Decoder will check/process headers again - need to pass them */
+                sizeof(CompressHeader) + header->compressed_buff_size,
+                instance->buffer,
+                instance->buffer_size,
+                &decoded_size),
+            "Icon did not decode");
         *output = instance->buffer;
     } else {
         *output = (uint8_t*)&icon_data[1];

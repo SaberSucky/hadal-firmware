@@ -53,8 +53,17 @@ static bool crash_report_is_flash_text(uint32_t address) {
     return address >= FLASH_BASE && address < (uint32_t)&_sidata;
 }
 
+/* SRAM1, and the part of SRAM2 the radio core leaves readable: the system's threads (the GUI's,
+ * storage's...) keep their records and stacks there, and their crashes came out nameless and with
+ * no call chain. As furi_hal_memory reads the boundaries, with its correction for some stacks */
 static bool crash_report_is_ram(uint32_t address, uint32_t size) {
-    return address >= SRAM1_BASE && address + size <= SRAM1_BASE + 0x30000U;
+    if(address >= SRAM1_BASE && address + size <= SRAM1_BASE + 0x30000U) return true;
+    const uint32_t srrvr = FLASH->SRRVR;
+    const uint32_t sbrsa = (srrvr & FLASH_SRRVR_SBRSA_Msk) >> FLASH_SRRVR_SBRSA_Pos;
+    uint32_t snbrsa = (srrvr & FLASH_SRRVR_SNBRSA_Msk) >> FLASH_SRRVR_SNBRSA_Pos;
+    if(snbrsa > 0x0B) snbrsa -= 2;
+    return (address >= SRAM2A_BASE && address + size <= SRAM2A_BASE + sbrsa * 1024U) ||
+           (address >= SRAM2B_BASE && address + size <= SRAM2B_BASE + snbrsa * 1024U);
 }
 
 static void crash_report_copy_text(char* to, size_t size, const char* from) {

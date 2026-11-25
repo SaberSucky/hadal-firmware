@@ -62,6 +62,52 @@ static int32_t infrared_scene_universal_common_task_callback(void* context) {
     return error;
 }
 
+/* Save all: the device (all its buttons) the paused signal belongs to, gathered before the brute
+ * force is torn down; the scene waits behind the loading screen meanwhile */
+static int32_t infrared_scene_universal_common_collect_task(void* context) {
+    InfraredApp* infrared = context;
+    const InfraredSceneState scene_state = {
+        .packed_value = scene_manager_get_scene_state(
+            infrared->scene_manager, scene_manager_get_current_scene(infrared->scene_manager))};
+    const size_t count = infrared_brute_force_collect_device(
+        infrared->brute_force,
+        scene_state.signal_index,
+        INFRARED_UNIVERSAL_DEVICE_MAX_SIGNALS,
+        infrared->found_device);
+    view_dispatcher_send_custom_event(
+        infrared->view_dispatcher,
+        infrared_custom_event_pack(InfraredCustomEventTypeTaskFinished, 0));
+    return (int32_t)count;
+}
+
+static void infrared_scene_universal_common_collect_done(InfraredApp* infrared, size_t count) {
+    InfraredBruteForce* brute_force = infrared->brute_force;
+    SceneManager* scene_manager = infrared->scene_manager;
+    if(count == 0) {
+        view_dispatcher_switch_to_view(infrared->view_dispatcher, InfraredViewStack);
+        infrared_show_error_message(infrared, "Failed to read\nthe signal");
+        return;
+    }
+    const InfraredSceneState scene_state = {
+        .packed_value = scene_manager_get_scene_state(
+            scene_manager, scene_manager_get_current_scene(scene_manager))};
+    infrared_text_store_set(
+        infrared, 1, "%s", infrared_brute_force_get_current_record_name(brute_force));
+    infrared_brute_force_learn(brute_force, scene_state.signal_index, true);
+    infrared_brute_force_stop(brute_force);
+    infrared_scene_universal_common_hide_popup(infrared);
+    if(count == 1) {
+        // Lone signal (e.g. a brand-specific power code): fall back to single save
+        infrared_signal_set_signal(
+            infrared->current_signal,
+            infrared_brute_force_device_get_signal(infrared->found_device, 0));
+        infrared_brute_force_device_reset(infrared->found_device); // copied: not held on
+        scene_manager_next_scene(scene_manager, InfraredSceneUniversalSave);
+    } else {
+        scene_manager_next_scene(scene_manager, InfraredSceneUniversalSaveDevice);
+    }
+}
+
 void infrared_scene_universal_common_on_enter(void* context) {
     InfraredApp* infrared = context;
     infrared_brute_force_device_reset(infrared->found_device); // a fresh search
@@ -151,36 +197,11 @@ static void infrared_scene_universal_common_handle_popup_input(
         break;
     }
 
-    case InfraredProgressViewInputSaveDevice: {
-        InfraredSceneState scene_state = {
-            .packed_value = scene_manager_get_scene_state(scene_manager, scene_id)};
-        // Gather the whole device (all its buttons) before the brute force is torn down.
-        const size_t count = infrared_brute_force_collect_device(
-            brute_force,
-            scene_state.signal_index,
-            INFRARED_UNIVERSAL_DEVICE_MAX_SIGNALS,
-            infrared->found_device);
-        if(count == 0) {
-            infrared_show_error_message(infrared, "Failed to read\nthe signal");
-            break;
-        }
-        infrared_text_store_set(
-            infrared, 1, "%s", infrared_brute_force_get_current_record_name(brute_force));
-        infrared_brute_force_learn(brute_force, scene_state.signal_index, true);
-        infrared_brute_force_stop(brute_force);
-        infrared_scene_universal_common_hide_popup(infrared);
-        if(count == 1) {
-            // Lone signal (e.g. a brand-specific power code): fall back to single save
-            infrared_signal_set_signal(
-                infrared->current_signal,
-                infrared_brute_force_device_get_signal(infrared->found_device, 0));
-            infrared_brute_force_device_reset(infrared->found_device); // copied: not held on
-            scene_manager_next_scene(scene_manager, InfraredSceneUniversalSave);
-        } else {
-            scene_manager_next_scene(scene_manager, InfraredSceneUniversalSaveDevice);
-        }
+    case InfraredProgressViewInputSaveDevice:
+        // Gathering the whole device reads the whole database, a couple of seconds: behind the
+        // loading screen, which takes the keys pressed meanwhile (they went to the next screen)
+        infrared_blocking_task_start(infrared, infrared_scene_universal_common_collect_task);
         break;
-    }
 
     case InfraredProgressViewInputSendSingle: {
         InfraredSceneState scene_state = {
@@ -231,6 +252,10 @@ bool infrared_scene_universal_common_on_event(void* context, SceneManagerEvent e
             infrared_custom_event_unpack(event.event, &event_type, &event_value);
             if(event_type == InfraredCustomEventTypePopupInput) {
                 infrared_scene_universal_common_handle_popup_input(infrared, event_value);
+                consumed = true;
+            } else if(event_type == InfraredCustomEventTypeTaskFinished) {
+                infrared_scene_universal_common_collect_done(
+                    infrared, (size_t)infrared_blocking_task_finalize(infrared));
                 consumed = true;
             }
         }
