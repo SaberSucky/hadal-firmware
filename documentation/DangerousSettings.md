@@ -8,5 +8,5 @@
 3. Extending frequency range and transmitting on frequencies that outside of hardware specs can damage your hardware!
 4. Flipper Devices team and/or unleashed fw developers is not responsible of any damage that can be caused by using CFW or extending frequency ranges!!!
 
-If you really sure you need that change, find `subghz/assets/dangerous_settings` file on your microSD, read comments on first lines
-and change `false` to `true`
+If you really sure you need that change, turn on Settings > Hadal > Protocols > Extended Sub-GHz and restart.
+It is kept in `subghz/assets/dangerous_settings` on your microSD, which updates leave as you set it.

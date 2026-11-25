@@ -67,8 +67,11 @@ static bool
 
 bool update_task_resources_is_kept(const char* name) {
     // Asset packs the previous firmware installed (Momentum's, say) are the user's to keep:
-    // removing them took the animations out of packs people went on using
-    return strncmp(name, "asset_packs/", strlen("asset_packs/")) == 0;
+    // removing them took the animations out of packs people went on using. And the Extended
+    // Sub-GHz setting, which came with the resources (so every update set it back to off) and
+    // now is only the user's
+    return strncmp(name, "asset_packs/", strlen("asset_packs/")) == 0 ||
+           strcmp(name, "subghz/assets/dangerous_settings") == 0;
 }
 
 #define resources_is_kept update_task_resources_is_kept
