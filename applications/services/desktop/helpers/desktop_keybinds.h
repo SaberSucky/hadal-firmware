@@ -6,7 +6,7 @@
  *     up press: Lock Menu
  *     left hold: /ext/subghz/garage.sub
  *     ok hold: Infrared
- *     down hold: /ext/apps/Tools/battery_history.fap
+ *     down hold: Clock
  *
  * The action is a desktop action (Main Menu, Lock Menu, Lock (with the PIN, if one is set),
  * Lock Keypad (no PIN asked), Archive, Power Off, Nothing), an

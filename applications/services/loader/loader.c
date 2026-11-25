@@ -437,7 +437,6 @@ static void loader_check_leak(Loader* loader);
  * app that times signals itself (radio, infrared, NFC, RFID, iButton, GPIO) is not here */
 static const char* const loader_insomnia_safe_faps[] = {
     "about",
-    "battery_history",
     "bt_settings",
     "clock",
     "clock_settings",

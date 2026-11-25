@@ -3358,7 +3358,7 @@ class IrLearnedTests(unittest.TestCase):
 
 
 class BatteryStatsTests(unittest.TestCase):
-    """Battery History's graph and time-left estimate (applications/system/battery_history)"""
+    """Power > Battery info's history graph and time-left estimate (power_settings_app/views)"""
 
     @classmethod
     def setUpClass(cls):
@@ -3368,7 +3368,7 @@ class BatteryStatsTests(unittest.TestCase):
             raise unittest.SkipTest("gcc with AddressSanitizer is not available")
         cls.build_dir = tempfile.mkdtemp(prefix="bat_")
         cls.exe = os.path.join(cls.build_dir, "battery_stats_host")
-        app = os.path.join(REPO_ROOT, "applications", "system", "battery_history")
+        app = os.path.join(REPO_ROOT, "applications", "settings", "power_settings_app", "views")
         subprocess.check_call(
             [
                 "gcc", "-std=gnu11", "-g", "-O1", "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
@@ -3418,9 +3418,13 @@ class BatteryStatsTests(unittest.TestCase):
         slow = self.drain(charge[-1][0] + 600, 8, 100, 1, 0)
         seconds, per_day_x10 = map(int, self.run_host(fast + charge + slow, "estimate")[0].split())
         self.assertAlmostEqual(per_day_x10, 240, delta=10)
-        # a start record (the Flipper was off) begins a new stretch: too short after it
-        restart = self.drain(slow[-1][0] + 600, 1, 90, 1)
+        # off for an hour, then started: a new stretch, too short after it
+        restart = self.drain(slow[-1][0] + 3600, 1, 90, 1)
         self.assertEqual(self.run_host(fast + charge + slow + restart, "estimate"), ["none"])
+        # a restart of minutes (an update, a reboot) leaves the stretch whole
+        quick = self.drain(slow[-1][0] + 600, 1, slow[-1][1] - 1, 1)
+        seconds, per_day_x10 = map(int, self.run_host(fast + charge + slow + quick, "estimate")[0].split())
+        self.assertAlmostEqual(per_day_x10, 240, delta=15)
 
     def test_columns_fill_between_records_but_not_across_gaps(self):
         records = [(0, 90, 2), (600, 89, 0), (1200, 88, 0), (9000, 80, 2), (9600, 79, 1)]
@@ -3431,6 +3435,9 @@ class BatteryStatsTests(unittest.TestCase):
         self.assertEqual(out[17:], ["-"] * 3)
         # two columns a record apart are filled with the earlier charge
         out = self.run_host([(0, 50, 2), (1200, 49, 0)], "columns", "1200", "1200", "4")
+        self.assertEqual(out, ["50", "50", "50", "49"])
+        # and across a restart of minutes: the line goes on
+        out = self.run_host([(0, 50, 0), (1200, 49, 2)], "columns", "1200", "1200", "4")
         self.assertEqual(out, ["50", "50", "50", "49"])
 
     def test_duration(self):

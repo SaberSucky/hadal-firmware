@@ -9,7 +9,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../../services/power/power_service/battery_log.h"
+#include "../../../services/power/power_service/battery_log.h"
 
 #ifdef __cplusplus
 extern "C" {

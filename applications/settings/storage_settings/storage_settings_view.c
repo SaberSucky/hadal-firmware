@@ -5,10 +5,10 @@
 #include <gui/elements.h>
 #include <storage/storage_sd_api.h>
 
-/* Two rows, each a name, what is free and a gauge of what is used; the hint bar under them */
-#define ROW_SD_Y   24 /* the SD card's name baseline */
-#define ROW_INT_Y  41
-#define GAUGE_GAP  2 /* from a name's baseline to its gauge */
+/* Two rows, each a name, what is free and a gauge of what is used, spaced over the whole page */
+#define ROW_SD_Y   28 /* the SD card's name baseline */
+#define ROW_INT_Y  51
+#define GAUGE_GAP  3 /* from a name's baseline to its gauge */
 #define GAUGE_H    7
 #define PILL_Y     52 /* a drive page's buttons, where the hint bar is */
 #define PILL_H     12
@@ -134,7 +134,6 @@ static void storage_view_draw_overview(Canvas* canvas, const StorageViewModel* m
         model->int_total_kb,
         model->int_free_kb,
         "unreadable");
-    elements_hint_bar(canvas, "ud=Choose;ok=Open");
 }
 
 static void storage_view_draw_page(Canvas* canvas, const StorageViewModel* model) {

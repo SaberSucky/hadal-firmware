@@ -32,7 +32,8 @@ void battery_stats_columns(
         if(record->flags & BatteryLogFlagCharging) charging[x] = true;
     }
     // a record stands until the next one, if the Flipper stayed on: fill the columns between
-    // records closer than the gap
+    // records closer than the gap. A restart counts no more than its own gap does: one that took
+    // seconds (an update, a reboot) broke the line, and a day of them made it dashes
     int last_x = -1;
     uint32_t last_time = 0;
     for(size_t i = 0; i < count; i++) {
@@ -40,8 +41,7 @@ void battery_stats_columns(
         if(record->timestamp < start || record->timestamp > now) continue;
         int x = (int)((uint64_t)(record->timestamp - start) * width / span_s);
         if(x >= (int)width) x = (int)width - 1;
-        if(last_x >= 0 && x > last_x + 1 && record->timestamp - last_time <= STATS_GAP_S &&
-           !(record->flags & BatteryLogFlagStart)) {
+        if(last_x >= 0 && x > last_x + 1 && record->timestamp - last_time <= STATS_GAP_S) {
             for(int fill = last_x + 1; fill < x; fill++) {
                 if(charge[fill] == BATTERY_STATS_NO_DATA) {
                     charge[fill] = charge[last_x];
@@ -65,7 +65,7 @@ bool battery_stats_estimate(const BatteryLogRecord* records, size_t count, Batte
         const BatteryLogRecord* before = &records[first - 1];
         const BatteryLogRecord* current = &records[first];
         if(before->flags & BatteryLogFlagCharging) break;
-        if(current->flags & BatteryLogFlagStart) break;
+        // a restart breaks the stretch only by its gap, as the graph's line
         if(current->timestamp < before->timestamp) break;
         if(current->timestamp - before->timestamp > STATS_GAP_S) break;
         if(last->timestamp - before->timestamp > STATS_MAX_SPAN_S) break;

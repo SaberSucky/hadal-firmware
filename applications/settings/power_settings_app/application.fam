@@ -11,6 +11,6 @@ App(
     ],
     flags=["InsomniaSafe"],
     fap_libs=["assets"],
-    stack_size=1 * 1024,
+    stack_size=2 * 1024,  # Battery info reads the history's files
     order=10,
 )
