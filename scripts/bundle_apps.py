@@ -25,8 +25,20 @@ a bundled app, or with an app built for a newer API than the firmware has), then
 changed on a device.
 
 The apps are other people's work under their own licences: the source repository is public, each
-folder keeps its own LICENSE file, and nothing here modifies them. applications_user/ is not tracked
-by git, so the repository stays small and the apps stay the originals.
+folder keeps its own LICENSE file, and nothing here modifies them beyond what the lock file spells
+out for an app. applications_user/ is not tracked by git, so the repository stays small and the apps
+stay the originals.
+
+What the lock may spell out for an app, applied by `fetch` after it copies the folder, in this order:
+  "omit"     files or folders left out of what is staged (files the app would install on the card)
+  "assets"   files copied in from Hadal's own tree (an icon the app's folder does not carry)
+  "patches"  exact edits to the app's own files, [{"file", "find", "replace"}, ...]: a fix the app
+             needs to run on Hadal (memory it cannot spare here, say), kept in the lock so that every
+             `fetch` makes it again; anything written by hand in applications_user/ is gone with the
+             next `fetch` or `clean`. Each `find` must be in its file exactly once, or `fetch` stops
+             and names the app: when an `update` moves the pin and upstream has changed the code a
+             patch was written against, the patch must be looked at again, never quietly skipped
+             (the app would build unpatched) or applied where the text happens to appear twice.
 """
 
 import argparse
@@ -110,6 +122,18 @@ def check_lock(lock):
                 problems.append(f"unsafe or empty assets dest in {path}: {dest!r}")
             if not src or src.startswith("/") or ".." in src.split("/") or not os.path.isfile(os.path.join(REPO, src)):
                 problems.append(f"{path} assets.{dest}: {src!r} is not a file in the repo")
+        # exact edits to the staged files (a fix the app needs on Hadal): {"file": relative to the
+        # staged folder, "find": text that is in it exactly once, "replace": what that text becomes,
+        # empty to delete it}. A `find` that is empty would be "in" every file everywhere at once.
+        for patch in app.get("patches", []):
+            file = patch.get("file") if isinstance(patch, dict) else None
+            if not isinstance(file, str) or not file or file.startswith("/") or ".." in file.split("/"):
+                problems.append(f"unsafe or empty patches file in {path}: {file!r}")
+                continue
+            if not isinstance(patch.get("find"), str) or not patch["find"]:
+                problems.append(f"{path} patch to {file}: find must be the text to change, not empty")
+            if not isinstance(patch.get("replace"), str):
+                problems.append(f"{path} patch to {file}: replace must be text (empty to delete what find is)")
     return problems
 
 
@@ -174,6 +198,38 @@ def clean():
     return len(staged_folders())
 
 
+def apply_patch(app_path, folder, patch):
+    """One of an app's "patches" on its staged folder: patch["find"] becomes patch["replace"] in
+    patch["file"]. The find must be there exactly once: not there means upstream changed the code
+    the patch was written against (the patch is stale: look at it again, since building the app
+    without it would bring back what it fixed), twice means it could change the wrong place.
+
+    The lock's text is written with \\n line ends; it is matched whatever the file's own are, and
+    the file keeps them (a source checked out on Windows may come with \\r\\n)."""
+    target = os.path.join(folder, *patch["file"].split("/"))
+    if not os.path.isfile(target):
+        raise SystemExit(f"{app_path}: nothing to patch at {patch['file']}")
+    with open(target, "rb") as f:
+        raw = f.read()
+    crlf = b"\r\n" in raw
+    text = raw.decode("utf-8").replace("\r\n", "\n")
+    find = patch["find"].replace("\r\n", "\n")
+    at = text.find(find)
+    if at < 0:
+        raise SystemExit(
+            f"{app_path}: the patch to {patch['file']} no longer applies, its text is not there (upstream"
+            f" changed it?); look at the patch again in applications/bundled_apps.json:\n  {find[:200]!r}"
+        )
+    if text.find(find, at + 1) >= 0:
+        raise SystemExit(
+            f"{app_path}: the patch to {patch['file']} is ambiguous, its text is there more than once;"
+            f" give it more of the text around it in applications/bundled_apps.json:\n  {find[:200]!r}"
+        )
+    text = text[:at] + patch["replace"].replace("\r\n", "\n") + text[at + len(find) :]
+    with open(target, "wb") as f:
+        f.write((text.replace("\n", "\r\n") if crlf else text).encode("utf-8"))
+
+
 def fetch():
     lock = load_lock()
     caches = {name: fetch_source(lock, name) for name in lock_sources(lock)}
@@ -206,6 +262,11 @@ def fetch():
             target = os.path.join(dest, *asset_dest.split("/"))
             os.makedirs(os.path.dirname(target), exist_ok=True)
             shutil.copyfile(os.path.join(REPO, asset_src), target)
+        # edits the lock makes to the app's own files, last, so a patch sees the folder as staged
+        # (what is omitted is gone, what the assets add is there), each patch the result of the one
+        # before it
+        for patch in app.get("patches", []):
+            apply_patch(app["path"], dest, patch)
         with open(os.path.join(dest, MARKER), "w") as f:
             f.write(app["path"] + "\n")
         count += 1
@@ -430,9 +491,11 @@ def manifest_info(folder):
 def notices():
     lock = load_lock()
     caches = {name: fetch_source(lock, name) for name in lock_sources(lock)}
-    rows = []
+    rows, patched = [], []
     for app in lock["apps"]:
         info, licences = manifest_info(os.path.join(caches[app.get("source", MAIN_SOURCE)], app["path"]))
+        if app.get("patches"):  # an app Hadal changes says so (a licence may ask for it, too)
+            patched.append(", ".join(info["names"]) or os.path.basename(app["path"]))
         rows.append(
             (
                 ", ".join(info["names"]) or os.path.basename(app["path"]),
@@ -447,7 +510,9 @@ def notices():
         f.write("# Bundled third-party apps\n\n")
         f.write(
             "These apps are not part of Hadal. They are other people's work, bundled in Hadal's update package "
-            "and used under the licence each of them carries. They are built unchanged from\n"
+            "and used under the licence each of them carries. They are built "
+            + ("unchanged, but for the apps named below, " if patched else "unchanged ")
+            + "from\n"
             f"[{lock['source']['repo'].split('github.com/')[-1]}]({lock['source']['repo']}) at commit "
             f"`{lock['source']['commit'][:8]}`, a public collection kept up to date by the Unleashed team, "
             "where each app's own folder holds its licence and its source"
@@ -457,7 +522,15 @@ def notices():
                 for s in lock.get("sources", {}).values()
             )
             + ".\n\n"
-            "Thank you to everyone whose apps these are.\n\n"
+            + (
+                "Changed for Hadal, so that they run on it (the exact edits are the `patches` of each in "
+                "[applications/bundled_apps.json](applications/bundled_apps.json)): "
+                + ", ".join(sorted(patched, key=str.lower))
+                + ".\n\n"
+                if patched
+                else ""
+            )
+            + "Thank you to everyone whose apps these are.\n\n"
         )
         f.write("| App | Author | Web page | Licence file |\n|---|---|---|---|\n")
         for row in rows:

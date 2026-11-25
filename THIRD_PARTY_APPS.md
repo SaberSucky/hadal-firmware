@@ -1,7 +1,9 @@
 # Bundled third-party apps
 
-These apps are not part of Hadal. They are other people's work, bundled in Hadal's update package and used under the licence each of them carries. They are built unchanged from
+These apps are not part of Hadal. They are other people's work, bundled in Hadal's update package and used under the licence each of them carries. They are built unchanged, but for the apps named below, from
 [xMasterX/all-the-plugins](https://github.com/xMasterX/all-the-plugins) at commit `0eef8a01`, a public collection kept up to date by the Unleashed team, where each app's own folder holds its licence and its source, and from [Next-Flip/Momentum-Apps](https://github.com/Next-Flip/Momentum-Apps) at commit `55a446b1` for the apps that collection does not have.
+
+Changed for Hadal, so that they run on it (the exact edits are the `patches` of each in [applications/bundled_apps.json](applications/bundled_apps.json)): Ghost ESP.
 
 Thank you to everyone whose apps these are.
 

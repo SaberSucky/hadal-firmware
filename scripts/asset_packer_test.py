@@ -1875,6 +1875,86 @@ class BundleAppsTests(TempDirCase):
         run(entries[:1])  # without it, the rest stages as usual
         self.assertTrue(os.path.isfile(os.path.join(stage, "good", "application.fam")))
 
+    def fetch_patched(self, patches, source="int a[8];\nint b[8];\n", newline="\n"):
+        """fetch() of one app, src/main.c holding source, with these patches: the staged main.c,
+        and the source's, which a patch must never touch (the next fetch copies it again)."""
+        import contextlib
+        import io
+        from unittest import mock
+
+        run = tempfile.mkdtemp(dir=self.tmp)  # a test may fetch more than once
+        src, stage = os.path.join(run, "src"), os.path.join(run, "stage")
+        os.makedirs(os.path.join(src, "app", "src"))
+        with open(os.path.join(src, "app", "application.fam"), "w") as f:
+            f.write('App(\n    appid="patched_app",\n    name="Patched App",\n    apptype=FlipperAppType.EXTERNAL,\n)\n')
+        with open(os.path.join(src, "app", "src", "main.c"), "w", newline=newline) as f:
+            f.write(source)
+        lock = {
+            "source": {"repo": "https://example.com/r", "commit": "a" * 40},
+            "apps": [{"path": "app", "appids": ["patched_app"], "patches": patches}],
+        }
+        self.assertEqual(self.mod.check_lock(lock), [])
+        with mock.patch.object(self.mod, "load_lock", lambda: lock), mock.patch.object(
+            self.mod, "fetch_source", lambda lock_, name=self.mod.MAIN_SOURCE: src
+        ), mock.patch.object(self.mod, "STAGE", stage), contextlib.redirect_stdout(io.StringIO()):
+            self.mod.fetch()
+        with open(os.path.join(stage, "app", "src", "main.c"), "rb") as f:
+            staged = f.read()
+        with open(os.path.join(src, "app", "src", "main.c"), "rb") as f:
+            original = f.read()
+        return staged, original
+
+    def test_a_patch_edits_the_staged_file_and_only_it(self):
+        staged, original = self.fetch_patched(
+            [
+                {"file": "src/main.c", "find": "int a[8];\n", "replace": "int* a;\n"},
+                {"file": "src/main.c", "find": "int* a;\nint b", "replace": "int* a;\nlong b"},  # sees the one before
+                {"file": "src/main.c", "find": "[8]", "replace": ""},  # empty: what find is goes
+            ]
+        )
+        self.assertEqual(staged, b"int* a;\nlong b;\n")
+        self.assertEqual(original, b"int a[8];\nint b[8];\n", "the source is left as it was")
+
+    def test_a_patch_matches_and_keeps_a_file_s_own_line_ends(self):
+        staged, _ = self.fetch_patched(
+            [{"file": "src/main.c", "find": "int a[8];\nint b", "replace": "int* a;\nint b"}], newline="\r\n"
+        )
+        self.assertEqual(staged, b"int* a;\r\nint b[8];\r\n")
+
+    def test_a_patch_whose_text_is_gone_stops_the_fetch_and_names_the_app(self):
+        with self.assertRaises(SystemExit) as caught:
+            self.fetch_patched([{"file": "src/main.c", "find": "int c[8];", "replace": "int* c;"}])
+        self.assertIn("app: the patch to src/main.c no longer applies", str(caught.exception))
+        with self.assertRaises(SystemExit) as caught:
+            self.fetch_patched([{"file": "src/gone.c", "find": "x", "replace": "y"}])
+        self.assertIn("app: nothing to patch at src/gone.c", str(caught.exception))
+
+    def test_a_patch_whose_text_is_there_twice_stops_the_fetch(self):
+        with self.assertRaises(SystemExit) as caught:
+            self.fetch_patched([{"file": "src/main.c", "find": "[8];", "replace": "[4];"}])
+        self.assertIn("app: the patch to src/main.c is ambiguous", str(caught.exception))
+        with self.assertRaises(SystemExit):  # twice, the two overlapping: still not one place
+            self.fetch_patched([{"file": "src/main.c", "find": "aa", "replace": "b"}], source="aaa\n")
+
+    def test_unsafe_or_empty_patches_are_refused(self):
+        lock = self.good_lock()
+        app = lock["apps"][0]
+        app["patches"] = [
+            {"file": "../outside.c", "find": "x", "replace": "y"},
+            {"file": "/abs.c", "find": "x", "replace": "y"},
+            {"file": "", "find": "x", "replace": "y"},
+            {"file": "src/a.c", "find": "", "replace": "y"},
+            {"file": "src/b.c", "replace": "y"},
+            {"file": "src/c.c", "find": "x"},
+            {"file": "src/d.c", "find": "x", "replace": ""},  # fine: a deletion
+        ]
+        problems = self.mod.check_lock(lock)
+        self.assertEqual(len(problems), 6, problems)
+        self.assertEqual(sum("unsafe or empty patches file" in p for p in problems), 3)
+        self.assertTrue(any("src/a.c: find must be" in p for p in problems))
+        self.assertTrue(any("src/b.c: find must be" in p for p in problems))
+        self.assertTrue(any("src/c.c: replace must be" in p for p in problems))
+
     def test_an_update_sees_changes_removals_new_folders_and_changed_ids(self):
         apps = [
             {"path": "a/x", "appids": ["x"]},
@@ -4116,6 +4196,298 @@ class ResourceSplitTests(unittest.TestCase):
             compress_files_tarball(src, ["apps/GPIO/a.fap", "apps/GPIO/b.fap"], out)
             with open(out, "rb") as f:
                 self.assertEqual(f.read(), first)
+
+
+ATLAS_APP_DIR = os.path.join(REPO_ROOT, "applications", "system", "remote_analyzer")
+ATLAS_PLAN_DIR = os.path.join(ATLAS_APP_DIR, "resources", "frequency_atlas")
+
+
+class FrequencyAtlasHostTests(unittest.TestCase):
+    """Frequency Atlas: the band plan parser and the band scan
+    (remote_analyzer/plugins/frequency_atlas/ra_atlas_plan.c, ra_atlas_scan.c), as they ship"""
+
+    @classmethod
+    def setUpClass(cls):
+        import subprocess
+
+        if not _have_sanitizer("address,undefined"):
+            raise unittest.SkipTest("gcc with AddressSanitizer is not available")
+        cls.build_dir = tempfile.mkdtemp(prefix="atlas_")
+        cls.exe = os.path.join(cls.build_dir, "frequency_atlas_host")
+        src = os.path.join(ATLAS_APP_DIR, "plugins", "frequency_atlas")
+        subprocess.check_call(
+            [
+                "gcc", "-std=gnu11", "-g", "-O1", "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
+                "-Wall", "-Wextra", "-Werror", "-I", src, "-o", cls.exe,
+                os.path.join(REPO_ROOT, "scripts", "host_tests", "frequency_atlas_host.c"),
+                os.path.join(src, "ra_atlas_plan.c"),
+                os.path.join(src, "ra_atlas_scan.c"),
+            ]
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.build_dir, True)
+
+    def run_host(self, *args, text=""):
+        import subprocess
+
+        r = subprocess.run([self.exe, *args], input=text, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+        return r.stdout
+
+    HEADER = "Filetype: Flipper Frequency Atlas\nVersion: 1\nRegion: XX\nName: Test land\n"
+
+    def parse(self, text):
+        out = self.run_host("parse", text=text).split("\n")
+        first = out[0].split()
+        bands = [line[5:] for line in out if line.startswith("band ")]
+        return int(first[1]), int(first[3]), int(first[5]), bands, out
+
+    def test_valid_file(self):
+        text = (
+            self.HEADER + "Source: a table\nNote: info only\n# a comment\n\n"
+            "Band: 433050000|434790000|433920000|SRD 433|Remotes|10 mW\r\n"
+            "Band:  868000000 | 868600000 |  | SRD 868 | | 25 mW, 1% \n"
+        )
+        valid, count, bad, bands, out = self.parse(text)
+        self.assertEqual((valid, count, bad), (1, 2, 0))
+        self.assertIn("region XX", out)
+        self.assertIn("name Test land", out)
+        self.assertIn("source a table", out)
+        self.assertEqual(bands[0], "433050000 434790000 433920000 SRD 433|Remotes|10 mW")
+        # an empty listen field is the middle of the band; spaces round fields go
+        self.assertEqual(bands[1], "868000000 868600000 868300000 SRD 868||25 mW, 1%")
+
+    def test_malformed_lines_are_skipped_not_fatal(self):
+        bad_lines = [
+            "Band: 433050000|434790000|433920000|SRD 433|Remotes",  # five fields
+            "Band: 433050000|434790000|433920000|SRD 433|a|b|c",  # seven
+            "Band: 434790000|433050000||Backwards|a|b",  # end below start
+            "Band: 433050000|433050000||Empty|a|b",  # no width
+            "Band: 0|1000||Zero|a|b",
+            "Band: 433.05|434.79||MHz|a|b",  # Hz only
+            "Band: -1|434790000||Sign|a|b",
+            "Band: 433050000|99999999999||Overflow|a|b",
+            "Band: 433050000|434790000|500000000|Outside|a|b",  # listen outside the band
+            "Band: 433050000|434790000|||a|b",  # no label
+            "Band: 433050000|434790000|x|Text listen|a|b",
+            "just some words",
+        ]
+        text = self.HEADER + "\n".join(bad_lines) + "\nBand: 446000000|446200000||PMR446|Radios|500 mW\n"
+        valid, count, bad, bands, _ = self.parse(text)
+        self.assertEqual((valid, count, bad), (1, 1, len(bad_lines)))
+        self.assertTrue(bands[0].startswith("446000000 446200000 446100000 PMR446|"))
+
+    def test_no_header_or_wrong_header_is_no_plan(self):
+        band = "Band: 433050000|434790000||SRD 433|a|b\n"
+        self.assertEqual(self.parse(band)[0], 0)
+        self.assertEqual(self.parse("Filetype: Flipper Frequency Atlas\n" + band)[0], 0)
+        self.assertEqual(self.parse("Filetype: Something else\nVersion: 1\n" + band)[0], 0)
+        self.assertEqual(self.parse(self.HEADER.replace("Version: 1", "Version: 2") + band)[0], 0)
+
+    def test_region_with_zero_bands_is_no_plan(self):
+        valid, count, bad, _, _ = self.parse(self.HEADER + "# nothing here\n")
+        self.assertEqual((valid, count, bad), (0, 0, 0))
+        # bands that all fail count as none too
+        valid, count, bad, _, _ = self.parse(self.HEADER + "Band: 1|0||x|y|z\n")
+        self.assertEqual((valid, count, bad), (0, 0, 1))
+
+    def test_missing_or_empty_file_is_no_plan(self):
+        # what the plugin hands the parser for an empty file; a missing one never reaches it
+        valid, count, _, _, out = self.parse("")
+        self.assertEqual((valid, count), (0, 0))
+        self.assertIn("region ", out)
+
+    def test_unknown_keys_skipped_and_band_cap(self):
+        lines = [self.HEADER, "Colour: blue\n"]
+        lines += [f"Band: {300000000 + i * 1000}|{300000500 + i * 1000}||B{i}|u|l\n" for i in range(40)]
+        valid, count, bad, _, _ = self.parse("".join(lines))
+        self.assertEqual((valid, count, bad), (1, 32, 8))
+
+    def test_nul_and_no_trailing_newline(self):
+        valid, count, _, _, _ = self.parse(self.HEADER + "Band: 433050000|434790000||SRD|a|b")
+        self.assertEqual((valid, count), (1, 1))
+        # a NUL ends the text there, rather than the parser reading past it
+        valid, count, _, _, _ = self.parse(self.HEADER + "\0Band: 433050000|434790000||SRD|a|b\n")
+        self.assertEqual((valid, count), (0, 0))
+
+    def test_shipped_plans_parse_whole(self):
+        for name in sorted(os.listdir(ATLAS_PLAN_DIR)):
+            with open(os.path.join(ATLAS_PLAN_DIR, name), encoding="ascii") as f:
+                valid, count, bad, _, _ = self.parse(f.read())
+            self.assertEqual((valid, bad), (1, 0), name)
+            self.assertGreater(count, 0, name)
+
+    def test_region_codes(self):
+        for code, ok in (("uk", 1), ("de-by", 1), ("us_2", 1), ("UK", 0), ("", 0), ("../x", 0),
+                         ("a" * 15, 1), ("a" * 16, 0), ("u k", 0), ("x.txt", 0)):
+            self.assertEqual(self.run_host("code", code).strip(), str(ok), code)
+
+    def test_mhz(self):
+        for hz, text in ((433920000, "433.92"), (446000000, "446"), (458837500, "458.837"),
+                         (869525000, "869.525"), (300000, "0.3")):
+            self.assertEqual(self.run_host("mhz", str(hz)).strip(), text)
+
+    def test_wrap(self):
+        long_word = "f" + "e" * 17  # longer than a line: cut where the line ends
+        out = self.run_host("wrap", "10", text=f"one two three four {long_word} six\nseven")
+        self.assertEqual(
+            out, f"one two\nthree four\n{long_word[:10]}\n{long_word[10:]}\nsix\nseven<end>\n"
+        )
+        # a space at the start of a wrapped line is dropped, and no line runs past 10
+        out = self.run_host("wrap", "10", text="aaaa bbbbb  cc dddddddddd e")
+        self.assertTrue(all(len(line) <= 10 for line in out.split("\n")), out)
+        self.assertFalse(any(line.startswith(" ") for line in out.split("\n")), out)
+        self.assertEqual(self.run_host("wrap", "24", text=""), "<end>\n")
+
+    def scan(self, tunable, commands, trigger="-85"):
+        return self.run_host("scan", tunable, trigger, text="\n".join(commands) + "\n").split("\n")[:-1]
+
+    def test_scan_goes_round_skipping_bands_out_of_range(self):
+        out = self.scan("1011", [f"tick {t} -100" for t in range(100, 1300, 100)])
+        self.assertEqual(out[0], "init 1 0")
+        # 200 ms a band while it is quiet, never band 1
+        moves = [line for line in out[1:] if line.startswith("retune")]
+        self.assertEqual(moves[:4], ["retune 2", "retune 3", "retune 0", "retune 2"])
+
+    def test_scan_stays_while_busy_but_not_for_ever(self):
+        out = self.scan("11", [f"tick {t} -60" for t in range(100, 3600, 100)] + ["status 3500 0", "signal 3500"])
+        retunes = [i for i, line in enumerate(out[1:], 1) if line.startswith("retune")]
+        # a carrier keeps it on band 0 until the 3 s cap, then it moves on
+        self.assertEqual(len(retunes), 1)
+        self.assertEqual(out[retunes[0]], "retune 1")
+        self.assertEqual(retunes[0], 30)
+        self.assertIn("status active 0", out)
+
+    def test_scan_status_ages(self):
+        out = self.scan("11", ["status 0 0", "tick 100 -60", "status 1000 0", "status 9100 0", "status 0 5"])
+        self.assertEqual(out[1:], ["status quiet 0", "none 0", "status active 0", "status seen 9", "status out 0"])
+
+    def test_scan_hold_and_release(self):
+        out = self.scan(
+            "101",
+            ["hold 100 1", "hold 100 2", "tick 400 -100", "tick 900 -100", "release 1000", "tick 1100 -100",
+             "tick 1200 -100", "hold 1300 9"],
+        )
+        self.assertEqual(out[1], "hold 0 0 0")  # out of range: refused
+        self.assertEqual(out[2], "hold 1 1 2")
+        self.assertEqual(out[3:5], ["none 2", "none 2"])  # held: never moves
+        self.assertEqual(out[6:8], ["none 2", "retune 0"])
+        self.assertEqual(out[8], "hold 0 0 0")
+
+    def test_scan_decode_names_the_band_and_keeps_it(self):
+        out = self.scan(
+            "11",
+            ["tick 100 -100", "tick 200 -100", "decode 250 Princeton", "tick 300 -100", "tick 400 -100",
+             "live 1", "live 0", "status 400 1"],
+        )
+        self.assertEqual(out[2], "retune 1")
+        # the decode counts as a carrier, so band 1 keeps the receiver past its 200 ms
+        self.assertEqual(out[4:6], ["none 1", "none 1"])
+        self.assertEqual(out[6], "live Princeton -100")
+        self.assertEqual(out[7], "live - -100")
+        self.assertEqual(out[8], "status active 0")
+
+    def test_scan_nothing_tunable(self):
+        out = self.scan("00", ["tick 100 -50", "tick 300 -50"])
+        self.assertEqual(out, ["init 0 0", "none 0", "none 0"])
+
+
+class FrequencyAtlasDataTests(unittest.TestCase):
+    """The band plans Hadal ships for the Frequency Atlas: the format the atlas reads
+    (documentation/file_formats/FrequencyAtlasFormat.md), bands the radio can reach, and
+    deployed where the atlas and Settings look for them"""
+
+    # The CC1101's reach with Extended Sub-GHz on (hadal_settings_scene_protocols.c)
+    REACH = ((281_000_000, 361_000_000), (378_000_000, 481_000_000), (749_000_000, 962_000_000))
+
+    @staticmethod
+    def plan(path):
+        header, bands = {}, []
+        with open(path, "rb") as f:
+            raw = f.read()
+        raw.decode("ascii")  # the Flipper's fonts are ASCII
+        for line in raw.decode("ascii").split("\n"):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            key, sep, value = line.partition(":")
+            assert sep, f"{path}: not a setting: {line!r}"
+            key, value = key.strip(), value.strip()
+            if key == "Band":
+                bands.append([f.strip() for f in value.split("|")])
+            else:
+                header[key] = value
+        return raw, header, bands
+
+    def in_reach(self, hz):
+        return any(lo <= hz <= hi for lo, hi in self.REACH)
+
+    def test_every_shipped_plan(self):
+        names = sorted(os.listdir(ATLAS_PLAN_DIR))
+        self.assertEqual(names, ["eu.txt", "uk.txt", "us.txt"])
+        for name in names:
+            raw, header, bands = self.plan(os.path.join(ATLAS_PLAN_DIR, name))
+            self.assertLessEqual(len(raw), 16 * 1024, name)
+            self.assertEqual(header.get("Filetype"), "Flipper Frequency Atlas", name)
+            self.assertEqual(header.get("Version"), "1", name)
+            self.assertEqual(header.get("Region"), name[:-4].upper(), name)
+            for key in ("Name", "Source", "Note"):
+                self.assertTrue(header.get(key), f"{name}: {key}")
+            self.assertIn("not legal advice", header["Note"], name)
+            self.assertTrue(0 < len(bands) <= 32, name)
+            for fields in bands:
+                self.assertEqual(len(fields), 6, f"{name}: {fields}")
+                start, end = int(fields[0]), int(fields[1])
+                listen = int(fields[2]) if fields[2] else start + (end - start) // 2
+                self.assertTrue(fields[0].isdigit() and fields[1].isdigit(), fields)
+                self.assertLess(start, end, fields)
+                self.assertTrue(start <= listen <= end, fields)
+                # where it parks has to be somewhere the radio can tune, Extended on at least
+                self.assertTrue(self.in_reach(listen), f"{name}: {fields[3]} listens out of reach")
+                self.assertTrue(fields[3] and fields[4] and fields[5], f"{name}: {fields}")
+                self.assertNotIn("|", "".join(fields))
+
+    def test_uk_leaves_out_what_the_radio_cannot_reach(self):
+        _, _, bands = self.plan(os.path.join(ATLAS_PLAN_DIR, "uk.txt"))
+        self.assertFalse([b for b in bands if int(b[1]) < 281_000_000])
+        with open(os.path.join(ATLAS_PLAN_DIR, "uk.txt"), encoding="ascii") as f:
+            self.assertIn("173.2-173.35 MHz", f.read())  # and says so
+
+    def test_uncertain_figures_say_so(self):
+        """A figure not read off the regulator's own text is marked, not stated as fact"""
+        _, _, bands = self.plan(os.path.join(ATLAS_PLAN_DIR, "uk.txt"))
+        by_label = {b[3]: b[5] for b in bands}
+        for label in ("Alarms 868.6", "Alarms 869.25", "Alarms 869.65", "SRD 868"):
+            self.assertIn("verify", by_label[label], label)
+        # the social alarm band is 0.1%, not a high duty allowance
+        self.assertIn("0.1% duty", by_label["Social alarms"])
+
+    def test_deployed_as_card_resources(self):
+        """resources/ lands on the card as is: /ext/frequency_atlas/<code>.txt"""
+        with open(os.path.join(ATLAS_APP_DIR, "application.fam")) as f:
+            fam = f.read()
+        self.assertIn('resources="resources"', fam)
+        self.assertIn('appid="remote_analyzer_atlas"', fam)
+        with open(os.path.join(ATLAS_APP_DIR, "helpers", "ra_atlas_plugin.h")) as f:
+            header = f.read()
+        self.assertIn('EXT_PATH("frequency_atlas")', header)
+        self.assertIn('EXT_PATH("apps_data/remote_analyzer/atlas_region")', header)
+
+    def test_settings_regions_are_the_shipped_ones(self):
+        path = os.path.join(
+            REPO_ROOT, "applications", "settings", "hadal_settings", "scenes", "hadal_settings_scene_protocols.c"
+        )
+        with open(path) as f:
+            src = f.read()
+        codes = re.search(r"region_codes\[\] = \{([^}]*)\}", src).group(1)
+        self.assertEqual(re.findall(r'"(\w+)"', codes), ["uk", "eu", "us", "off"])
+        # one file, written the same way by Settings and by the atlas
+        self.assertIn('EXT_PATH("apps_data/remote_analyzer/atlas_region")', src)
+        self.assertIn('"Region"', src)
+        self.assertIn('EXT_PATH("apps/Sub-GHz/remote_analyzer.fap")', src)
+        self.assertIn('"atlas"', src)
 
 
 if __name__ == "__main__":

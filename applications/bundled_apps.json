@@ -1439,6 +1439,148 @@
    "path": "non_catalog_apps/ghost_esp_app",
    "appids": [
     "ghost_esp"
+   ],
+   "patches": [
+    {
+     "file": "src/app_state.h",
+     "find": "} IrUniversalEntry;\n",
+     "replace": "} IrUniversalEntry;\n\n// Hadal: the IR lists (about 9 KB) are allocated the first time one is read (ghost_esp_ir_tables\n// in menu.c) instead of with the app, as most sessions never open IR; AppState's ir_remotes,\n// ir_signals, ir_universals and ir_signal_block_* point into this, and are NULL until then\ntypedef struct {\n    IrRemoteEntry remotes[32];\n    IrSignalEntry signals[64];\n    IrUniversalEntry universals[64];\n    size_t signal_block_offsets[64];\n    size_t signal_block_lengths[64];\n} IrTables;\n"
+    },
+    {
+     "file": "src/app_state.h",
+     "find": "    IrRemoteEntry ir_remotes[32];\n    size_t ir_remote_count;\n    IrSignalEntry ir_signals[64];\n    size_t ir_signal_count;\n    IrUniversalEntry ir_universals[64];\n    size_t ir_universal_count;\n",
+     "replace": "    IrTables* ir_tables; // Hadal: NULL until the first IR list is read\n    IrRemoteEntry* ir_remotes; // ir_tables->remotes\n    size_t ir_remote_count;\n    IrSignalEntry* ir_signals; // ir_tables->signals\n    size_t ir_signal_count;\n    IrUniversalEntry* ir_universals; // ir_tables->universals\n    size_t ir_universal_count;\n"
+    },
+    {
+     "file": "src/app_state.h",
+     "find": "    size_t ir_signal_block_offsets[64];\n    size_t ir_signal_block_lengths[64];\n",
+     "replace": "    size_t* ir_signal_block_offsets; // ir_tables->signal_block_offsets\n    size_t* ir_signal_block_lengths; // ir_tables->signal_block_lengths\n"
+    },
+    {
+     "file": "src/uart_utils.h",
+     "find": "#define TEXT_BOX_STORE_SIZE           (8 * 1024) // 8KB text box buffer size\n",
+     "replace": "#define TEXT_BOX_STORE_SIZE           (4 * 1024) // Hadal: 4KB (was 8KB), for the RAM to start\n"
+    },
+    {
+     "file": "src/main.c",
+     "find": "    // Allocate remaining UI components\n    state->wifi_menu = submenu_alloc();\n    state->wifi_scanning_menu = submenu_alloc();\n    state->wifi_capture_menu = submenu_alloc();\n    state->wifi_attack_menu = submenu_alloc();\n    state->wifi_network_menu = submenu_alloc();\n    state->wifi_settings_menu = submenu_alloc();\n    state->status_idle_menu = submenu_alloc();\n    state->ble_menu = submenu_alloc();\n    state->ble_scanning_menu = submenu_alloc();\n    state->ble_capture_menu = submenu_alloc();\n    state->ble_attack_menu = submenu_alloc();\n    state->aerial_menu = submenu_alloc();\n    state->gps_menu = submenu_alloc();\n    state->ir_menu = submenu_alloc();\n    state->ir_remotes_menu = submenu_alloc();\n    state->ir_buttons_menu = submenu_alloc();\n    state->ir_universals_menu = submenu_alloc();\n    // Sub-category submenus\n    state->wifi_settings_led_menu = submenu_alloc();\n    state->wifi_settings_sd_menu = submenu_alloc();\n    state->wifi_settings_mgmt_menu = submenu_alloc();\n    state->wifi_settings_device_menu = submenu_alloc();\n    state->wifi_settings_misc_menu = submenu_alloc();\n    state->wifi_network_portal_menu = submenu_alloc();\n    state->wifi_network_conn_menu = submenu_alloc();\n    state->wifi_network_scan_menu = submenu_alloc();\n    state->wifi_network_iot_menu = submenu_alloc();\n    state->wifi_network_webui_menu = submenu_alloc();\n    state->ble_scan_detect_menu = submenu_alloc();\n    state->ble_scan_airtag_menu = submenu_alloc();\n    state->ble_scan_gatt_menu = submenu_alloc();\n    state->ble_scan_adv_menu = submenu_alloc();\n    state->gps_config_menu = submenu_alloc();\n    state->gps_wardrive_menu = submenu_alloc();\n    state->text_box = text_box_alloc();\n",
+     "replace": "    // Allocate remaining UI components\n    // Hadal: the WiFi, BLE, GPS and IR submenus are allocated the first time each is shown\n    // (ghost_esp_submenu in menu.c), so they are NULL here, and the views below are added, removed\n    // and freed only for those that exist\n    state->text_box = text_box_alloc();\n"
+    },
+    {
+     "file": "src/main.c",
+     "find": "    if(state && state->ir_file_buffer) free(state->ir_file_buffer);\n",
+     "replace": "    if(state && state->ir_file_buffer) free(state->ir_file_buffer);\n    if(state && state->ir_tables) free(state->ir_tables); // Hadal: made on first IR use\n"
+    },
+    {
+     "file": "src/menu.c",
+     "find": "static void ir_send_button_from_file(AppState* state, uint32_t button_index);\n",
+     "replace": "static void ir_send_button_from_file(AppState* state, uint32_t button_index);\n\n// Hadal: a submenu is allocated (and added to the view dispatcher) the first time it is shown,\n// not all of them with the app: they cost about 13 KB before anything is open, which a Flipper\n// cannot spare at app start. Once made it stays until the app exits, where main.c removes and\n// frees only those that exist\nstatic Submenu* ghost_esp_submenu(AppState* state, uint32_t view_id) {\n    Submenu** menu = NULL;\n    switch(view_id) {\n    case VIEW_WIFI:\n        menu = &state->wifi_menu;\n        break;\n    case VIEW_WIFI_SCANNING:\n        menu = &state->wifi_scanning_menu;\n        break;\n    case VIEW_WIFI_CAPTURE:\n        menu = &state->wifi_capture_menu;\n        break;\n    case VIEW_WIFI_ATTACK:\n        menu = &state->wifi_attack_menu;\n        break;\n    case VIEW_WIFI_NETWORK:\n        menu = &state->wifi_network_menu;\n        break;\n    case VIEW_WIFI_SETTINGS:\n        menu = &state->wifi_settings_menu;\n        break;\n    case VIEW_STATUS_IDLE:\n        menu = &state->status_idle_menu;\n        break;\n    case VIEW_BLE:\n        menu = &state->ble_menu;\n        break;\n    case VIEW_BLE_SCANNING:\n        menu = &state->ble_scanning_menu;\n        break;\n    case VIEW_BLE_CAPTURE:\n        menu = &state->ble_capture_menu;\n        break;\n    case VIEW_BLE_ATTACK:\n        menu = &state->ble_attack_menu;\n        break;\n    case VIEW_AERIAL:\n        menu = &state->aerial_menu;\n        break;\n    case VIEW_GPS:\n        menu = &state->gps_menu;\n        break;\n    case VIEW_IR:\n        menu = &state->ir_menu;\n        break;\n    case VIEW_IR_REMOTES:\n        menu = &state->ir_remotes_menu;\n        break;\n    case VIEW_IR_BUTTONS:\n        menu = &state->ir_buttons_menu;\n        break;\n    case VIEW_IR_UNIVERSALS:\n        menu = &state->ir_universals_menu;\n        break;\n    case VIEW_WIFI_SETTINGS_LED:\n        menu = &state->wifi_settings_led_menu;\n        break;\n    case VIEW_WIFI_SETTINGS_SD:\n        menu = &state->wifi_settings_sd_menu;\n        break;\n    case VIEW_WIFI_SETTINGS_MGMT:\n        menu = &state->wifi_settings_mgmt_menu;\n        break;\n    case VIEW_WIFI_SETTINGS_DEVICE:\n        menu = &state->wifi_settings_device_menu;\n        break;\n    case VIEW_WIFI_SETTINGS_MISC:\n        menu = &state->wifi_settings_misc_menu;\n        break;\n    case VIEW_WIFI_NETWORK_PORTAL:\n        menu = &state->wifi_network_portal_menu;\n        break;\n    case VIEW_WIFI_NETWORK_CONN:\n        menu = &state->wifi_network_conn_menu;\n        break;\n    case VIEW_WIFI_NETWORK_SCAN:\n        menu = &state->wifi_network_scan_menu;\n        break;\n    case VIEW_WIFI_NETWORK_IOT:\n        menu = &state->wifi_network_iot_menu;\n        break;\n    case VIEW_WIFI_NETWORK_WEBUI:\n        menu = &state->wifi_network_webui_menu;\n        break;\n    case VIEW_BLE_SCAN_DETECT:\n        menu = &state->ble_scan_detect_menu;\n        break;\n    case VIEW_BLE_SCAN_AIRTAG:\n        menu = &state->ble_scan_airtag_menu;\n        break;\n    case VIEW_BLE_SCAN_GATT:\n        menu = &state->ble_scan_gatt_menu;\n        break;\n    case VIEW_BLE_SCAN_ADV:\n        menu = &state->ble_scan_adv_menu;\n        break;\n    case VIEW_GPS_CONFIG:\n        menu = &state->gps_config_menu;\n        break;\n    case VIEW_GPS_WARDRIVE:\n        menu = &state->gps_wardrive_menu;\n        break;\n    default:\n        furi_crash(\"Ghost ESP: no submenu for this view\");\n    }\n    if(!*menu) {\n        *menu = submenu_alloc();\n        view_dispatcher_add_view(state->view_dispatcher, view_id, submenu_get_view(*menu));\n    }\n    return *menu;\n}\n\n// Hadal: the IR lists, allocated the first time one is read (see IrTables in app_state.h) and\n// freed with the app in main.c. Everything that reads them only reads below a count that only\n// the functions filling them (which call this first) make more than zero\nstatic bool ghost_esp_ir_tables(AppState* state) {\n    if(state->ir_tables) return true;\n    IrTables* tables = malloc(sizeof(IrTables));\n    if(!tables) return false;\n    memset(tables, 0, sizeof(IrTables));\n    state->ir_tables = tables;\n    state->ir_remotes = tables->remotes;\n    state->ir_signals = tables->signals;\n    state->ir_universals = tables->universals;\n    state->ir_signal_block_offsets = tables->signal_block_offsets;\n    state->ir_signal_block_lengths = tables->signal_block_lengths;\n    return true;\n}\n"
+    },
+    {
+     "file": "src/menu.c",
+     "find": "static bool ir_query_and_parse_list(AppState* state) {\n    if(!state || !state->uart_context) return false;\n",
+     "replace": "static bool ir_query_and_parse_list(AppState* state) {\n    if(!state || !state->uart_context || !ghost_esp_ir_tables(state)) return false;\n"
+    },
+    {
+     "file": "src/menu.c",
+     "find": "static bool ir_query_and_parse_show(AppState* state, uint32_t remote_index) {\n    if(!state || !state->uart_context) return false;\n",
+     "replace": "static bool ir_query_and_parse_show(AppState* state, uint32_t remote_index) {\n    if(!state || !state->uart_context || !ghost_esp_ir_tables(state)) return false;\n"
+    },
+    {
+     "file": "src/menu.c",
+     "find": "    if(!state || !state->ir_file_path[0]) return false;\n",
+     "replace": "    if(!state || !state->ir_file_path[0] || !ghost_esp_ir_tables(state)) return false;\n"
+    },
+    {
+     "file": "src/menu.c",
+     "find": "static bool ir_query_and_parse_universals(AppState* state) {\n    if(!state || !state->uart_context) return false;\n",
+     "replace": "static bool ir_query_and_parse_universals(AppState* state) {\n    if(!state || !state->uart_context || !ghost_esp_ir_tables(state)) return false;\n"
+    },
+    {
+     "file": "src/menu.c",
+     "find": "    if(!state || !state->uart_context || !filename || !filename[0]) return false;\n",
+     "replace": "    if(!state || !state->uart_context || !filename || !filename[0] || !ghost_esp_ir_tables(state))\n        return false;\n"
+    },
+    {
+     "file": "src/menu.c",
+     "find": "COUNT_OF(state->ir_remotes)",
+     "replace": "COUNT_OF(state->ir_tables->remotes)"
+    },
+    {
+     "file": "src/menu.c",
+     "find": "COUNT_OF(state->ir_universals)",
+     "replace": "COUNT_OF(state->ir_tables->universals)"
+    },
+    {
+     "file": "src/menu.c",
+     "find": "                if(state->ir_signal_count < COUNT_OF(state->ir_signals)) {\n                    IrSignalEntry* e = &state->ir_signals[state->ir_signal_count++];\n",
+     "replace": "                if(state->ir_signal_count < COUNT_OF(state->ir_tables->signals)) {\n                    IrSignalEntry* e = &state->ir_signals[state->ir_signal_count++];\n"
+    },
+    {
+     "file": "src/menu.c",
+     "find": "while(pos < read && state->ir_signal_count < COUNT_OF(state->ir_signals)) {",
+     "replace": "while(pos < read && state->ir_signal_count < COUNT_OF(state->ir_tables->signals)) {"
+    },
+    {
+     "file": "src/menu.c",
+     "find": "if(state->ir_signal_count < COUNT_OF(state->ir_signals)) {\n                        IrSignalEntry* e = &state->ir_signals[state->ir_signal_count];\n",
+     "replace": "if(state->ir_signal_count < COUNT_OF(state->ir_tables->signals)) {\n                        IrSignalEntry* e = &state->ir_signals[state->ir_signal_count];\n"
+    },
+    {
+     "file": "src/menu.c",
+     "find": "if(!exists && state->ir_signal_count < COUNT_OF(state->ir_signals)) {",
+     "replace": "if(!exists && state->ir_signal_count < COUNT_OF(state->ir_tables->signals)) {"
+    },
+    {
+     "file": "src/menu.c",
+     "find": "    if(!state || !state->ir_remotes_menu) return;\n",
+     "replace": "    if(!state || !ghost_esp_submenu(state, VIEW_IR_REMOTES)) return;\n"
+    },
+    {
+     "file": "src/menu.c",
+     "find": "    if(!state || !state->ir_buttons_menu) return;\n",
+     "replace": "    if(!state || !ghost_esp_submenu(state, VIEW_IR_BUTTONS)) return;\n"
+    },
+    {
+     "file": "src/menu.c",
+     "find": "    if(!state || !state->ir_universals_menu) return;\n",
+     "replace": "    if(!state || !ghost_esp_submenu(state, VIEW_IR_UNIVERSALS)) return;\n"
+    },
+    {
+     "file": "src/menu.c",
+     "find": "    Submenu* menu,\n    uint8_t view_id) {\n    submenu_reset(menu);\n",
+     "replace": "    Submenu* menu,\n    uint8_t view_id) {\n    if(!menu) menu = ghost_esp_submenu(state, view_id); // Hadal: the first time it is shown\n    submenu_reset(menu);\n"
+    },
+    {
+     "file": "src/menu.c",
+     "find": "void show_wifi_network_menu(AppState* state) {\n",
+     "replace": "void show_wifi_network_menu(AppState* state) {\n    ghost_esp_submenu(state, VIEW_WIFI_NETWORK); // Hadal: the first time it is shown\n"
+    },
+    {
+     "file": "src/menu.c",
+     "find": "void show_wifi_settings_menu(AppState* state) {\n",
+     "replace": "void show_wifi_settings_menu(AppState* state) {\n    ghost_esp_submenu(state, VIEW_WIFI_SETTINGS); // Hadal: the first time it is shown\n"
+    },
+    {
+     "file": "src/menu.c",
+     "find": "void show_ble_scanning_menu(AppState* state) {\n",
+     "replace": "void show_ble_scanning_menu(AppState* state) {\n    ghost_esp_submenu(state, VIEW_BLE_SCANNING); // Hadal: the first time it is shown\n"
+    },
+    {
+     "file": "src/menu.c",
+     "find": "void show_wifi_menu(AppState* state) {\n",
+     "replace": "void show_wifi_menu(AppState* state) {\n    ghost_esp_submenu(state, VIEW_WIFI); // Hadal: the first time it is shown\n"
+    },
+    {
+     "file": "src/menu.c",
+     "find": "void show_ble_menu(AppState* state) {\n",
+     "replace": "void show_ble_menu(AppState* state) {\n    ghost_esp_submenu(state, VIEW_BLE); // Hadal: the first time it is shown\n"
+    },
+    {
+     "file": "src/menu.c",
+     "find": "void show_gps_menu(AppState* state) {\n",
+     "replace": "void show_gps_menu(AppState* state) {\n    ghost_esp_submenu(state, VIEW_GPS); // Hadal: the first time it is shown\n"
+    }
    ]
   },
   {
