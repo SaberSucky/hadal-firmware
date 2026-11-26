@@ -6,6 +6,8 @@
  *       hopper                 stdin: setting_user; prints the hopper frequencies
  *       with HZ | without HZ | hop HZ | unhop HZ | standard 0|1
  *                              stdin: setting_user; prints the new text
+ *       region HZ,HZ,...       stdin: setting_user; prints it with the region's frequencies
+ *       changes HZ,HZ,...      stdin: setting_user; prints what "region" would still change
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -58,6 +60,19 @@ int main(int argc, char** argv) {
         out = subghz_freqs_without(text, (uint32_t)strtoul(argv[2], NULL, 10));
     } else if(!strcmp(argv[1], "standard") && argc > 2) {
         out = subghz_freqs_set_standard(text, atoi(argv[2]));
+    } else if((!strcmp(argv[1], "region") || !strcmp(argv[1], "changes")) && argc > 2) {
+        uint32_t hz[64];
+        size_t count = 0;
+        for(char* p = argv[2]; *p && count < 64;) {
+            char* end;
+            hz[count++] = (uint32_t)strtoul(p, &end, 10);
+            p = *end == ',' ? end + 1 : end;
+        }
+        if(!strcmp(argv[1], "region")) {
+            out = subghz_freqs_with_region(text, hz, count);
+        } else {
+            printf("%u\n", (unsigned)subghz_freqs_region_changes(text, hz, count));
+        }
     } else {
         return 2;
     }

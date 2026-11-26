@@ -12,6 +12,7 @@
 #include <gui/modules/variable_item_list.h>
 #include <notification/notification_messages.h>
 #include <dialogs/dialogs.h>
+#include <flipper_format/flipper_format.h>
 
 #include "helpers/ra_settings.h"
 #include "helpers/ra_radio.h"
@@ -48,6 +49,7 @@ typedef enum {
     RaCustomEventFaGoRead,
     RaCustomEventRawCancelled, /**< no capture was picked */
     RaCustomEventAtlasDecoded, /**< a protocol decoded a frame on the atlas's band */
+    RaCustomEventAtlasSave, /**< Save on the atlas's details screen */
 } RaCustomEvent;
 
 /** What the LED is saying. All three blink; the green is held briefly after a decode. */
@@ -110,6 +112,13 @@ typedef struct {
     char atlas_protocol[24];
     const char* atlas_note;
     FuriString* atlas_modulation; /**< the preset name the atlas listens with */
+    /** While the atlas is up. The capture thread serializes each decode into atlas_rx_fff
+     * (that thread's alone, so the decoder is read before the next frame reuses it), and copies
+     * it into atlas_capture under signal_mutex; "" when the protocol has no file format. The
+     * GUI thread hands its own copy, atlas_capture_gui, to the plugin. */
+    FlipperFormat* atlas_rx_fff;
+    FuriString* atlas_capture;
+    FuriString* atlas_capture_gui;
 } RemoteAnalyzer;
 
 /** Vibro and a chirp, for a code that is not the one already on screen. */

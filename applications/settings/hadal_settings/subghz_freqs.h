@@ -36,6 +36,22 @@ char* subghz_freqs_with_hopper(const char* text, uint32_t hz);
 char* subghz_freqs_without_hopper(const char* text, uint32_t hz);
 char* subghz_freqs_set_standard(const char* text, bool on);
 
+/**
+ * The hopper on a region's band plan: each of @p hz (count of them) listed and hopping, every
+ * other frequency that hopped still listed but no longer hopping, and the built-in list left out
+ * (its hopper visits 315 and 390 MHz, US bands). Nothing is removed: a frequency that only had a
+ * hopper line gets a "Frequency:" line, so it stays in the list to hop again. Comments, presets
+ * and every other line stay as they were. A new text (free() it), NULL when out of memory
+ */
+char* subghz_freqs_with_region(const char* text, const uint32_t* hz, size_t count);
+
+/**
+ * What subghz_freqs_with_region() would still change in the hopper: how many of @p hz are not
+ * both listed and hopping, plus how many other frequencies hop. 0, with the built-in list left
+ * out, is a hopper already on that region.
+ */
+size_t subghz_freqs_region_changes(const char* text, const uint32_t* hz, size_t count);
+
 #ifdef __cplusplus
 }
 #endif

@@ -22,6 +22,7 @@
 #include "main_menu_view.h"
 #include "menu_styles.h"
 #include "keybinds.h"
+#include "region_plan.h"
 
 #define HADAL_MAX_PACKS 40u
 
@@ -85,3 +86,7 @@ void hadal_settings_submenu_callback(void* context, uint32_t index);
 
 /** Asset Pack's preview and its view, if the page was opened: freed as Hadal closes */
 void hadal_settings_pack_preview_free(HadalSettings* app);
+
+/** The Frequency Atlas region Protocols > Region (or the atlas's own picker) saved: its code into
+ * @p code, HADAL_REGION_CODE_SIZE bytes; "off" when there is none */
+void hadal_settings_atlas_region_get(Storage* storage, char* code);

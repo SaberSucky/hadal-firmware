@@ -189,3 +189,63 @@ char* subghz_freqs_set_standard(const char* text, bool on) {
     if(!written) append(out, &length, setting, strlen(setting));
     return out;
 }
+
+// text replaced by edit(text), the old one freed; NULL in, or out of memory, is NULL out
+static char* step(char* text, char* (*edit)(const char*, uint32_t), uint32_t hz) {
+    if(!text) return NULL;
+    char* next = edit(text, hz);
+    free(text);
+    return next;
+}
+
+#define REGION_LIST_MAX 256
+
+static bool contains(const uint32_t* list, size_t count, uint32_t hz) {
+    for(size_t i = 0; i < count; i++) {
+        if(list[i] == hz) return true;
+    }
+    return false;
+}
+
+char* subghz_freqs_with_region(const char* text, const uint32_t* hz, size_t count) {
+    // off the stack: Hadal's settings run in 4 KB
+    uint32_t* hopper = malloc(sizeof(uint32_t) * REGION_LIST_MAX);
+    if(!hopper) return NULL;
+    char* out = strdup(base(text));
+    // what hopped before, taken first: the edits below change the text it is read from
+    const size_t hopper_count = out ? subghz_freqs_list_hopper(out, hopper, REGION_LIST_MAX) : 0;
+    for(size_t i = 0; i < hopper_count; i++) {
+        if(contains(hz, count, hopper[i])) continue;
+        // kept in the list, so one press makes it hop again
+        out = step(out, subghz_freqs_with, hopper[i]);
+        out = step(out, subghz_freqs_without_hopper, hopper[i]);
+    }
+    for(size_t i = 0; i < count; i++) {
+        out = step(out, subghz_freqs_with, hz[i]);
+        out = step(out, subghz_freqs_with_hopper, hz[i]);
+    }
+    free(hopper);
+    if(!out) return NULL;
+    char* standard = subghz_freqs_set_standard(out, false);
+    free(out);
+    return standard;
+}
+
+size_t subghz_freqs_region_changes(const char* text, const uint32_t* hz, size_t count) {
+    uint32_t* listed = malloc(sizeof(uint32_t) * REGION_LIST_MAX * 2);
+    if(!listed) return count ? count : 1;
+    uint32_t* hopper = listed + REGION_LIST_MAX;
+    const size_t listed_count = subghz_freqs_list(text, listed, REGION_LIST_MAX);
+    const size_t hopper_count = subghz_freqs_list_hopper(text, hopper, REGION_LIST_MAX);
+    size_t changes = 0;
+    for(size_t i = 0; i < count; i++) {
+        if(!contains(listed, listed_count, hz[i]) || !contains(hopper, hopper_count, hz[i])) {
+            changes++;
+        }
+    }
+    for(size_t i = 0; i < hopper_count; i++) {
+        if(!contains(hz, count, hopper[i])) changes++;
+    }
+    free(listed);
+    return changes;
+}

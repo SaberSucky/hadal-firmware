@@ -298,6 +298,10 @@ static RemoteAnalyzer* remote_analyzer_alloc(void) {
     app->atlas_protocol[0] = '\0';
     app->atlas_note = NULL;
     app->atlas_modulation = furi_string_alloc();
+    // the atlas scene's, made while it is up
+    app->atlas_rx_fff = NULL;
+    app->atlas_capture = NULL;
+    app->atlas_capture_gui = NULL;
 
     return app;
 }

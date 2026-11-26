@@ -4008,6 +4008,68 @@ class SubGhzTextTests(unittest.TestCase):
         self.assertEqual(again.count("Add_standard_frequencies"), 1)
         self.assertIn("Add_standard_frequencies: true", again)
 
+    def test_region_adds_its_bands_listed_and_hopping(self):
+        """Use <region> frequencies: added, all hopping, the built-in list left out, the user's own kept"""
+        out = self.run_host(self.USER, "region", "433920000,868300000,869525000")
+        lines = out.split("\n")
+        for hz in ("868300000", "869525000"):
+            self.assertEqual(lines.count(f"Frequency: {hz}"), 1, hz)
+            self.assertEqual(lines.count(f"Hopper_frequency: {hz}"), 1, hz)
+        # already listed and hopping: not twice
+        self.assertEqual(lines.count("Frequency: 433920000"), 1)
+        self.assertEqual(lines.count("Hopper_frequency: 433920000"), 1)
+        # the user's own lines, comments and presets stay as they were
+        for kept in ("Frequency: 868350000", "#Frequency: 300000000", "# comment", "Custom_preset_name: FM95"):
+            self.assertIn(kept, lines)
+        self.assertIn("Version: 1\nAdd_standard_frequencies: false\n", out)
+        self.assertEqual(out.count("Add_standard_frequencies"), 1)
+        # the user's 868.35, which does not hop, still does not
+        self.assertNotIn("Hopper_frequency: 868350000", lines)
+
+    # A hopper with another region's bands in it, one of them only a hopper line
+    USER_HOPS = (
+        "Filetype: Flipper SubGhz Setting File\nVersion: 1\n# comment\n"
+        "Frequency: 315000000\nFrequency: 433920000\nHopper_frequency: 315000000\n"
+        "Hopper_frequency: 433920000\nHopper_frequency: 433050000\nCustom_preset_name: FM95\n"
+    )
+
+    def test_region_hops_its_bands_only_and_deletes_nothing(self):
+        out = self.run_host(self.USER_HOPS, "region", "433920000,868300000")
+        lines = out.split("\n")
+        hopper = [line for line in lines if line.startswith("Hopper_frequency:")]
+        self.assertEqual(hopper, ["Hopper_frequency: 433920000", "Hopper_frequency: 868300000"])
+        # 315 stops hopping but stays; 433.05, a hopper line alone, is listed so it stays too
+        listed = [line for line in lines if line.startswith("Frequency:")]
+        self.assertEqual(
+            listed,
+            ["Frequency: 315000000", "Frequency: 433920000", "Frequency: 433050000", "Frequency: 868300000"],
+        )
+        self.assertIn("# comment", lines)
+        self.assertIn("Custom_preset_name: FM95", lines)
+        self.assertIn("Add_standard_frequencies: false", lines)
+
+    def test_region_again_changes_nothing(self):
+        bands = "433920000,868300000"
+        for text in (self.USER, self.USER_HOPS, ""):
+            once = self.run_host(text, "region", bands)
+            self.assertEqual(self.run_host(once, "region", bands), once)
+
+    def test_region_changes_counts_what_it_would_still_do(self):
+        bands = "433920000,868300000"
+        # 868.3 is not there; 315 and 433.05 hop and are not the region's
+        self.assertEqual(self.run_host(self.USER_HOPS, "changes", bands).strip(), "3")
+        self.assertEqual(self.run_host(self.run_host(self.USER_HOPS, "region", bands), "changes", bands).strip(), "0")
+        self.assertEqual(self.run_host("", "changes", bands).strip(), "2")
+        # listed but not hopping counts too
+        self.assertEqual(self.run_host(self.USER, "changes", "868350000").strip(), "2")
+
+    def test_region_on_a_new_file(self):
+        out = self.run_host("", "region", "868300000")
+        self.assertTrue(out.startswith("Filetype: Flipper SubGhz Setting File\nVersion: 1\n"))
+        self.assertIn("Add_standard_frequencies: false\n", out)
+        self.assertIn("Frequency: 868300000\n", out)
+        self.assertIn("Hopper_frequency: 868300000\n", out)
+
 
 class DolphinLevelTests(unittest.TestCase):
     """Levels up to 30 (applications/services/dolphin/helpers/dolphin_state.c), the first three
@@ -4221,6 +4283,7 @@ class FrequencyAtlasHostTests(unittest.TestCase):
                 "-Wall", "-Wextra", "-Werror", "-I", src, "-o", cls.exe,
                 os.path.join(REPO_ROOT, "scripts", "host_tests", "frequency_atlas_host.c"),
                 os.path.join(src, "ra_atlas_plan.c"),
+                os.path.join(src, "ra_atlas_save.c"),
                 os.path.join(src, "ra_atlas_scan.c"),
             ]
         )
@@ -4393,6 +4456,51 @@ class FrequencyAtlasHostTests(unittest.TestCase):
         out = self.scan("00", ["tick 100 -50", "tick 300 -50"])
         self.assertEqual(out, ["init 0 0", "none 0", "none 0"])
 
+    # What subghz_protocol_decoder_base_serialize() writes for a Princeton frame
+    CAPTURE = (
+        "Filetype: Flipper SubGhz Key File\nVersion: 1\nFrequency: 433920000\n"
+        "Preset: FuriHalSubGhzPresetOok650Async\nProtocol: Princeton\nBit: 24\n"
+        "Key: 00 00 00 00 00 95 D5 D4\nTE: 400\n"
+    )
+
+    def keyfile(self, text):
+        return self.run_host("keyfile", text=text).strip()
+
+    def test_capture_is_a_key_file_sub_ghz_opens(self):
+        self.assertEqual(self.keyfile(self.CAPTURE), "key 1 hz 433920000")
+        self.assertEqual(self.keyfile(self.CAPTURE.replace("\n", "\r\n")), "key 1 hz 433920000")
+
+    def test_capture_with_nothing_valid_is_not_saved(self):
+        # what the app hands over when the protocol has no file format
+        self.assertEqual(self.keyfile(""), "key 0 hz 0")
+        self.assertEqual(self.keyfile(self.CAPTURE.replace("Protocol: Princeton\n", "")), "key 0 hz 433920000")
+        self.assertEqual(self.keyfile(self.CAPTURE.replace("Protocol: Princeton", "Protocol: ")), "key 0 hz 433920000")
+        self.assertEqual(self.keyfile(self.CAPTURE.replace("433920000", "0")), "key 0 hz 0")
+        self.assertEqual(self.keyfile(self.CAPTURE.replace("Version: 1\n", "")), "key 0 hz 433920000")
+        # another kind of file, or the right one not first
+        self.assertTrue(self.keyfile(self.CAPTURE.replace("Key File", "RAW File")).startswith("key 0"))
+        self.assertTrue(self.keyfile(self.CAPTURE.replace("Key File", "Key Files")).startswith("key 0"))
+        self.assertTrue(self.keyfile("# x\n" + self.CAPTURE).startswith("key 0"))
+
+    def save_name(self, protocol, hz, copy, size=None):
+        args = ["savename", protocol, str(hz), str(copy)] + ([str(size)] if size is not None else [])
+        return self.run_host(*args).rstrip("\n")
+
+    def test_save_names(self):
+        self.assertEqual(self.save_name("Princeton", 433920000, 1), "Princeton_433.92")
+        self.assertEqual(self.save_name("Princeton", 433920000, 2), "Princeton_433.92_2")
+        self.assertEqual(self.save_name("Security+ 2.0", 315000000, 1), "Security+_2.0_315")
+        self.assertEqual(self.save_name('a/b\\c:d*e?"f<g>h|i', 868350000, 1), "a_b_c_d_e__f_g_h_i_868.35")
+        self.assertEqual(self.save_name("", 433920000, 1), "Signal_433.92")
+
+    def test_save_names_cut_the_protocol_not_the_frequency(self):
+        self.assertEqual(self.save_name("KeeLoq", 433920000, 12, 16), "KeeLo_433.92_12")
+        self.assertEqual(len(self.save_name("X" * 80, 433920000, 1)), 47)
+        self.assertTrue(self.save_name("X" * 80, 433920000, 99).endswith("_433.92_99"))
+        # far too small: cut, still terminated (the driver checks), never past the buffer (ASan)
+        self.assertEqual(self.save_name("Princeton", 433920000, 1, 4), "_43")
+        self.assertEqual(self.save_name("Princeton", 433920000, 1, 1), "")
+
 
 class FrequencyAtlasDataTests(unittest.TestCase):
     """The band plans Hadal ships for the Frequency Atlas: the format the atlas reads
@@ -4488,6 +4596,101 @@ class FrequencyAtlasDataTests(unittest.TestCase):
         self.assertIn('"Region"', src)
         self.assertIn('EXT_PATH("apps/Sub-GHz/remote_analyzer.fap")', src)
         self.assertIn('"atlas"', src)
+
+
+HADAL_SETTINGS_DIR = os.path.join(REPO_ROOT, "applications", "settings", "hadal_settings")
+
+
+class FrequencyAtlasWiringTests(unittest.TestCase):
+    """How the atlas's save and Settings' region frequencies are put together: the pieces the
+    host tests cannot see, read from the sources (no compiler needed)"""
+
+    @staticmethod
+    def read(*parts):
+        with open(os.path.join(*parts), encoding="utf-8") as f:
+            return f.read()
+
+    @staticmethod
+    def code(src):
+        """The source without its comments, so a check is about what runs"""
+        src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+        return re.sub(r"//[^\n]*", "", src)
+
+    def test_the_frame_is_serialized_while_the_decoder_holds_it(self):
+        scene = self.code(self.read(ATLAS_APP_DIR, "scenes", "ra_scene_frequency_atlas.c"))
+        callback = re.search(r"static void ra_scene_frequency_atlas_rx_callback\(.*?\n}\n", scene, re.S).group(0)
+        # in the capture thread's callback, before the receiver is reset for the next frame
+        serialize = callback.index("subghz_protocol_decoder_base_serialize(")
+        self.assertLess(serialize, callback.index("subghz_receiver_reset(receiver)"))
+        self.assertIn('flipper_format_delete_key(app->atlas_rx_fff, "Repeat")', callback)
+        # handed over under the mutex the GUI thread reads it with
+        self.assertLess(callback.index("furi_mutex_acquire"), callback.index("app->atlas_capture"))
+        self.assertIn("case RaCustomEventAtlasSave:", scene)
+        self.assertIn("app->atlas_env.save_event = RaCustomEventAtlasSave", scene)
+
+    def test_the_save_writes_a_new_sub_where_sub_ghz_looks(self):
+        plugin = self.code(self.read(ATLAS_APP_DIR, "plugins", "frequency_atlas", "ra_atlas_plugin.c"))
+        save = re.search(r"static bool ra_atlas_save_file\(.*?\n}\n", plugin, re.S).group(0)
+        self.assertIn("SUBGHZ_APP_FOLDER", save)
+        self.assertIn("SUBGHZ_APP_FILENAME_EXTENSION", save)
+        self.assertIn("storage_simply_mkdir(ra_atlas.storage, SUBGHZ_APP_FOLDER)", save)
+        # never over another file, and nothing half-written left behind
+        self.assertIn("FSOM_CREATE_NEW", save)
+        self.assertNotIn("FSOM_CREATE_ALWAYS", save)
+        self.assertIn("storage_simply_remove", save)
+        self.assertIn("ra_atlas_capture_is_key_file(text)", save)
+        self.assertIn("The SD card is full", save)
+        self.assertIn(".save = ra_atlas_plugin_save", plugin)
+        # the widget's button only asks: the save runs from the app's event, outside its lock
+        button = re.search(r"static void ra_atlas_save_button\(.*?\n}\n", plugin, re.S).group(0)
+        self.assertIn("view_dispatcher_send_custom_event", button)
+        self.assertNotIn("widget_reset", button)
+
+    def test_the_plugin_contract_moved_on(self):
+        header = self.read(ATLAS_APP_DIR, "helpers", "ra_atlas_plugin.h")
+        self.assertIn("#define RA_ATLAS_PLUGIN_API_VERSION 2", header)
+        self.assertIn("const char* capture", header)
+        self.assertIn("void (*save)(RaAtlasEnv* env);", header)
+
+    def test_settings_reads_plans_with_the_atlas_parser(self):
+        region = self.read(HADAL_SETTINGS_DIR, "region_plan.c")
+        self.assertIn('#include "../../system/remote_analyzer/plugins/frequency_atlas/ra_atlas_plan.c"', region)
+        self.assertIn('EXT_PATH("frequency_atlas")', region)
+        self.assertTrue(
+            os.path.isfile(
+                os.path.join(HADAL_SETTINGS_DIR, "../../system/remote_analyzer/plugins/frequency_atlas/ra_atlas_plan.c")
+            )
+        )
+        # no second parser: nothing else in Settings reads a Band line
+        for root, _, files in os.walk(HADAL_SETTINGS_DIR):
+            for name in files:
+                if name.endswith((".c", ".h")):
+                    self.assertNotIn('"Band', self.read(root, name), name)
+
+    def test_the_region_row_changes_nothing_but_the_region(self):
+        protocols = self.code(self.read(HADAL_SETTINGS_DIR, "scenes", "hadal_settings_scene_protocols.c"))
+        changed = re.search(r"static void region_changed\(.*?\n}\n", protocols, re.S).group(0)
+        self.assertIn("atlas_region_set", changed)
+        for other in ("subghz_freqs", "setting_user", "SUBGHZ_FREQS_PATH"):
+            self.assertNotIn(other, protocols)
+
+    def test_frequencies_screen_is_one_list_and_remove_takes_two_steps(self):
+        scene = self.code(self.read(HADAL_SETTINGS_DIR, "scenes", "hadal_settings_scene_subghz_freqs.c"))
+        self.assertIn("HadalViewVariableList", scene)
+        self.assertNotIn("submenu_", scene)
+        self.assertIn('"Remove"', scene)
+        # removing is only ever OK on a row already showing Remove
+        self.assertEqual(scene.count("subghz_freqs_without("), 1)
+        removal = re.search(r"if\(value == FreqRemove\) \{\s*const uint32_t hz.*?subghz_freqs_without\(", scene, re.S)
+        self.assertIsNotNone(removal)
+        self.assertLess(scene.index("id >= EventOkBase"), removal.start())
+        # every capability the old screen had
+        for kept in ("subghz_freqs_set_standard", "subghz_freqs_with(", "subghz_freqs_with_hopper",
+                     "subghz_freqs_without_hopper", "HadalViewNumberInput", "furi_hal_subghz_is_frequency_valid"):
+            self.assertIn(kept, scene)
+        # the region's action, only through its confirmation
+        self.assertIn("subghz_freqs_with_region", scene)
+        self.assertLess(scene.index("EventRegionUse);"), scene.index("id == EventRegionUse"))
 
 
 if __name__ == "__main__":

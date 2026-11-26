@@ -9,13 +9,18 @@
  * As with the other plugins, the .fal resolves its symbols from the firmware API table alone.
  * The radio stays the app's: the plugin asks for a band through tune(), and the app hands it
  * the RSSI and every decode, all on the GUI thread.
+ *
+ * Still receive-only. A decode comes with the frame as a .sub file's text, serialized by the
+ * app on the capture thread while the decoder still held it; the plugin can save that as a file
+ * in /ext/subghz, where the Sub-GHz app's own Saved list opens and sends it.
  */
 #pragma once
 
 #include <gui/view_dispatcher.h>
 
 #define RA_ATLAS_PLUGIN_APP_ID      "RemoteAnalyzerFreqAtlas"
-#define RA_ATLAS_PLUGIN_API_VERSION 1
+/** 2: decoded() hands over the frame as a .sub, and save() saves the one on screen */
+#define RA_ATLAS_PLUGIN_API_VERSION 2
 
 /** Where the band plans live on the card: <code>.txt, one file per region. */
 #define RA_ATLAS_DIR         EXT_PATH("frequency_atlas")
@@ -42,6 +47,9 @@ typedef struct {
     RaAtlasTune tune;
     float trigger; /**< dBm at which a band counts as busy: the Read screen's level */
     const char* modulation; /**< the preset being listened with, for the details screen */
+    /** The custom event the plugin sends to have save() called: a widget's button callback
+     * runs with the widget locked, so the details screen cannot be redrawn from inside it. */
+    uint32_t save_event;
 } RaAtlasEnv;
 
 /** What the .fal exports. */
@@ -50,8 +58,14 @@ typedef struct {
     void (*on_enter)(RaAtlasEnv* env);
     /** Every RA_SWEEP_TICK_MS, with the RSSI on the frequency last tuned. */
     void (*tick)(RaAtlasEnv* env, float rssi);
-    /** A frame decoded on the band being listened to. @p note says where SubGHz stands on it. */
-    void (*decoded)(RaAtlasEnv* env, const char* protocol, const char* note);
+    /**
+     * A frame decoded on the band being listened to. @p note says where SubGHz stands on it.
+     * @p capture is the frame as a .sub file's text, "" when the protocol has no file format
+     * (Remote Analyzer's own decoders): borrowed for the call, copied if kept.
+     */
+    void (*decoded)(RaAtlasEnv* env, const char* protocol, const char* note, const char* capture);
+    /** env->save_event landed: save what the details screen shows, and say how it went. */
+    void (*save)(RaAtlasEnv* env);
     /** Park, unregister every screen and free. The app stops the radio afterwards. */
     void (*on_exit)(RaAtlasEnv* env);
 } RaAtlasPlugin;

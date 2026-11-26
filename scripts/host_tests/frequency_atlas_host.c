@@ -17,12 +17,16 @@
  *                        signal MS       -> "signal <0|1>"
  *                        live INDEX      -> "live <protocol or -> <peak rssi>"
  *                      init prints "init <0|1> <current>" first.
+ *       keyfile        stdin: a capture (ra_atlas_save.c); prints "key <0|1> hz <frequency>"
+ *       savename PROTOCOL HZ COPY [SIZE]
+ *                      prints the file name the atlas saves it under, cut to SIZE bytes
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "ra_atlas_plan.h"
+#include "ra_atlas_save.h"
 #include "ra_atlas_scan.h"
 
 static char* read_all(size_t* size_out) {
@@ -169,5 +173,25 @@ int main(int argc, char** argv) {
         return 0;
     }
     if(!strcmp(argv[1], "scan") && argc > 3) return run_scan(argv[2], strtof(argv[3], NULL));
+    if(!strcmp(argv[1], "keyfile")) {
+        char* text = read_all(NULL);
+        printf(
+            "key %d hz %lu\n",
+            ra_atlas_capture_is_key_file(text),
+            (unsigned long)ra_atlas_capture_frequency(text));
+        free(text);
+        return 0;
+    }
+    if(!strcmp(argv[1], "savename") && argc > 4) {
+        const size_t size = argc > 5 ? (size_t)atoi(argv[5]) : RA_ATLAS_SAVE_NAME_SIZE;
+        // exactly SIZE bytes, so a write past them is caught
+        char* out = malloc(size ? size : 1);
+        const size_t n = ra_atlas_save_name(
+            argv[2], (uint32_t)strtoul(argv[3], NULL, 10), (unsigned)atoi(argv[4]), out, size);
+        if(size && (n >= size || out[n] != '\0' || strlen(out) != n)) return 3;
+        printf("%s\n", size ? out : "");
+        free(out);
+        return 0;
+    }
     return 2;
 }

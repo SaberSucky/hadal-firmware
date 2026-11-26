@@ -51,3 +51,33 @@ for up to 3 s, so the decoders hear the whole press; Right holds it on the selec
 indefinitely, Left goes back to scanning. A band reads `now` for 4 s after its last carrier, then
 how long ago it was heard. A protocol that decodes is named under the band (and marked `*` in the
 list). The receiver listens wider than the narrowest sub-bands, so neighbours can share a reading.
+
+## Saving a decoded signal
+
+A band's details screen (OK on it in the list) shows a **Save** button while it holds a frame the
+Sub-GHz app can open. OK saves it as `/ext/subghz/<protocol>_<MHz>.sub` (`_2`, `_3`... when that
+name is taken; an existing file is never overwritten), written from
+`subghz_protocol_decoder_base_serialize()` exactly as Sub-GHz saves a received signal, so
+Sub-GHz > Saved lists it and sends it from there. The atlas itself stays receive-only.
+
+The atlas keeps one frame, the last decode, so only the band that decoded last can save; the
+details screen holds that frame still while it is open, so Save keeps what the screen says even
+if more decodes come in. Remote Analyzer's own decoders have no Sub-GHz file format and say so
+instead of offering Save. A save that fails (no SD card, the folder cannot be made, the card is
+full) says why at the top of the screen and leaves no half-written file behind.
+
+## The region's bands in Sub-GHz
+
+With a region chosen, Settings > Hadal > Protocols > Sub-GHz frequencies has a
+**Use <region> frequencies** row. After a confirmation it puts Sub-GHz's hopper on the region's
+bands alone, in `/ext/subghz/assets/setting_user`:
+
+- each band's listen frequency is listed and hops;
+- every other frequency that hopped stops hopping but stays in the list (one that only had a
+  `Hopper_frequency` line gets a `Frequency` line), so nothing is deleted and each is one press
+  from hopping again;
+- the built-in list is left out, since its hopper visits 315 and 390 MHz (US bands).
+
+Comments, custom presets and every other line stay as they were. Bands the radio cannot tune at
+the time (Extended Sub-GHz off) are skipped. The row reads `In use` while the file is that way.
+Changing the Region row on its own changes nothing in that file.

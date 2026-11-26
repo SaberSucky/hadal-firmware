@@ -11,14 +11,16 @@
 #define DANGEROUS_PATH EXT_PATH("subghz/assets/dangerous_settings")
 #define DANGEROUS_KEY  "yes_i_want_to_destroy_my_flipper"
 
-/* Frequency Atlas: which region's band plan Remote Analyzer shows. Only a display choice for
- * another app, read whenever the atlas opens, so it applies at once. The atlas's own region
- * picker writes the same file. A region is a file name in /ext/frequency_atlas/ without .txt. */
+/* Frequency Atlas: which region's band plan Remote Analyzer shows. Read whenever the atlas opens,
+ * so it applies at once. The atlas's own region picker writes the same file. A region is a file
+ * name in /ext/frequency_atlas/ without .txt.
+ * Changing it changes nothing else: Sub-GHz frequencies offers "Use <region> frequencies" for
+ * the hopper, as a step of its own the user takes there, never as a side effect of this row. */
 #define ATLAS_REGION_PATH EXT_PATH("apps_data/remote_analyzer/atlas_region")
 #define ATLAS_REGION_KEY  "Region"
 #define ATLAS_APP_PATH    EXT_PATH("apps/Sub-GHz/remote_analyzer.fap")
 #define ATLAS_APP_ARGS    "atlas"
-#define ATLAS_CODE_SIZE   16
+#define ATLAS_CODE_SIZE   HADAL_REGION_CODE_SIZE
 
 enum {
     ProtocolsExtended,
@@ -51,8 +53,7 @@ static char region_other_code[ATLAS_CODE_SIZE];
 static char region_other_name[ATLAS_CODE_SIZE];
 static const char* region_values[REGION_KNOWN + 1];
 
-/** The saved region's code into @p code (ATLAS_CODE_SIZE bytes); "off" when there is none */
-static void atlas_region_get(Storage* storage, char* code) {
+void hadal_settings_atlas_region_get(Storage* storage, char* code) {
     strlcpy(code, "off", ATLAS_CODE_SIZE);
     FuriString* value = furi_string_alloc();
     FlipperFormat* file = flipper_format_file_alloc(storage);
@@ -98,7 +99,7 @@ static void region_changed(VariableItem* item) {
 /** The Region row: the saved region selected, kept as its own entry when Settings has none */
 static void region_add(HadalSettings* app) {
     char code[ATLAS_CODE_SIZE];
-    atlas_region_get(app->storage, code);
+    hadal_settings_atlas_region_get(app->storage, code);
     size_t region = REGION_OFF;
     size_t count = REGION_KNOWN;
     for(size_t i = 0; i < REGION_KNOWN; i++) {
